@@ -1,10 +1,13 @@
-"""Spikes that validate the riskiest msgspec assumptions behind the design.
+"""Contract tests for the msgspec behaviors the design depends on.
 
-These do not import the library's public API (which does not exist yet); they
-use throwaway structs that mirror the *intended* modeling patterns, so a failure
-here means a design assumption needs revisiting before we build on it.
+These guard against regressions -- including a msgspec *upgrade* silently
+changing a behavior we rely on. They use small standalone structs (mirroring the
+library's modeling patterns) rather than the public API, so each behavior is
+tested in isolation and a failure points straight at the broken assumption.
+(``__post_init__``-on-decode is covered by the real `Parameter`/`Unit` tests and
+so is not duplicated here.)
 
-Assumptions under test:
+Behaviors under test:
   1. Tagged-union dispatch on the ``"type"`` field.
   2. A bare ``str`` mixed into a tagged-struct union (``domain``/``ranges`` URLs).
   3. A bare *generic* struct as a union member, plus parameterized decode.
@@ -13,8 +16,7 @@ Assumptions under test:
      wire names, and composes with generics, tags, and unions.
   6. ``msgspec`` decode bypasses ``__call__`` (so a metaclass guard can block
      direct construction without breaking decoding).
-  7. ``__post_init__`` runs on decode (so cheap invariants hold on every path).
-  8. ``frozen=True`` composes with all the above: instances are immutable and
+  7. ``frozen=True`` composes with all the above: instances are immutable and
      hashable when their fields are. Sequence members are tuples (immutable,
      hashable); mapping members stay ``dict`` -- the one mutable/unhashable hole.
      NOTE: ``frozen`` is not inherited -- every concrete struct must restate it.
@@ -176,15 +178,3 @@ def test_decode_bypasses_call_guard() -> None:
 
     decoded = msgspec.json.decode(b'{"type":"Guarded","x":5}', type=Guarded)
     assert decoded.x == 5
-
-
-def test_post_init_runs_on_decode() -> None:
-    class WithCheck(msgspec.Struct, frozen=True, tag="WithCheck"):
-        x: int
-
-        def __post_init__(self) -> None:
-            if self.x < 0:
-                raise ValueError("x must be >= 0")
-
-    with pytest.raises((msgspec.ValidationError, ValueError)):
-        msgspec.json.decode(b'{"type":"WithCheck","x":-1}', type=WithCheck)

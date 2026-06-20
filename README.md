@@ -26,7 +26,8 @@ the rest of the Python geo ecosystem.
 | `covjson-msgspec[xarray]` | two-way, CF-aware `Coverage` ↔ xarray |
 | `covjson-msgspec[pandas]` | point/series/trajectory → pandas |
 | `covjson-msgspec[geo]` | polygon/point/trajectory → geopandas / GeoJSON |
-| `covjson-msgspec[fastapi]` | response helper + media type |
+| `covjson-msgspec[litestar]` | Litestar response helper + media type (msgspec-native, so first-class) |
+| `covjson-msgspec[fastapi]` | FastAPI response helper + media type (thin adapter) |
 
 A guiding principle is **dependency injection at the edges, data-in/data-out at
 the core**: the core never reaches the network or imports a heavy framework — it
