@@ -31,10 +31,10 @@ def test_continuous_parameter_roundtrips() -> None:
 
 
 def test_symbol_object_form_roundtrips() -> None:
-    unit = Unit(symbol=Symbol(value="Cel", scheme="http://example/Cel"))
+    unit = Unit(symbol=Symbol(value="Cel", type_="http://example/Cel"))
     back = msgspec.json.decode(msgspec.json.encode(unit), type=Unit)
     assert isinstance(back.symbol, Symbol)
-    assert back.symbol.scheme == "http://example/Cel"
+    assert back.symbol.type_ == "http://example/Cel"
 
 
 def test_unit_requires_label_or_symbol_on_decode() -> None:
@@ -66,8 +66,8 @@ def test_parameter_group_requires_label_or_observed_property() -> None:
 
 def test_symbol_is_hashable() -> None:
     # No dict members -> a frozen Symbol is hashable and usable in a set.
-    a = Symbol(value="Cel", scheme="http://example/Cel")
-    b = Symbol(value="Cel", scheme="http://example/Cel")
+    a = Symbol(value="Cel", type_="http://example/Cel")
+    b = Symbol(value="Cel", type_="http://example/Cel")
     assert a == b
     assert len({a, b}) == 1
 

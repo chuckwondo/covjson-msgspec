@@ -2,9 +2,10 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
-from .axis import Axis
-from .i18n import I18n, i18n
-from .parameter import (
+from covjson_msgspec.axis import Axis
+from covjson_msgspec.domain import Domain
+from covjson_msgspec.i18n import I18n, i18n
+from covjson_msgspec.parameter import (
     Category,
     CategoryEncoding,
     ObservedProperty,
@@ -13,7 +14,7 @@ from .parameter import (
     Symbol,
     Unit,
 )
-from .referencing import (
+from covjson_msgspec.referencing import (
     Concept,
     GeographicCRS,
     IdentifierRS,
@@ -34,6 +35,7 @@ __all__ = [
     "Category",
     "CategoryEncoding",
     "Concept",
+    "Domain",
     "GeographicCRS",
     "I18n",
     "IdentifierRS",

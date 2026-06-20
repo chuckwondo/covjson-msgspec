@@ -89,10 +89,16 @@ select = [
     "B",   # flake8-bugbear
     "C4",  # flake8-comprehensions
     "SIM", # flake8-simplify
+    "TID", # flake8-tidy-imports
     "RUF", # ruff-specific
 ]
 # Python attributes are snake_case; msgspec `rename="camel"` maps them to the
 # CoverageJSON lowerCamelCase wire names, so N815 is unnecessary.
+
+[tool.ruff.lint.flake8-tidy-imports]
+# Use absolute imports throughout: explicit, grep-able, and they stay flat as
+# subpackages (e.g. the optional bridges) are added.
+ban-relative-imports = "all"
 
 [tool.mypy]
 files = ["src", "tests"]

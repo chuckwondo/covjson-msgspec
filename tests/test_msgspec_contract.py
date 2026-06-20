@@ -8,18 +8,19 @@ tested in isolation and a failure points straight at the broken assumption.
 so is not duplicated here.)
 
 Behaviors under test:
-  1. Tagged-union dispatch on the ``"type"`` field.
-  2. A bare ``str`` mixed into a tagged-struct union (``domain``/``ranges`` URLs).
-  3. A bare *generic* struct as a union member, plus parameterized decode.
-  4. PEP 696 ``TypeVar`` default works at runtime.
-  5. ``rename="camel"`` on a shared base maps snake_case attrs to lowerCamelCase
-     wire names, and composes with generics, tags, and unions.
-  6. ``msgspec`` decode bypasses ``__call__`` (so a metaclass guard can block
-     direct construction without breaking decoding).
-  7. ``frozen=True`` composes with all the above: instances are immutable and
-     hashable when their fields are. Sequence members are tuples (immutable,
-     hashable); mapping members stay ``dict`` -- the one mutable/unhashable hole.
-     NOTE: ``frozen`` is not inherited -- every concrete struct must restate it.
+
+1. Tagged-union dispatch on the ``"type"`` field.
+2. A bare ``str`` mixed into a tagged-struct union (``domain``/``ranges`` URLs).
+3. A bare *generic* struct as a union member, plus parameterized decode.
+4. PEP 696 ``TypeVar`` default works at runtime.
+5. ``rename="camel"`` on a shared base maps snake_case attrs to lowerCamelCase
+   wire names, and composes with generics, tags, and unions.
+6. ``msgspec`` decode bypasses ``__call__`` (so a metaclass guard can block
+   direct construction without breaking decoding).
+7. ``frozen=True`` composes with all the above: instances are immutable and
+   hashable when their fields are. Sequence members are tuples (immutable,
+   hashable); mapping members stay ``dict`` -- the one mutable/unhashable hole.
+   NOTE: ``frozen`` is not inherited -- every concrete struct must restate it.
 """
 
 import sys

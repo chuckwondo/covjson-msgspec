@@ -9,46 +9,39 @@ It comes in two mutually exclusive shapes:
   ``category_encoding`` maps each category id to the integer code(s) used in the
   range. A categorical parameter MUST NOT carry a unit.
 
-That mutual exclusivity is exactly the "wide constructor" smell we want to
-avoid, so `Parameter` exposes the narrow builders `Parameter.continuous` and
-`Parameter.categorical` rather than one constructor with mutually exclusive
-``unit`` / ``category_encoding`` arguments. The invariant is *also* enforced in
-``__post_init__`` so it holds on every path -- including ``decode`` -- not just
-when a builder is used.
-
-Docstrings follow the numpy convention; inline references use plain backticks
-(not Sphinx ``:role:`` markup) so they render cleanly under either Sphinx
-(napoleon) or mkdocstrings.
+Use the builders `Parameter.continuous` and `Parameter.categorical`, which each
+expose only the fields valid for that shape. The continuous/categorical rule is
+enforced whenever a `Parameter` is created, including when one is decoded.
 """
 
 from typing import Self
 
 import msgspec
 
-from ._base import CovJSONStruct
-from .i18n import I18n
+from covjson_msgspec._base import CovJSONStruct
+from covjson_msgspec.i18n import I18n
 
 
 class Symbol(CovJSONStruct, frozen=True):
     """A unit symbol together with the URI of its coding scheme.
 
     This is the object form of `Unit.symbol` (the other form is a bare string).
-    The coding-scheme URI is the CoverageJSON ``type`` member; we surface it as
-    ``scheme`` to avoid shadowing the builtin ``type`` and map it back to the
-    wire name explicitly.
+    The coding-scheme URI is the CoverageJSON ``type`` member; the attribute is
+    ``type_`` (PEP 8 trailing underscore) to avoid shadowing the builtin, and is
+    mapped back to ``type`` on the wire.
 
     Examples
     --------
     >>> import msgspec
-    >>> sym = Symbol(value="Cel", scheme="http://www.opengis.net/def/uom/UCUM/Cel")
+    >>> sym = Symbol(value="Cel", type_="http://www.opengis.net/def/uom/UCUM/Cel")
     >>> msgspec.json.encode(sym)
     b'{"value":"Cel","type":"http://www.opengis.net/def/uom/UCUM/Cel"}'
     """
 
     value: str
-    # Wire name is ``type``; renamed to ``scheme`` to avoid shadowing the
+    # Wire name is ``type``; the ``type_`` attribute avoids shadowing the
     # builtin. An explicit ``name=`` overrides the base's "camel" rule.
-    scheme: str = msgspec.field(name="type")
+    type_: str = msgspec.field(name="type")
 
 
 class Unit(CovJSONStruct, frozen=True):
@@ -62,7 +55,7 @@ class Unit(CovJSONStruct, frozen=True):
     >>> Unit(symbol="K")
     Unit(id=None, label=None, symbol='K')
     >>> import msgspec
-    >>> msgspec.json.encode(Unit(symbol="K"))  # omit_defaults drops id/label
+    >>> msgspec.json.encode(Unit(symbol="K"))  # unset optional fields are omitted
     b'{"symbol":"K"}'
     >>> msgspec.json.decode(b'{"symbol": "K"}', type=Unit).symbol  # bare string
     'K'
@@ -70,7 +63,7 @@ class Unit(CovJSONStruct, frozen=True):
     ...     b'{"symbol": {"value": "Cel", "type": "http://example/Cel"}}',
     ...     type=Unit,
     ... ).symbol  # the object form decodes to a Symbol
-    Symbol(value='Cel', scheme='http://example/Cel')
+    Symbol(value='Cel', type_='http://example/Cel')
     >>> Unit()
     Traceback (most recent call last):
         ...

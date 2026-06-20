@@ -1,10 +1,7 @@
 """Domain axes.
 
-An axis describes the coordinate values along one domain dimension. CoverageJSON
-allows several shapes, none carrying a ``type`` discriminator -- so they cannot
-form a msgspec tagged union (msgspec rejects untagged unions of multiple
-structs). Instead a single permissive `Axis` struct models every shape and
-``__post_init__`` enforces that exactly one numeric form is present:
+An axis describes the coordinate values along one domain dimension. A single
+`Axis` type models every CoverageJSON shape, and exactly one form must be used:
 
 * **value-listing** -- an explicit ``values`` array;
 * **regular (tight-packed)** -- ``start`` / ``stop`` / ``num`` describing ``num``
@@ -20,7 +17,7 @@ composite-domain support.
 from collections.abc import Iterable
 from typing import Any, Literal, Self
 
-from ._base import CovJSONStruct
+from covjson_msgspec._base import CovJSONStruct
 
 # A primitive value, or a tuple covering both composite forms -- "tuple" (a flat
 # tuple of primitives) and "polygon" (nested rings of positions).
@@ -36,6 +33,9 @@ from ._base import CovJSONStruct
 AxisValue = float | int | str | tuple[Any, ...]
 
 
+# Modeled as one permissive struct rather than a tagged union: the axis shapes
+# share no ``type`` discriminator and msgspec disallows untagged unions of
+# multiple structs. __post_init__ enforces that exactly one form is present.
 class Axis(CovJSONStruct, frozen=True):
     """A domain axis in any of its CoverageJSON shapes.
 

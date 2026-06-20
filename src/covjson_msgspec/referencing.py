@@ -12,8 +12,8 @@ Per the CoverageJSON standard the three spatial CRS types share the same shape
 embedded coordinate-system (``cs``) object, so CRSs are identified by ``id``.
 """
 
-from ._base import CovJSONStruct
-from .i18n import I18n
+from covjson_msgspec._base import CovJSONStruct
+from covjson_msgspec.i18n import I18n
 
 
 class GeographicCRS(CovJSONStruct, frozen=True, tag="GeographicCRS"):
@@ -23,7 +23,7 @@ class GeographicCRS(CovJSONStruct, frozen=True, tag="GeographicCRS"):
     --------
     >>> import msgspec
     >>> crs = GeographicCRS(id="http://www.opengis.net/def/crs/OGC/1.3/CRS84")
-    >>> msgspec.json.encode(crs)  # tag first; omit_defaults drops description
+    >>> msgspec.json.encode(crs)  # type tag first; unset fields are omitted
     b'{"type":"GeographicCRS","id":"http://www.opengis.net/def/crs/OGC/1.3/CRS84"}'
     """
 
@@ -48,9 +48,7 @@ class VerticalCRS(CovJSONStruct, frozen=True, tag="VerticalCRS"):
 class TemporalRS(CovJSONStruct, frozen=True, tag="TemporalRS"):
     """A temporal reference system.
 
-    ``calendar`` is required by the standard (``"Gregorian"`` or a URI). It is
-    intentionally given no default: a default combined with ``omit_defaults``
-    would drop a required member on encode.
+    ``calendar`` is required by the standard (``"Gregorian"`` or a URI).
 
     Examples
     --------
@@ -59,9 +57,10 @@ class TemporalRS(CovJSONStruct, frozen=True, tag="TemporalRS"):
     b'{"type":"TemporalRS","calendar":"Gregorian"}'
     """
 
+    # No default by design: with the base's omit_defaults a default would drop
+    # this required member on encode.
     calendar: str
-    # Wire name ``timeScale`` (via the base's camel rule); optional, defaults to
-    # UTC when absent.
+    # Wire name ``timeScale`` (camel rule); optional, defaults to UTC when absent.
     time_scale: str | None = None
 
 
