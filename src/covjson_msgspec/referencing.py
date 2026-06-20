@@ -1,0 +1,118 @@
+"""Reference systems and how they connect to a domain's coordinates.
+
+Every reference system carries a ``type`` discriminator, so this maps onto a
+clean msgspec tagged union: `ReferenceSystem` is
+``GeographicCRS | ProjectedCRS | VerticalCRS | TemporalRS | IdentifierRS``, and
+msgspec dispatches on ``type`` natively when decoding. A
+`ReferenceSystemConnection` ties a set of coordinate identifiers to the system
+that references them.
+
+Per the CoverageJSON standard the three spatial CRS types share the same shape
+(an optional ``id`` URI and ``description``); the standard does not define an
+embedded coordinate-system (``cs``) object, so CRSs are identified by ``id``.
+"""
+
+from ._base import CovJSONStruct
+from .i18n import I18n
+
+
+class GeographicCRS(CovJSONStruct, frozen=True, tag="GeographicCRS"):
+    """A geographic coordinate reference system (e.g. lon/lat).
+
+    Examples
+    --------
+    >>> import msgspec
+    >>> crs = GeographicCRS(id="http://www.opengis.net/def/crs/OGC/1.3/CRS84")
+    >>> msgspec.json.encode(crs)  # tag first; omit_defaults drops description
+    b'{"type":"GeographicCRS","id":"http://www.opengis.net/def/crs/OGC/1.3/CRS84"}'
+    """
+
+    id: str | None = None
+    description: I18n | None = None
+
+
+class ProjectedCRS(CovJSONStruct, frozen=True, tag="ProjectedCRS"):
+    """A projected coordinate reference system (e.g. a map projection)."""
+
+    id: str | None = None
+    description: I18n | None = None
+
+
+class VerticalCRS(CovJSONStruct, frozen=True, tag="VerticalCRS"):
+    """A vertical coordinate reference system (e.g. height or depth)."""
+
+    id: str | None = None
+    description: I18n | None = None
+
+
+class TemporalRS(CovJSONStruct, frozen=True, tag="TemporalRS"):
+    """A temporal reference system.
+
+    ``calendar`` is required by the standard (``"Gregorian"`` or a URI). It is
+    intentionally given no default: a default combined with ``omit_defaults``
+    would drop a required member on encode.
+
+    Examples
+    --------
+    >>> import msgspec
+    >>> msgspec.json.encode(TemporalRS(calendar="Gregorian"))
+    b'{"type":"TemporalRS","calendar":"Gregorian"}'
+    """
+
+    calendar: str
+    # Wire name ``timeScale`` (via the base's camel rule); optional, defaults to
+    # UTC when absent.
+    time_scale: str | None = None
+
+
+class Concept(CovJSONStruct, frozen=True):
+    """A referenced concept: a label and an optional description.
+
+    Used for `IdentifierRS.target_concept` and for the values of
+    `IdentifierRS.identifiers`.
+    """
+
+    label: I18n
+    description: I18n | None = None
+
+
+class IdentifierRS(CovJSONStruct, frozen=True, tag="IdentifierRS"):
+    """An identifier-based reference system (categorical / coded values).
+
+    ``target_concept`` (wire ``targetConcept``) is required; ``identifiers``
+    maps each identifier string used in the range to the `Concept` it denotes.
+    """
+
+    target_concept: Concept
+    id: str | None = None
+    label: I18n | None = None
+    description: I18n | None = None
+    identifiers: dict[str, Concept] | None = None
+
+
+# Tagged union over the ``type`` discriminator; msgspec dispatches natively.
+ReferenceSystem = GeographicCRS | ProjectedCRS | VerticalCRS | TemporalRS | IdentifierRS
+
+
+class ReferenceSystemConnection(CovJSONStruct, frozen=True):
+    """Connects a set of coordinate identifiers to their reference system.
+
+    This object has no ``type`` member of its own; ``system`` is the tagged
+    union and is dispatched on its own ``type``.
+
+    Examples
+    --------
+    >>> import msgspec
+    >>> rsc = msgspec.json.decode(
+    ...     b'{"coordinates": ["t"],'
+    ...     b' "system": {"type": "TemporalRS", "calendar": "Gregorian"}}',
+    ...     type=ReferenceSystemConnection,
+    ... )
+    >>> rsc.coordinates
+    ('t',)
+    >>> rsc.system  # decoded to the matching reference-system type
+    TemporalRS(calendar='Gregorian', time_scale=None)
+    """
+
+    coordinates: tuple[str, ...]
+    system: ReferenceSystem
