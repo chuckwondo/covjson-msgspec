@@ -4,8 +4,8 @@ An axis describes the coordinate values along one domain dimension. A single
 `Axis` type models every CoverageJSON shape, and exactly one form must be used:
 
 * **value-listing** -- an explicit ``values`` array;
-* **regular (tight-packed)** -- ``start`` / ``stop`` / ``num`` describing ``num``
-  evenly spaced values; and
+* **regular** -- ``start`` / ``stop`` / ``num``, the compact notation for a
+  regularly spaced axis; and
 * **composite** -- ``dataType`` ``"tuple"`` or ``"polygon"`` with named
   ``coordinates`` (used by trajectory and polygon domains).
 
@@ -23,18 +23,20 @@ from covjson_msgspec._base import CovJSONStruct
 # tuple of primitives) and "polygon" (nested rings of positions).
 #
 # Two msgspec constraints shape this:
-#   1. A union may contain at most ONE array-like (list/set/tuple) member, so we
-#      cannot give the two composite shapes separate tuple aliases.
-#   2. A recursive *type alias* (e.g. ``tuple["AxisValue", ...]``) is not
-#      resolved by msgspec on Python 3.11 (the PEP 695 ``type`` statement that
-#      would resolve it needs 3.12).
-# So composite values use ``tuple[Any, ...]``: the top level decodes to a tuple,
-# with ``Any`` for the rare nested polygon interior.
+#
+# 1. A union may contain at most ONE array-like (list/set/tuple) member, so the
+#    two composite shapes cannot have separate tuple aliases.
+# 2. A recursive type alias (e.g. tuple["AxisValue", ...]) is not resolved by
+#    msgspec on Python 3.11 (the PEP 695 "type" statement that would resolve it
+#    needs 3.12).
+#
+# So composite values use tuple[Any, ...]: the top level decodes to a tuple, with
+# Any for the rare nested polygon interior.
 AxisValue = float | int | str | tuple[Any, ...]
 
 
 # Modeled as one permissive struct rather than a tagged union: the axis shapes
-# share no ``type`` discriminator and msgspec disallows untagged unions of
+# share no "type" discriminator and msgspec disallows untagged unions of
 # multiple structs. __post_init__ enforces that exactly one form is present.
 class Axis(CovJSONStruct, frozen=True):
     """A domain axis in any of its CoverageJSON shapes.
@@ -48,8 +50,8 @@ class Axis(CovJSONStruct, frozen=True):
         ...
     ValueError: Axis requires exactly one of `values` or `start`/`stop`/`num`
 
-    A regular axis decodes from the tight-packed form (camelCase wire names map
-    to snake_case attributes):
+    A regular axis decodes from the compact start/stop/num form (camelCase wire
+    names map to snake_case attributes):
 
     >>> import msgspec
     >>> ax = msgspec.json.decode(b'{"start": 0, "stop": 10, "num": 3}', type=Axis)
@@ -126,7 +128,7 @@ class Axis(CovJSONStruct, frozen=True):
         coordinates: Iterable[str] | None = None,
         bounds: Iterable[float | str] | None = None,
     ) -> Self:
-        """Build a regular (tight-packed) axis of ``num`` evenly spaced values.
+        """Build a regularly spaced axis from compact start/stop/num notation.
 
         Parameters
         ----------

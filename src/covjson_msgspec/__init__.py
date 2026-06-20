@@ -14,6 +14,7 @@ from covjson_msgspec.parameter import (
     Symbol,
     Unit,
 )
+from covjson_msgspec.ranges import NdArray, TiledNdArray, TileSet
 from covjson_msgspec.referencing import (
     Concept,
     GeographicCRS,
@@ -39,6 +40,7 @@ __all__ = [
     "GeographicCRS",
     "I18n",
     "IdentifierRS",
+    "NdArray",
     "ObservedProperty",
     "Parameter",
     "ParameterGroup",
@@ -47,6 +49,8 @@ __all__ = [
     "ReferenceSystemConnection",
     "Symbol",
     "TemporalRS",
+    "TileSet",
+    "TiledNdArray",
     "Unit",
     "VerticalCRS",
     "__version__",
