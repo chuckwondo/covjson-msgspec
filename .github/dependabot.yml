@@ -1,0 +1,29 @@
+# Dependabot: opens grouped PRs to update GitHub Actions pins and dependencies
+# on a schedule. A cooldown holds back brand-new releases (see note below).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # Wait this many days after a release before opening an update PR, so a
+    # freshly published (possibly compromised or soon-yanked) version is not
+    # adopted immediately. Only `default-days` applies here -- the
+    # `semver-*-days` keys are not supported for the github-actions ecosystem.
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    # See the cooldown note above; only `default-days` applies to the uv
+    # ecosystem as well.
+    cooldown:
+      default-days: 7
+    groups:
+      dev-dependencies:
+        dependency-type: development

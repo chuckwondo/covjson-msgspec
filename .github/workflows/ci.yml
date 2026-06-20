@@ -1,0 +1,160 @@
+# Continuous integration on each code change: run the pre-commit checks once;
+# type-check (multiple checkers) and run the test suite across the supported
+# Python versions; and report coverage.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Single source of truth for the Python matrix: derive it from the
+  # `Programming Language :: Python :: 3.x` classifiers in pyproject.toml so the
+  # typecheck and test jobs cannot drift from the project's declared support.
+  config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      python-versions: ${{ steps.derive.outputs.python-versions }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Derive Python versions from pyproject classifiers
+        id: derive
+        shell: python
+        run: |
+          import json
+          import os
+          import pathlib
+          import re
+          import tomllib
+
+          pyproject = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
+          classifier_prefix = "Programming Language :: Python :: "
+          python_versions = [
+              classifier.removeprefix(classifier_prefix)
+              for classifier in pyproject["project"]["classifiers"]
+              if classifier.startswith(classifier_prefix)
+              and re.fullmatch(r"3\.\d+", classifier.removeprefix(classifier_prefix))
+          ]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as github_output:
+              github_output.write(f"python-versions={json.dumps(python_versions)}\n")
+
+  # Run the full pre-commit suite (ruff, formatting, actionlint, zizmor,
+  # gitleaks, shell hooks, lockfile sync, file hygiene) so CI enforces the same
+  # checks a developer runs locally -- defined once in .pre-commit-config.yaml,
+  # not restated here. Backstops anyone who commits with --no-verify.
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --locked --quiet
+      - name: Run pre-commit hooks (prek)
+        run: uv run --quiet prek run --all-files --show-diff-on-failure
+
+  # Type-checking across the supported Python versions and across checkers.
+  # basedpyright (strict) and mypy are blocking; pyrefly and ty are pre-1.0 and
+  # run via `uvx` as informational-only (continue-on-error) so a checker's own
+  # bug cannot red-CI us -- while still surfacing real divergences.
+  typecheck:
+    needs: config
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(needs.config.outputs.python-versions) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Set up uv and Python ${{ matrix.python-version }}
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - name: Install dependencies (incl. type-checkers)
+        run: uv sync --locked --group typecheck --quiet
+      - name: Type-check (mypy)
+        run: uv run --quiet mypy
+      - name: Type-check (basedpyright, strict)
+        run: uv run --quiet basedpyright
+      - name: Type-check (pyrefly, informational)
+        continue-on-error: true
+        run: uvx pyrefly check src tests
+      - name: Type-check (ty, informational)
+        continue-on-error: true
+        run: uvx ty check src tests
+
+  test:
+    needs: config
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(needs.config.outputs.python-versions) }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Set up uv and Python ${{ matrix.python-version }}
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --locked --quiet
+      - name: Run tests (pytest)
+        run: uv run --quiet pytest
+
+  # Coverage on the minimum supported Python (one canonical number, no matrix
+  # gating). No API key: the text report goes to the job log and a markdown
+  # table to the run's summary page.
+  coverage:
+    needs: config
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          persist-credentials: false
+      - name: Set up uv and Python ${{ fromJSON(needs.config.outputs.python-versions)[0] }}
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          python-version: ${{ fromJSON(needs.config.outputs.python-versions)[0] }}
+          enable-cache: true
+          # This job runs on the minimum Python (python-versions[0]), the same
+          # version as the `test` matrix's first entry. Without a distinct suffix
+          # both jobs derive an identical setup-uv cache key and race to save it,
+          # so one logs a "failed to save cache" warning. Namespace this job's
+          # cache to keep the keys separate.
+          cache-suffix: coverage
+      - name: Install dependencies
+        run: uv sync --locked --quiet
+      - name: Run tests with coverage
+        run: uv run --quiet pytest --cov --cov-report=term-missing
+      - name: Write coverage summary to the job summary
+        run: uv run --quiet coverage report --format=markdown --show-missing >> "$GITHUB_STEP_SUMMARY"
