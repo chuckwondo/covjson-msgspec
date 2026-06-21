@@ -211,7 +211,7 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
             else:
                 data_type = "string"
 
-        shape = tuple(int(dim) for dim in array.shape)
+        shape = tuple(map(int, array.shape))
         flat = np.ma.getdata(array).reshape(-1)
         mask = np.ma.getmaskarray(array).reshape(-1)
         values: list[Scalar | None] = []
@@ -220,8 +220,7 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
             if missing:
                 values.append(None)
             elif data_type == "float":
-                number = float(value)
-                values.append(number if math.isfinite(number) else None)
+                values.append(number if math.isfinite(number := float(value)) else None)
             elif data_type == "integer":
                 values.append(int(value))
             else:
