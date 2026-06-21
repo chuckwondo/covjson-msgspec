@@ -31,8 +31,13 @@ else:
 #   but it does honor the bound, so a bare decode still rejects non-Scalars.
 #
 # An explicit parameter (e.g. ``NdArray[float]``) overrides both for that decode.
+#
+# ``covariant=True`` is sound because NdArray is frozen and T appears only in
+# read positions (``values``): it lets ``NdArray[float]`` (the type inferred when
+# you build one from float values) satisfy an API expecting the bare
+# ``NdArray`` (i.e. ``NdArray[Scalar]``), as in the CoverageJSON root union.
 Scalar = float | int | str
-T = TypeVar("T", bound=Scalar, default=Scalar)
+T = TypeVar("T", bound=Scalar, default=Scalar, covariant=True)
 
 
 class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):

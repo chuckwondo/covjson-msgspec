@@ -35,6 +35,15 @@ from covjson_msgspec.referencing import (
     TemporalRS,
     VerticalCRS,
 )
+from covjson_msgspec.validation import (
+    DOMAIN_TYPE_RULES,
+    CovJSONValidationError,
+    DomainType,
+    DomainTypeRule,
+    Issue,
+    Severity,
+    validate,
+)
 
 try:
     __version__ = version("covjson-msgspec")
@@ -42,17 +51,22 @@ except PackageNotFoundError:  # pragma: no cover - only during local dev
     __version__ = "0.0.0"
 
 __all__ = [
+    "DOMAIN_TYPE_RULES",
     "Axis",
     "Category",
     "CategoryEncoding",
     "Concept",
+    "CovJSONValidationError",
     "Coverage",
     "CoverageCollection",
     "CoverageJSON",
     "Domain",
+    "DomainType",
+    "DomainTypeRule",
     "GeographicCRS",
     "I18n",
     "IdentifierRS",
+    "Issue",
     "NdArray",
     "ObservedProperty",
     "Parameter",
@@ -61,6 +75,7 @@ __all__ = [
     "Range",
     "ReferenceSystem",
     "ReferenceSystemConnection",
+    "Severity",
     "Symbol",
     "TemporalRS",
     "TileSet",
@@ -73,4 +88,5 @@ __all__ = [
     "decode_coverage_collection",
     "encode",
     "i18n",
+    "validate",
 ]
