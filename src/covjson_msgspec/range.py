@@ -7,10 +7,16 @@ referenced by URL).
 `NdArray` is generic in its element type. Decoding without a type parameter
 yields the permissive ``float | int | str`` element type; a caller who knows a
 parameter's ``data_type`` can decode ``NdArray[float]`` (etc.) for precise typing.
+
+With the ``numpy`` extra installed, `NdArray.to_numpy` and `NdArray.from_numpy`
+convert to and from NumPy arrays, mapping CoverageJSON's ``null`` to NaN (float),
+a masked entry (integer), or ``None`` (string), and back.
 """
 
+import math
 import sys
-from typing import Generic, Literal
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, Generic, Literal
 
 from covjson_msgspec._base import CovJSONStruct
 
@@ -18,6 +24,12 @@ if sys.version_info >= (3, 13):
     from typing import TypeVar
 else:
     from typing_extensions import TypeVar
+
+if TYPE_CHECKING:
+    import numpy as np
+
+# Raised (as the message) when a numpy bridge method is called without numpy.
+_NUMPY_HINT = "NumPy is required for this conversion; install covjson-msgspec[numpy]"
 
 # Element type for a bare ``NdArray`` (matches the three ``dataType``s).
 #
@@ -74,6 +86,150 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
     values: tuple[T | None, ...]
     shape: tuple[int, ...] = ()
     axis_names: tuple[str, ...] = ()
+
+    def to_numpy(
+        self,
+        *,
+        fill_value: int | None = None,
+        as_float: bool = False,
+    ) -> "np.ndarray[Any, np.dtype[Any]]":
+        """Convert to a NumPy array of this range's ``shape``.
+
+        Requires the ``numpy`` extra. Missing values (``None``) become NaN for a
+        ``"float"`` range, a masked entry for an ``"integer"`` range, and
+        ``None`` in an object array for a ``"string"`` range.
+
+        Parameters
+        ----------
+        fill_value
+            For an ``"integer"`` range with missing values, the masked array's
+            fill value. Ignored otherwise.
+        as_float
+            For an ``"integer"`` range, return a ``float64`` array with NaN for
+            missing values instead of a masked integer array.
+
+        Returns
+        -------
+        numpy.ndarray
+            The values reshaped to ``shape`` (a 0-dimensional array when
+            ``shape`` is empty). Integer ranges with missing values return a
+            ``numpy.ma.MaskedArray`` unless ``as_float`` is set.
+
+        Examples
+        --------
+        >>> arr = NdArray(
+        ...     data_type="float", values=(1.5, None), shape=(2,), axis_names=("x",)
+        ... )
+        >>> arr.to_numpy().tolist()
+        [1.5, nan]
+        """
+        try:
+            import numpy as np
+        except ModuleNotFoundError as exc:  # pragma: no cover - env-dependent
+            raise ModuleNotFoundError(_NUMPY_HINT) from exc
+
+        has_missing = any(value is None for value in self.values)
+
+        if self.data_type == "string":
+            strings = [None if v is None else str(v) for v in self.values]
+            array: np.ndarray[Any, np.dtype[Any]] = np.array(strings, dtype=object)
+        elif self.data_type == "integer" and not as_float:
+            if has_missing:
+                masked = np.ma.MaskedArray(
+                    data=[0 if v is None else int(v) for v in self.values],
+                    mask=[v is None for v in self.values],
+                    dtype=np.int64,
+                )
+
+                if fill_value is not None:
+                    masked.fill_value = fill_value
+
+                array = masked
+            else:
+                ints = [0 if v is None else int(v) for v in self.values]
+                array = np.array(ints, dtype=np.int64)
+        else:
+            # float, or integer requested as float: NaN marks the gaps.
+            floats = [math.nan if v is None else float(v) for v in self.values]
+            array = np.array(floats, dtype=np.float64)
+
+        return array.reshape(self.shape)
+
+    @classmethod
+    def from_numpy(
+        cls,
+        array: "np.ndarray[Any, np.dtype[Any]]",
+        axis_names: Iterable[str],
+        *,
+        data_type: Literal["float", "integer", "string"] | None = None,
+    ) -> "NdArray[Scalar]":
+        """Build an `NdArray` from a NumPy array.
+
+        Requires the ``numpy`` extra. Masked entries and non-finite floats (NaN,
+        infinities) become ``None`` so the result is always JSON-encodable.
+
+        Parameters
+        ----------
+        array
+            The source array; its ``shape`` becomes the range's ``shape``.
+        axis_names
+            One name per dimension of ``array``.
+        data_type
+            The CoverageJSON ``dataType``. Inferred from the array's dtype when
+            omitted (floating to ``"float"``, integer to ``"integer"``,
+            otherwise ``"string"``).
+
+        Returns
+        -------
+        NdArray
+            A range holding the array's values in row-major order.
+
+        Examples
+        --------
+        >>> import numpy as np
+        >>> arr = NdArray.from_numpy(np.array([[1.0, np.nan]]), ("y", "x"))
+        >>> arr.values
+        (1.0, None)
+        >>> arr.shape
+        (1, 2)
+        """
+        try:
+            import numpy as np
+        except ModuleNotFoundError as exc:  # pragma: no cover - env-dependent
+            raise ModuleNotFoundError(_NUMPY_HINT) from exc
+
+        if data_type is None:
+            if np.issubdtype(array.dtype, np.floating):
+                data_type = "float"
+            elif np.issubdtype(array.dtype, np.integer):
+                data_type = "integer"
+            else:
+                data_type = "string"
+
+        shape = tuple(int(dim) for dim in array.shape)
+        flat = np.ma.getdata(array).reshape(-1)
+        mask = np.ma.getmaskarray(array).reshape(-1)
+        values: list[Scalar | None] = []
+
+        for value, missing in zip(flat, mask, strict=True):
+            if missing:
+                values.append(None)
+            elif data_type == "float":
+                number = float(value)
+                values.append(number if math.isfinite(number) else None)
+            elif data_type == "integer":
+                values.append(int(value))
+            else:
+                values.append(None if value is None else str(value))
+
+        # Build NdArray (not cls): the element type is the general Scalar union
+        # determined here at runtime, not the caller's parameterized T.
+        return NdArray(
+            data_type=data_type,
+            values=tuple(values),
+            shape=shape,
+            axis_names=tuple(axis_names),
+        )
 
 
 class TileSet(CovJSONStruct, frozen=True):
