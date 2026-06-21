@@ -1,7 +1,7 @@
 """Contract tests for the msgspec behaviors the design depends on.
 
-These guard against regressions -- including a msgspec *upgrade* silently
-changing a behavior we rely on. They use small standalone structs (mirroring the
+These guard against regressions (including a msgspec *upgrade* silently
+changing a behavior we rely on). They use small standalone structs (mirroring the
 library's modeling patterns) rather than the public API, so each behavior is
 tested in isolation and a failure points straight at the broken assumption.
 (``__post_init__``-on-decode is covered by the real `Parameter`/`Unit` tests and
@@ -12,15 +12,16 @@ Behaviors under test:
 1. Tagged-union dispatch on the ``"type"`` field.
 2. A bare ``str`` mixed into a tagged-struct union (``domain``/``ranges`` URLs).
 3. A bare *generic* struct as a union member, plus parameterized decode.
-4. PEP 696 ``TypeVar`` default works at runtime.
+4. A PEP 696 ``TypeVar`` default is ignored on decode, but a ``bound`` is
+   honored (the contract behind ``NdArray``'s element type).
 5. ``rename="camel"`` on a shared base maps snake_case attrs to lowerCamelCase
    wire names, and composes with generics, tags, and unions.
 6. ``msgspec`` decode bypasses ``__call__`` (so a metaclass guard can block
    direct construction without breaking decoding).
 7. ``frozen=True`` composes with all the above: instances are immutable and
    hashable when their fields are. Sequence members are tuples (immutable,
-   hashable); mapping members stay ``dict`` -- the one mutable/unhashable hole.
-   NOTE: ``frozen`` is not inherited -- every concrete struct must restate it.
+   hashable); mapping members stay ``dict`` (the one mutable/unhashable hole).
+   NOTE: ``frozen`` is not inherited, so every concrete struct must restate it.
 """
 
 import sys
@@ -113,10 +114,28 @@ def test_parameterized_decode_rejects_wrong_element_type() -> None:
         )
 
 
-def test_typevar_default_at_runtime() -> None:
-    nd = NdArray(data_type="float", values=(1.0, None))
-    assert nd.values == (1.0, None)
-    assert nd.shape == ()
+def test_typevar_default_ignored_but_bound_honored_on_decode() -> None:
+    # The contract behind NdArray's `T = TypeVar("T", bound=Scalar,
+    # default=Scalar)`: a bare generic decode IGNORES the PEP 696 default
+    # (treating the element type as Any), so a default-only TypeVar would let a
+    # non-scalar through. A bound, by contrast, IS honored, restoring runtime
+    # enforcement. Hence the library sets both.
+    DefaultOnly = TypeVar("DefaultOnly", default=Scalar)
+    Bounded = TypeVar("Bounded", bound=Scalar, default=Scalar)
+
+    class Loose(_CovJSONStruct, Generic[DefaultOnly], frozen=True):
+        values: tuple[DefaultOnly | None, ...]
+
+    class Strict(_CovJSONStruct, Generic[Bounded], frozen=True):
+        values: tuple[Bounded | None, ...]
+
+    # Default ignored: a nested array (not a Scalar) is accepted as Any.
+    loose = msgspec.json.decode(b'{"values":[[1,2]]}', type=Loose)
+    assert loose.values == ([1, 2],)
+
+    # Bound honored: the same payload is rejected.
+    with pytest.raises(msgspec.ValidationError):
+        msgspec.json.decode(b'{"values":[[1,2]]}', type=Strict)
 
 
 def test_rename_camel_roundtrips_with_generic_and_tag() -> None:

@@ -11,7 +11,7 @@ to build one without hand-writing the mapping.
 # A CoverageJSON i18n object: language tag -> string ("und" if undetermined).
 # Deliberately a plain ``dict`` (not a NewType): it is exactly a JSON object and
 # users benefit from the familiar dict API. This is also why structs carrying a
-# label/description are usually unhashable -- a dict member is mutable.
+# label/description are usually unhashable (a dict member is mutable).
 #
 # Plain-assignment alias (not the PEP 695 ``type`` statement, which needs 3.12+;
 # our floor is 3.11).

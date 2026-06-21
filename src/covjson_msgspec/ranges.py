@@ -28,7 +28,7 @@ else:
 # * ``bound`` is what *msgspec* validates against at decode time for a bare
 #   ``NdArray``: msgspec ignores the PEP 696 default at runtime (it would treat
 #   an unparameterized ``T`` as ``Any``, accepting nested arrays, bools, etc.),
-#   but it does honor the bound -- so a bare decode still rejects non-Scalars.
+#   but it does honor the bound, so a bare decode still rejects non-Scalars.
 #
 # An explicit parameter (e.g. ``NdArray[float]``) overrides both for that decode.
 Scalar = float | int | str
@@ -122,7 +122,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
     tile_sets: tuple[TileSet, ...]
 
     def __post_init__(self) -> None:
-        # O(number of tilesets), all tiny -- safe to run on every path.
+        # O(number of tilesets), all tiny, so safe to run on every path.
         for tile_set in self.tile_sets:
             if len(tile_set.tile_shape) != len(self.shape):
                 raise ValueError(

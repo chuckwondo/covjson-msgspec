@@ -4,8 +4,8 @@ categories.
 A CoverageJSON *parameter* describes one variable found in a coverage's ranges.
 It comes in two mutually exclusive shapes:
 
-* **continuous** -- carries a `Unit`; or
-* **categorical** -- its `ObservedProperty` lists `Category` values and a
+* **continuous**: carries a `Unit`; or
+* **categorical**: its `ObservedProperty` lists `Category` values and a
   ``category_encoding`` maps each category id to the integer code(s) used in the
   range. A categorical parameter MUST NOT carry a unit.
 
@@ -75,7 +75,7 @@ class Unit(CovJSONStruct, frozen=True):
     symbol: str | Symbol | None = None
 
     def __post_init__(self) -> None:
-        # O(1) invariant -- cheap enough to always run, on construction and on
+        # O(1) invariant: cheap enough to always run, on construction and on
         # decode, so a Unit can never exist without a label or symbol.
         if self.label is None and self.symbol is None:
             raise ValueError("Unit requires at least one of `label` or `symbol`")
@@ -138,7 +138,7 @@ class Parameter(CovJSONStruct, frozen=True, tag="Parameter"):
     'K'
 
     A categorical parameter lists categories and encodes them, and must not
-    carry a unit -- enforced even through the raw constructor:
+    carry a unit (enforced even through the raw constructor):
 
     >>> land_cover = ObservedProperty(
     ...     label=i18n("Land cover"),

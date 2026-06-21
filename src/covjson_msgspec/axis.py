@@ -3,15 +3,15 @@
 An axis describes the coordinate values along one domain dimension. A single
 `Axis` type models every CoverageJSON shape, and exactly one form must be used:
 
-* **value-listing** -- an explicit ``values`` array;
-* **regular** -- ``start`` / ``stop`` / ``num``, the compact notation for a
+* **value-listing**: an explicit ``values`` array;
+* **regular**: ``start`` / ``stop`` / ``num``, the compact notation for a
   regularly spaced axis; and
-* **composite** -- ``dataType`` ``"tuple"`` or ``"polygon"`` with named
+* **composite**: ``dataType`` ``"tuple"`` or ``"polygon"`` with named
   ``coordinates`` (used by trajectory and polygon domains).
 
 Builders cover the two common numeric forms (`Axis.regular`, `Axis.listed`);
-composite axes still *decode* fully -- their builders arrive with the
-composite-domain support.
+composite axes still *decode* fully (their builders arrive with the
+composite-domain support).
 """
 
 from collections.abc import Iterable
@@ -19,7 +19,7 @@ from typing import Any, Literal, Self
 
 from covjson_msgspec._base import CovJSONStruct
 
-# A primitive value, or a tuple covering both composite forms -- "tuple" (a flat
+# A primitive value, or a tuple covering both composite forms: "tuple" (a flat
 # tuple of primitives) and "polygon" (nested rings of positions).
 #
 # Two msgspec constraints shape this:

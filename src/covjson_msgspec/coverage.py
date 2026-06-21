@@ -33,7 +33,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
     ``ranges`` maps each parameter key to its values (an `NdArray`, a
     `TiledNdArray`, or a URL string). A standalone coverage carries its own
     ``parameters``; a coverage inside a `CoverageCollection` may instead inherit
-    them -- see `CoverageCollection.resolved_coverages`.
+    them (see `CoverageCollection.resolved_coverages`).
 
     Examples
     --------
@@ -158,7 +158,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
 CoverageJSON = Coverage | CoverageCollection | Domain | NdArray | TiledNdArray
 
 
-# Decoders and the encoder are built once and reused -- constructing them is the
+# Decoders and the encoder are built once and reused: constructing them is the
 # costly step, and they are safe to share.
 _decoder: Final[msgspec.json.Decoder[CoverageJSON]] = msgspec.json.Decoder(CoverageJSON)
 _coverage_decoder: Final[msgspec.json.Decoder[Coverage]] = msgspec.json.Decoder(
