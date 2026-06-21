@@ -24,7 +24,7 @@ from covjson_msgspec.parameter import (
     Symbol,
     Unit,
 )
-from covjson_msgspec.ranges import NdArray, TiledNdArray, TileSet
+from covjson_msgspec.range import NdArray, TiledNdArray, TileSet
 from covjson_msgspec.referencing import (
     Concept,
     GeographicCRS,

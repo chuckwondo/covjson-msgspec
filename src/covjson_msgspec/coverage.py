@@ -19,7 +19,7 @@ import msgspec
 from covjson_msgspec._base import CovJSONStruct
 from covjson_msgspec.domain import Domain
 from covjson_msgspec.parameter import Parameter, ParameterGroup
-from covjson_msgspec.ranges import NdArray, TiledNdArray
+from covjson_msgspec.range import NdArray, TiledNdArray
 from covjson_msgspec.referencing import ReferenceSystemConnection
 
 # A range is inline values (`NdArray` / `TiledNdArray`) or a bare string URL
