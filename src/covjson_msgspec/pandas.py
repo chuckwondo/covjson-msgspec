@@ -90,38 +90,41 @@ def to_pandas(coverage: Coverage) -> "pd.DataFrame":
 
     Examples
     --------
-    >>> from covjson_msgspec import Axis, Coverage, Domain, NdArray
-    >>> cov = Coverage(
-    ...     domain=Domain.point_series(
-    ...         x=Axis.listed((1.0,)),
-    ...         y=Axis.listed((2.0,)),
-    ...         t=Axis.listed(("2020-01-01", "2020-01-02", "2020-01-03")),
-    ...     ),
-    ...     ranges={
-    ...         "v": NdArray(
-    ...             data_type="float",
-    ...             values=(280.0, 281.0, 282.0),
-    ...             shape=(3,),
-    ...             axis_names=("t",),
-    ...         )
-    ...     },
-    ... )
-    >>> df = to_pandas(cov)
-    >>> df
+    Decode a CoverageJSON document and convert it via its `to_pandas` method (the
+    module-level `to_pandas` function is equivalent). The varying ``t`` axis labels
+    the rows (the index), each single-valued axis (``x`` / ``y``) becomes a
+    constant column, and each range (``v``) becomes a value column:
+
+    >>> from covjson_msgspec import decode_coverage
+    >>> cov = decode_coverage(b'''
+    ... {
+    ...   "type": "Coverage",
+    ...   "domain": {
+    ...     "type": "Domain",
+    ...     "domainType": "PointSeries",
+    ...     "axes": {
+    ...       "x": {"values": [1.0]},
+    ...       "y": {"values": [2.0]},
+    ...       "t": {"values": ["2020-01-01", "2020-01-02", "2020-01-03"]}
+    ...     }
+    ...   },
+    ...   "ranges": {
+    ...     "v": {
+    ...       "type": "NdArray",
+    ...       "dataType": "float",
+    ...       "axisNames": ["t"],
+    ...       "shape": [3],
+    ...       "values": [280.0, 281.0, 282.0]
+    ...     }
+    ...   }
+    ... }
+    ... ''')
+    >>> cov.to_pandas()
                   x    y      v
     t
     2020-01-01  1.0  2.0  280.0
     2020-01-02  1.0  2.0  281.0
     2020-01-03  1.0  2.0  282.0
-
-    The varying ``t`` axis labels the rows (the index), each single-valued axis
-    (``x`` / ``y``) becomes a constant column, and each range (``v``) becomes a
-    value column:
-
-    >>> df.index.name
-    't'
-    >>> df["v"].tolist()
-    [280.0, 281.0, 282.0]
     """
     try:
         import pandas as pd

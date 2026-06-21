@@ -106,27 +106,45 @@ def to_xarray(coverage: Coverage) -> "xr.Dataset":
 
     Examples
     --------
-    >>> from covjson_msgspec import Axis, Coverage, Domain, NdArray
-    >>> cov = Coverage(
-    ...     domain=Domain.grid(
-    ...         x=Axis.regular(0.0, 10.0, 2), y=Axis.regular(0.0, 5.0, 2)
-    ...     ),
-    ...     ranges={
-    ...         "t": NdArray(
-    ...             data_type="float",
-    ...             values=(1.0, 2.0, 3.0, 4.0),
-    ...             shape=(2, 2),
-    ...             axis_names=("y", "x"),
-    ...         )
-    ...     },
-    ... )
-    >>> ds = to_xarray(cov)
-    >>> ds["t"].dims
-    ('y', 'x')
-    >>> ds["x"].values.tolist()
-    [0.0, 10.0]
-    >>> ds.attrs["domain_type"]
-    'Grid'
+    Decode a CoverageJSON document and convert it via its `to_xarray` method (the
+    module-level `to_xarray` function is equivalent). Each independent axis becomes
+    a dimension coordinate, the range becomes a data variable over those
+    dimensions, and the domain type is recorded in the attributes:
+
+    >>> from covjson_msgspec import decode_coverage
+    >>> cov = decode_coverage(b'''
+    ... {
+    ...   "type": "Coverage",
+    ...   "domain": {
+    ...     "type": "Domain",
+    ...     "domainType": "Grid",
+    ...     "axes": {
+    ...       "x": {"start": 0.0, "stop": 10.0, "num": 2},
+    ...       "y": {"start": 0.0, "stop": 5.0, "num": 2}
+    ...     }
+    ...   },
+    ...   "ranges": {
+    ...     "t": {
+    ...       "type": "NdArray",
+    ...       "dataType": "float",
+    ...       "axisNames": ["y", "x"],
+    ...       "shape": [2, 2],
+    ...       "values": [1.0, 2.0, 3.0, 4.0]
+    ...     }
+    ...   }
+    ... }
+    ... ''')
+    >>> cov.to_xarray()
+    <xarray.Dataset> Size: ...B
+    Dimensions:  (y: 2, x: 2)
+    Coordinates:
+      * y        (y) float64 ...B 0.0 5.0
+      * x        (x) float64 ...B 0.0 10.0
+    Data variables:
+        t        (y, x) float64 ...B 1.0 2.0 3.0 4.0
+    Attributes:
+        Conventions:  CF-1.10
+        domain_type:  Grid
     """
     try:
         import xarray as xr
@@ -220,27 +238,64 @@ def from_xarray(
 
     Examples
     --------
-    >>> from covjson_msgspec import Axis, Coverage, Domain, NdArray
-    >>> source = Coverage(
-    ...     domain=Domain.grid(
-    ...         x=Axis.regular(0.0, 10.0, 2), y=Axis.regular(0.0, 5.0, 2)
-    ...     ),
-    ...     ranges={
-    ...         "t": NdArray(
-    ...             data_type="float",
-    ...             values=(1.0, 2.0, 3.0, 4.0),
-    ...             shape=(2, 2),
-    ...             axis_names=("y", "x"),
-    ...         )
-    ...     },
-    ... )
-    >>> back = from_xarray(source.to_xarray())
-    >>> back.domain.domain_type
-    'Grid'
-    >>> back.ranges["t"].values
-    (1.0, 2.0, 3.0, 4.0)
-    >>> back.domain.x.coordinate_values
-    (0.0, 10.0)
+    Build a dataset directly and convert it. Here the scalar ``x`` / ``y``
+    coordinates yield a Point domain, each scalar becoming a single-valued axis:
+
+    >>> import msgspec
+    >>> import xarray as xr
+    >>> from covjson_msgspec import encode
+    >>> ds = xr.Dataset({"v": 280.0}, coords={"x": 1.0, "y": 2.0})
+    >>> ds
+    <xarray.Dataset> Size: ...B
+    Dimensions:  ()
+    Coordinates:
+        x        float64 ...B 1.0
+        y        float64 ...B 2.0
+    Data variables:
+        v        float64 ...B 280.0
+
+    The resulting coverage, as CoverageJSON (the wire form, unset fields omitted):
+
+    >>> print(msgspec.json.format(encode(from_xarray(ds)), indent=2).decode())
+    {
+      "type": "Coverage",
+      "domain": {
+        "type": "Domain",
+        "axes": {
+          "x": {
+            "values": [
+              1.0
+            ]
+          },
+          "y": {
+            "values": [
+              2.0
+            ]
+          }
+        },
+        "domainType": "Point",
+        "referencing": [
+          {
+            "coordinates": [
+              "x",
+              "y"
+            ],
+            "system": {
+              "type": "GeographicCRS"
+            }
+          }
+        ]
+      },
+      "ranges": {
+        "v": {
+          "type": "NdArray",
+          "dataType": "float",
+          "values": [
+            280.0
+          ]
+        }
+      }
+    }
     """
     try:
         import xarray  # noqa: F401
@@ -318,25 +373,44 @@ def to_datatree(collection: CoverageCollection) -> "xr.DataTree":
 
     Examples
     --------
-    >>> from covjson_msgspec import (
-    ...     Axis, Coverage, CoverageCollection, Domain, NdArray
-    ... )
-    >>> collection = CoverageCollection(
-    ...     coverages=(
-    ...         Coverage(
-    ...             domain=Domain.point(
-    ...                 x=Axis.listed((1.0,)), y=Axis.listed((2.0,))
-    ...             ),
-    ...             ranges={"t": NdArray(data_type="float", values=(280.0,))},
-    ...         ),
-    ...     ),
-    ...     domain_type="Point",
-    ... )
-    >>> tree = to_datatree(collection)
-    >>> list(tree.children)
-    ['coverage_0']
-    >>> tree["coverage_0"]["t"].item()
-    280.0
+    Decode a CoverageJSON collection and convert it via its `to_datatree` method
+    (the module-level `to_datatree` function is equivalent). Each member coverage
+    becomes a child node (named in member order) holding the `Dataset` that
+    `to_xarray` produces for it:
+
+    >>> from covjson_msgspec import decode_coverage_collection
+    >>> collection = decode_coverage_collection(b'''
+    ... {
+    ...   "type": "CoverageCollection",
+    ...   "domainType": "Point",
+    ...   "coverages": [
+    ...     {
+    ...       "type": "Coverage",
+    ...       "domain": {
+    ...         "type": "Domain",
+    ...         "domainType": "Point",
+    ...         "axes": {"x": {"values": [1.0]}, "y": {"values": [2.0]}}
+    ...       },
+    ...       "ranges": {
+    ...         "t": {"type": "NdArray", "dataType": "float", "values": [280.0]}
+    ...       }
+    ...     }
+    ...   ]
+    ... }
+    ... ''')
+    >>> collection.to_datatree()
+    <xarray.DataTree>
+    Group: /
+    └── Group: /coverage_0
+            Dimensions:  ()
+            Coordinates:
+                x        float64 ...B 1.0
+                y        float64 ...B 2.0
+            Data variables:
+                t        float64 ...B 280.0
+            Attributes:
+                Conventions:  CF-1.10
+                domain_type:  Point
     """
     _require_datatree()
 
@@ -392,23 +466,65 @@ def from_datatree(
 
     Examples
     --------
-    >>> from covjson_msgspec import (
-    ...     Axis, Coverage, CoverageCollection, Domain, NdArray
+    Start from a tree and convert it:
+
+    >>> import numpy as np
+    >>> import xarray as xr
+    >>> node = xr.Dataset(
+    ...     {"t": ("x", np.array([280.0, 281.0]))},
+    ...     coords={"x": [1.0, 2.0]},
     ... )
-    >>> source = CoverageCollection(
-    ...     coverages=(
-    ...         Coverage(
-    ...             domain=Domain.point(
-    ...                 x=Axis.listed((1.0,)), y=Axis.listed((2.0,))
-    ...             ),
-    ...             ranges={"t": NdArray(data_type="float", values=(280.0,))},
-    ...         ),
-    ...     ),
-    ...     domain_type="Point",
-    ... )
-    >>> back = from_datatree(to_datatree(source))
-    >>> back.coverages[0].ranges["t"].values
-    (280.0,)
+    >>> tree = xr.DataTree.from_dict({"coverage_0": node})
+    >>> tree
+    <xarray.DataTree>
+    Group: /
+    └── Group: /coverage_0
+            Dimensions:  (x: 2)
+            Coordinates:
+              * x        (x) float64 ...B 1.0 2.0
+            Data variables:
+                t        (x) float64 ...B 280.0 281.0
+
+    Each data-bearing child node becomes a member coverage, in child order. The
+    resulting collection, as CoverageJSON (the wire form, unset fields omitted):
+
+    >>> import msgspec
+    >>> from covjson_msgspec import encode
+    >>> print(msgspec.json.format(encode(from_datatree(tree)), indent=2).decode())
+    {
+      "type": "CoverageCollection",
+      "coverages": [
+        {
+          "type": "Coverage",
+          "domain": {
+            "type": "Domain",
+            "axes": {
+              "x": {
+                "start": 1.0,
+                "stop": 2.0,
+                "num": 2
+              }
+            }
+          },
+          "ranges": {
+            "t": {
+              "type": "NdArray",
+              "dataType": "float",
+              "values": [
+                280.0,
+                281.0
+              ],
+              "shape": [
+                2
+              ],
+              "axisNames": [
+                "x"
+              ]
+            }
+          }
+        }
+      ]
+    }
     """
     _require_datatree()
 
