@@ -107,6 +107,12 @@ strict = true
 warn_unreachable = true
 enable_error_code = ["redundant-expr", "truthy-bool", "ignore-without-code"]
 
+[[tool.mypy.overrides]]
+# cftime ships no type stubs or py.typed marker; the xarray bridge uses it only
+# for the non-standard-calendar time path.
+module = ["cftime"]
+ignore_missing_imports = true
+
 [tool.basedpyright]
 include = ["src", "tests"]
 typeCheckingMode = "strict"

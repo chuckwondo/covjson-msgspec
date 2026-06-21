@@ -17,7 +17,7 @@ Spec: [Coverage][spec-coverage] and [CoverageCollection][spec-collection] object
 [spec-collection]: https://github.com/covjson/specification/blob/master/spec.md#65-coverage-collection-objects
 """
 
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 import msgspec
 
@@ -26,6 +26,9 @@ from covjson_msgspec.domain import Domain
 from covjson_msgspec.parameter import Parameter, ParameterGroup
 from covjson_msgspec.range import NdArray, TiledNdArray
 from covjson_msgspec.referencing import ReferenceSystemConnection
+
+if TYPE_CHECKING:
+    import xarray as xr
 
 # A range is inline values (`NdArray` / `TiledNdArray`) or a bare string URL
 # referencing the values in a separate document.
@@ -74,6 +77,23 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
     domain_type: str | None = None
     parameters: dict[str, Parameter] | None = None
     parameter_groups: tuple[ParameterGroup, ...] | None = None
+
+    def to_xarray(self) -> "xr.Dataset":
+        """Convert this coverage to a CF-aware `xarray.Dataset`.
+
+        Requires the ``xarray`` extra. Thin delegate to
+        `covjson_msgspec.xarray.to_xarray`; see it for the full domain/range
+        mapping and the conditions it raises on.
+
+        Returns
+        -------
+        xarray.Dataset
+            The coverage as a dataset of parameter variables over the domain's
+            coordinate axes.
+        """
+        from covjson_msgspec.xarray import to_xarray
+
+        return to_xarray(self)
 
 
 class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):

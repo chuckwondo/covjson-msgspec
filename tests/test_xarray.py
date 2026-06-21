@@ -1,0 +1,291 @@
+"""Behavioral tests for the xarray bridge (to_xarray)."""
+
+import numpy as np
+import pytest
+
+from covjson_msgspec import (
+    Axis,
+    Category,
+    Coverage,
+    Domain,
+    GeographicCRS,
+    NdArray,
+    ObservedProperty,
+    Parameter,
+    ReferenceSystemConnection,
+    TemporalRS,
+    TiledNdArray,
+    TileSet,
+    Unit,
+    VerticalCRS,
+    i18n,
+    to_xarray,
+)
+
+
+def _temperature() -> Parameter:
+    return Parameter.continuous(
+        ObservedProperty(
+            label=i18n("Air temperature"),
+            id="http://vocab.nerc.ac.uk/standard_name/air_temperature",
+        ),
+        Unit(symbol="K"),
+    )
+
+
+def test_grid_maps_ranges_to_data_variables() -> None:
+    cov = Coverage(
+        domain=Domain.grid(x=Axis.regular(0.0, 10.0, 2), y=Axis.regular(0.0, 5.0, 2)),
+        ranges={
+            "t": NdArray(
+                data_type="float",
+                values=(1.0, 2.0, 3.0, 4.0),
+                shape=(2, 2),
+                axis_names=("y", "x"),
+            )
+        },
+    )
+    ds = to_xarray(cov)
+
+    assert ds["t"].dims == ("y", "x")
+    assert ds["t"].values.tolist() == [[1.0, 2.0], [3.0, 4.0]]
+    assert ds["x"].values.tolist() == [0.0, 10.0]
+    assert ds.attrs["domain_type"] == "Grid"
+    assert ds.attrs["Conventions"].startswith("CF-")
+
+
+def test_coverage_method_delegates() -> None:
+    cov = Coverage(
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={"t": NdArray(data_type="float", values=(280.0,))},
+    )
+
+    assert cov.to_xarray()["t"].item() == 280.0
+
+
+def test_single_valued_axis_becomes_scalar_coord() -> None:
+    cov = Coverage(
+        domain=Domain.grid(
+            x=Axis.regular(0.0, 10.0, 3),
+            y=Axis.listed((45.0,)),
+        ),
+        ranges={
+            "t": NdArray(
+                data_type="float",
+                values=(1.0, 2.0, 3.0),
+                shape=(3,),
+                axis_names=("x",),
+            )
+        },
+    )
+    ds = to_xarray(cov)
+
+    # The single-valued y axis is a scalar coordinate, not a dimension.
+    assert ds["y"].dims == ()
+    assert ds["y"].item() == 45.0
+    assert "y" not in ds.dims
+
+
+def test_temporal_axis_parsed_to_datetime64() -> None:
+    cov = Coverage(
+        domain=Domain.point_series(
+            x=Axis.listed((1.0,)),
+            y=Axis.listed((2.0,)),
+            t=Axis.listed(("2020-01-01T00:00:00Z", "2020-01-02T00:00:00Z")),
+            referencing=(
+                ReferenceSystemConnection(
+                    coordinates=("t",), system=TemporalRS(calendar="Gregorian")
+                ),
+            ),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float", values=(1.0, 2.0), shape=(2,), axis_names=("t",)
+            )
+        },
+    )
+    ds = to_xarray(cov)
+
+    assert ds["t"].dtype == np.dtype("datetime64[ns]")
+    assert str(ds["t"].values[0]) == "2020-01-01T00:00:00.000000000"
+
+
+def test_temporal_non_standard_calendar_uses_cftime() -> None:
+    import cftime
+
+    cov = Coverage(
+        domain=Domain.point_series(
+            x=Axis.listed((1.0,)),
+            y=Axis.listed((2.0,)),
+            t=Axis.listed(("2020-01-01", "2020-01-30")),
+            referencing=(
+                ReferenceSystemConnection(
+                    coordinates=("t",), system=TemporalRS(calendar="360_day")
+                ),
+            ),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float", values=(1.0, 2.0), shape=(2,), axis_names=("t",)
+            )
+        },
+    )
+    ds = to_xarray(cov)
+
+    assert isinstance(ds["t"].values[0], cftime.datetime)
+    assert ds["t"].values[0].calendar == "360_day"
+
+
+def test_geographic_referencing_sets_cf_attrs_and_grid_mapping() -> None:
+    cov = Coverage(
+        domain=Domain.grid(
+            x=Axis.regular(0.0, 10.0, 2),
+            y=Axis.regular(0.0, 5.0, 2),
+            referencing=(
+                ReferenceSystemConnection(
+                    coordinates=("x", "y"),
+                    system=GeographicCRS(
+                        id="http://www.opengis.net/def/crs/OGC/1.3/CRS84"
+                    ),
+                ),
+            ),
+        ),
+        ranges={
+            "t": NdArray(
+                data_type="float",
+                values=(1.0, 2.0, 3.0, 4.0),
+                shape=(2, 2),
+                axis_names=("y", "x"),
+            )
+        },
+    )
+    ds = to_xarray(cov)
+
+    assert ds["x"].attrs["standard_name"] == "longitude"
+    assert ds["x"].attrs["units"] == "degrees_east"
+    assert ds["y"].attrs["standard_name"] == "latitude"
+    assert ds["y"].attrs["units"] == "degrees_north"
+    assert ds["crs"].attrs["grid_mapping_name"] == "latitude_longitude"
+    assert ds["t"].attrs["grid_mapping"] == "crs"
+
+
+def test_vertical_depth_sets_positive_down() -> None:
+    cov = Coverage(
+        domain=Domain.vertical_profile(
+            x=Axis.listed((1.0,)),
+            y=Axis.listed((2.0,)),
+            z=Axis.listed((10.0, 20.0)),
+            referencing=(
+                ReferenceSystemConnection(
+                    coordinates=("z",),
+                    system=VerticalCRS(id="http://example/crs/sea_water_depth"),
+                ),
+            ),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float", values=(1.0, 2.0), shape=(2,), axis_names=("z",)
+            )
+        },
+    )
+    ds = to_xarray(cov)
+
+    assert ds["z"].attrs["positive"] == "down"
+    assert ds["z"].attrs["standard_name"] == "depth"
+
+
+def test_continuous_parameter_attrs() -> None:
+    cov = Coverage(
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={"t": NdArray(data_type="float", values=(280.0,))},
+        parameters={"t": _temperature()},
+    )
+    ds = to_xarray(cov)
+
+    assert ds["t"].attrs["units"] == "K"
+    assert ds["t"].attrs["long_name"] == "Air temperature"
+    assert ds["t"].attrs["standard_name"] == "air_temperature"
+
+
+def test_categorical_parameter_sets_flag_attrs() -> None:
+    land_cover = ObservedProperty(
+        label=i18n("Land cover"),
+        categories=(
+            Category(id="1", label=i18n("Open water")),
+            Category(id="2", label=i18n("Forest")),
+        ),
+    )
+    cov = Coverage(
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={"lc": NdArray(data_type="integer", values=(2,))},
+        parameters={
+            "lc": Parameter.categorical(land_cover, {"1": 1, "2": 2}),
+        },
+    )
+    ds = to_xarray(cov)
+
+    assert ds["lc"].attrs["flag_values"] == (1, 2)
+    assert ds["lc"].attrs["flag_meanings"] == "Open_water Forest"
+
+
+def test_trajectory_composite_axis_becomes_non_dim_coords() -> None:
+    composite = Axis(
+        data_type="tuple",
+        coordinates=("t", "x", "y"),
+        values=(
+            ("2020-01-01", 1.0, 10.0),
+            ("2020-01-02", 2.0, 20.0),
+            ("2020-01-03", 3.0, 30.0),
+        ),
+    )
+    cov = Coverage(
+        domain=Domain.trajectory(composite),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=(5.0, 6.0, 7.0),
+                shape=(3,),
+                axis_names=("composite",),
+            )
+        },
+    )
+    ds = to_xarray(cov)
+
+    assert ds["v"].dims == ("composite",)
+    assert ds["x"].dims == ("composite",)
+    assert ds["x"].values.tolist() == [1.0, 2.0, 3.0]
+    assert ds["y"].values.tolist() == [10.0, 20.0, 30.0]
+
+
+def test_url_domain_is_rejected() -> None:
+    cov = Coverage(domain="http://example/domain.json", ranges={})
+
+    with pytest.raises(ValueError, match="URL reference"):
+        to_xarray(cov)
+
+
+def test_polygon_domain_routes_to_geopandas() -> None:
+    cov = Coverage(
+        domain=Domain(axes={"composite": Axis.listed((1.0,))}, domain_type="Polygon"),
+        ranges={},
+    )
+
+    with pytest.raises(ValueError, match="geopandas"):
+        to_xarray(cov)
+
+
+def test_non_ndarray_range_is_rejected() -> None:
+    cov = Coverage(
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={
+            "v": TiledNdArray(
+                data_type="float",
+                axis_names=("x",),
+                shape=(2,),
+                tile_sets=(TileSet(tile_shape=(1,), url_template="http://ex/{x}"),),
+            )
+        },
+    )
+
+    with pytest.raises(ValueError, match="inline NdArray"):
+        to_xarray(cov)
