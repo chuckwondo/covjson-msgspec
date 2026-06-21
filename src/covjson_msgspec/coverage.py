@@ -95,6 +95,41 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
 
         return to_xarray(self)
 
+    @classmethod
+    def from_xarray(
+        cls,
+        dataset: "xr.Dataset",
+        *,
+        domain_type: str | None = None,
+        x: str | None = None,
+        y: str | None = None,
+        z: str | None = None,
+        t: str | None = None,
+        compact_regular: bool = True,
+    ) -> "Coverage":
+        """Build a `Coverage` from an `xarray.Dataset`.
+
+        Requires the ``xarray`` extra. Thin delegate to
+        `covjson_msgspec.xarray.from_xarray`; see it for the role detection, the
+        override seams, and the documented lossy points.
+
+        Returns
+        -------
+        Coverage
+            A coverage whose domain and ranges mirror the dataset.
+        """
+        from covjson_msgspec.xarray import from_xarray
+
+        return from_xarray(
+            dataset,
+            domain_type=domain_type,
+            x=x,
+            y=y,
+            z=z,
+            t=t,
+            compact_regular=compact_regular,
+        )
+
 
 class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
     """A collection of coverages sharing a common structure.

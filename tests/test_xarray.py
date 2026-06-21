@@ -1,7 +1,8 @@
-"""Behavioral tests for the xarray bridge (to_xarray)."""
+"""Behavioral tests for the xarray bridge (to_xarray / from_xarray)."""
 
 import numpy as np
 import pytest
+import xarray as xr
 
 from covjson_msgspec import (
     Axis,
@@ -18,9 +19,27 @@ from covjson_msgspec import (
     TileSet,
     Unit,
     VerticalCRS,
+    from_xarray,
     i18n,
     to_xarray,
 )
+
+
+def _dom(coverage: Coverage) -> Domain:
+    domain = coverage.domain
+    assert isinstance(domain, Domain)
+    return domain
+
+
+def _nd(coverage: Coverage, key: str) -> NdArray:
+    array = coverage.ranges[key]
+    assert isinstance(array, NdArray)
+    return array
+
+
+def _params(coverage: Coverage) -> dict[str, Parameter]:
+    assert coverage.parameters is not None
+    return coverage.parameters
 
 
 def _temperature() -> Parameter:
@@ -289,3 +308,230 @@ def test_non_ndarray_range_is_rejected() -> None:
 
     with pytest.raises(ValueError, match="inline NdArray"):
         to_xarray(cov)
+
+
+def test_roundtrip_grid() -> None:
+    cov = Coverage(
+        domain=Domain.grid(x=Axis.regular(0.0, 30.0, 4), y=Axis.regular(0.0, 20.0, 3)),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=tuple(float(i) for i in range(12)),
+                shape=(3, 4),
+                axis_names=("y", "x"),
+            )
+        },
+    )
+    back = from_xarray(to_xarray(cov))
+
+    assert _dom(back).domain_type == "Grid"
+    assert _dom(back).axes["x"].coordinate_values == (0.0, 10.0, 20.0, 30.0)
+    assert _dom(back).axes["y"].coordinate_values == (0.0, 10.0, 20.0)
+    assert _nd(back, "v").axis_names == ("y", "x")
+    assert _nd(back, "v").values == _nd(cov, "v").values
+
+
+def test_roundtrip_point_scalar_axes() -> None:
+    cov = Coverage(
+        domain=Domain.point(x=Axis.listed((5.0,)), y=Axis.listed((6.0,))),
+        ranges={"v": NdArray(data_type="float", values=(280.0,))},
+    )
+    back = from_xarray(to_xarray(cov))
+
+    assert _dom(back).domain_type == "Point"
+    assert _dom(back).axes["x"].coordinate_values == (5.0,)
+    assert _dom(back).axes["y"].coordinate_values == (6.0,)
+    assert _nd(back, "v").values == (280.0,)
+
+
+def test_roundtrip_pointseries_time() -> None:
+    cov = Coverage(
+        domain=Domain.point_series(
+            x=Axis.listed((1.0,)),
+            y=Axis.listed((2.0,)),
+            t=Axis.listed(("2020-01-01T00:00:00Z", "2020-01-02T00:00:00Z")),
+            referencing=(
+                ReferenceSystemConnection(
+                    coordinates=("t",), system=TemporalRS(calendar="Gregorian")
+                ),
+            ),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float", values=(1.0, 2.0), shape=(2,), axis_names=("t",)
+            )
+        },
+    )
+    back = from_xarray(to_xarray(cov))
+
+    assert _dom(back).domain_type == "PointSeries"
+    assert _dom(back).axes["t"].coordinate_values == (
+        "2020-01-01T00:00:00Z",
+        "2020-01-02T00:00:00Z",
+    )
+
+
+def test_roundtrip_trajectory_composite() -> None:
+    composite = Axis(
+        data_type="tuple",
+        coordinates=("t", "x", "y"),
+        values=(
+            ("2020-01-01T00:00:00Z", 1.0, 10.0),
+            ("2020-01-02T00:00:00Z", 2.0, 20.0),
+        ),
+    )
+    cov = Coverage(
+        domain=Domain.trajectory(composite),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=(5.0, 6.0),
+                shape=(2,),
+                axis_names=("composite",),
+            )
+        },
+    )
+    back = from_xarray(to_xarray(cov))
+
+    assert _dom(back).domain_type == "Trajectory"
+    axis = _dom(back).axes["composite"]
+    assert axis.data_type == "tuple"
+    assert axis.coordinates == ("t", "x", "y")
+    assert axis.values == composite.values
+    assert _nd(back, "v").axis_names == ("composite",)
+
+
+def test_roundtrip_recovers_geographic_referencing() -> None:
+    cov = Coverage(
+        domain=Domain.grid(
+            x=Axis.regular(0.0, 10.0, 2),
+            y=Axis.regular(0.0, 5.0, 2),
+            referencing=(
+                ReferenceSystemConnection(
+                    coordinates=("x", "y"),
+                    system=GeographicCRS(
+                        id="http://www.opengis.net/def/crs/OGC/1.3/CRS84"
+                    ),
+                ),
+            ),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=(1.0, 2.0, 3.0, 4.0),
+                shape=(2, 2),
+                axis_names=("y", "x"),
+            )
+        },
+    )
+    back = from_xarray(to_xarray(cov))
+
+    (connection,) = [
+        c for c in _dom(back).referencing if isinstance(c.system, GeographicCRS)
+    ]
+    system = connection.system
+    assert isinstance(system, GeographicCRS)
+    assert connection.coordinates == ("x", "y")
+    assert system.id == "http://www.opengis.net/def/crs/OGC/1.3/CRS84"
+
+
+def test_roundtrip_continuous_parameter() -> None:
+    cov = Coverage(
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={"t": NdArray(data_type="float", values=(280.0,))},
+        parameters={
+            "t": Parameter.continuous(
+                ObservedProperty(
+                    label=i18n("Air temperature"),
+                    id="http://vocab/standard_name/air_temperature",
+                ),
+                Unit(symbol="K"),
+            )
+        },
+    )
+    back = from_xarray(to_xarray(cov))
+
+    parameter = _params(back)["t"]
+    assert parameter.unit is not None
+    assert parameter.unit.symbol == "K"
+    # CF carries no language tag, so the reconstructed label is undetermined.
+    assert parameter.observed_property.label == {"und": "Air temperature"}
+
+
+def test_roundtrip_categorical_parameter() -> None:
+    land_cover = ObservedProperty(
+        label=i18n("Land cover"),
+        categories=(
+            Category(id="1", label=i18n("Open water")),
+            Category(id="2", label=i18n("Forest")),
+        ),
+    )
+    cov = Coverage(
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={"lc": NdArray(data_type="integer", values=(2,))},
+        parameters={"lc": Parameter.categorical(land_cover, {"1": 1, "2": 2})},
+    )
+    back = from_xarray(to_xarray(cov))
+
+    parameter = _params(back)["lc"]
+    assert parameter.category_encoding == {"1": 1, "2": 2}
+    assert parameter.observed_property.categories is not None
+    labels = {c.id: c.label["und"] for c in parameter.observed_property.categories}
+    assert labels == {"1": "Open water", "2": "Forest"}
+
+
+def test_compact_regular_disabled_keeps_listed_values() -> None:
+    cov = Coverage(
+        domain=Domain.grid(x=Axis.regular(0.0, 30.0, 4), y=Axis.listed((0.0,))),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=(1.0, 2.0, 3.0, 4.0),
+                shape=(4,),
+                axis_names=("x",),
+            )
+        },
+    )
+    back = from_xarray(to_xarray(cov), compact_regular=False)
+
+    # Values kept explicitly rather than compacted to start/stop/num.
+    axis = _dom(back).axes["x"]
+    assert axis.values == (0.0, 10.0, 20.0, 30.0)
+    assert axis.start is None
+
+
+def test_from_external_dataset_detects_lon_lat() -> None:
+    ds = xr.Dataset(
+        {"temp": (("lat", "lon"), np.arange(6.0).reshape(3, 2), {"units": "K"})},
+        coords={"lon": [0.0, 10.0], "lat": [0.0, 5.0, 10.0]},
+    )
+    cov = from_xarray(ds)
+
+    assert _dom(cov).domain_type == "Grid"
+    # lon/lat are mapped onto the canonical x/y axis keys.
+    assert _nd(cov, "temp").axis_names == ("y", "x")
+    assert _dom(cov).axes["x"].coordinate_values == (0.0, 10.0)
+    unit = _params(cov)["temp"].unit
+    assert unit is not None
+    assert unit.symbol == "K"
+
+
+def test_override_seams_pin_roles_and_domain_type() -> None:
+    ds = xr.Dataset(
+        {"v": (("a", "b"), np.arange(6.0).reshape(3, 2))},
+        coords={"b": [0.0, 1.0], "a": [0.0, 1.0, 2.0]},
+    )
+    cov = from_xarray(ds, x="b", y="a", domain_type="Grid")
+
+    assert _dom(cov).domain_type == "Grid"
+    assert _nd(cov, "v").axis_names == ("y", "x")
+
+
+def test_coverage_from_xarray_method() -> None:
+    cov = Coverage(
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={"v": NdArray(data_type="float", values=(9.0,))},
+    )
+    back = Coverage.from_xarray(cov.to_xarray())
+
+    assert _nd(back, "v").values == (9.0,)

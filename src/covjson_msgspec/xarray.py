@@ -26,17 +26,26 @@ geopandas bridge; `to_xarray` rejects them.
 Spec: [Coverage objects](https://github.com/covjson/specification/blob/master/spec.md#64-coverage-objects).
 """
 
+import math
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
-from covjson_msgspec.coverage import Coverage
+from covjson_msgspec.axis import Axis
+from covjson_msgspec.coverage import Coverage, Range
 from covjson_msgspec.domain import Domain
-from covjson_msgspec.i18n import I18n
-from covjson_msgspec.parameter import Category, CategoryEncoding, Parameter, Unit
+from covjson_msgspec.i18n import I18n, i18n
+from covjson_msgspec.parameter import (
+    Category,
+    CategoryEncoding,
+    ObservedProperty,
+    Parameter,
+    Unit,
+)
 from covjson_msgspec.range import NdArray
 from covjson_msgspec.referencing import (
     GeographicCRS,
     ReferenceSystem,
+    ReferenceSystemConnection,
     TemporalRS,
     VerticalCRS,
 )
@@ -163,6 +172,114 @@ def to_xarray(coverage: Coverage) -> "xr.Dataset":
         attrs["id"] = coverage.id
 
     return xr.Dataset(data_vars=data_vars, coords=coords, attrs=attrs)
+
+
+def from_xarray(
+    dataset: "xr.Dataset",
+    *,
+    domain_type: str | None = None,
+    x: str | None = None,
+    y: str | None = None,
+    z: str | None = None,
+    t: str | None = None,
+    compact_regular: bool = True,
+) -> Coverage:
+    """Build a `Coverage` from an `xarray.Dataset`.
+
+    Requires the ``xarray`` extra. This is the inverse of `to_xarray`; a dataset
+    produced by `to_xarray` round-trips back to an equivalent coverage. The axis
+    roles (x / y / z / t) are detected from CF attributes and common coordinate
+    names, and can be pinned explicitly when detection is wrong or ambiguous.
+
+    Some mappings are inherently lossy or heuristic: a scalar coordinate becomes
+    a single-valued axis (the original size-1 dimension is not recovered), an
+    evenly spaced numeric axis is compacted to ``start`` / ``stop`` / ``num``
+    when ``compact_regular`` is set, the domain type is inferred when not given,
+    and only ``units`` (continuous) or ``flag_values`` / ``flag_meanings``
+    (categorical) are reconstructed into parameters.
+
+    Parameters
+    ----------
+    dataset
+        The dataset to convert. Its data variables become ranges and its
+        coordinates become domain axes.
+    domain_type
+        The coverage's domain type. Inferred from the dataset (its
+        ``domain_type`` attribute, then the axis layout) when omitted.
+    x, y, z, t
+        Names of the coordinates playing each role, overriding detection.
+    compact_regular
+        Compact an evenly spaced numeric axis to the regular ``start`` /
+        ``stop`` / ``num`` form. Set ``False`` to always keep explicit values.
+
+    Returns
+    -------
+    Coverage
+        A coverage whose domain and ranges mirror the dataset.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Coverage, Domain, NdArray
+    >>> source = Coverage(
+    ...     domain=Domain.grid(
+    ...         x=Axis.regular(0.0, 10.0, 2), y=Axis.regular(0.0, 5.0, 2)
+    ...     ),
+    ...     ranges={
+    ...         "t": NdArray(
+    ...             data_type="float",
+    ...             values=(1.0, 2.0, 3.0, 4.0),
+    ...             shape=(2, 2),
+    ...             axis_names=("y", "x"),
+    ...         )
+    ...     },
+    ... )
+    >>> back = from_xarray(source.to_xarray())
+    >>> back.domain.domain_type
+    'Grid'
+    >>> back.ranges["t"].values
+    (1.0, 2.0, 3.0, 4.0)
+    >>> back.domain.x.coordinate_values
+    (0.0, 10.0)
+    """
+    try:
+        import xarray  # noqa: F401
+    except ModuleNotFoundError as exc:  # pragma: no cover - env-dependent
+        raise ModuleNotFoundError(_INSTALL_HINT) from exc
+
+    roles = _detect_roles(dataset, x=x, y=y, z=z, t=t)
+    composite_dim, composite_roles = _detect_composite(dataset, roles)
+
+    axes, dim_to_key = _build_axes(
+        dataset, roles, composite_dim, composite_roles, compact_regular
+    )
+
+    effective_type = (
+        domain_type
+        or dataset.attrs.get("domain_type")
+        or _infer_domain_type(dataset, roles, composite_dim)
+    )
+    domain = Domain(
+        axes=axes,
+        domain_type=effective_type,
+        referencing=_build_referencing(dataset, roles),
+    )
+
+    ranges: dict[str, Range] = {}
+    parameters: dict[str, Parameter] = {}
+
+    for name, variable in dataset.data_vars.items():
+        key = str(name)
+
+        if _is_grid_mapping(variable) or key.endswith(("_bnds", "_bounds")):
+            continue
+
+        axis_names = tuple(dim_to_key.get(str(dim), str(dim)) for dim in variable.dims)
+        ranges[key] = NdArray.from_numpy(variable.values, axis_names)
+
+        if (parameter := _parameter_from_variable(key, variable)) is not None:
+            parameters[key] = parameter
+
+    return Coverage(domain=domain, ranges=ranges, parameters=parameters or None)
 
 
 def _coordinate_systems(domain: Domain) -> dict[str, ReferenceSystem]:
@@ -414,3 +531,337 @@ def _english(text: I18n | None) -> str | None:
         return None
 
     return text.get("en") or next(iter(text.values()))
+
+
+# Coordinate names commonly used for each role, lower-cased, as a detection
+# fallback when CF attributes are absent.
+_ROLE_NAMES: dict[str, frozenset[str]] = {
+    "x": frozenset({"x", "lon", "longitude"}),
+    "y": frozenset({"y", "lat", "latitude"}),
+    "z": frozenset({"z", "depth", "height", "altitude", "level", "elevation"}),
+    "t": frozenset({"t", "time"}),
+}
+
+
+def _detect_roles(
+    dataset: "xr.Dataset",
+    *,
+    x: str | None,
+    y: str | None,
+    z: str | None,
+    t: str | None,
+) -> dict[str, str | None]:
+    # Explicit overrides win; remaining roles are filled from CF attributes and
+    # common coordinate names, never reusing a coordinate already assigned.
+    roles: dict[str, str | None] = {"x": x, "y": y, "z": z, "t": t}
+    taken = {name for name in roles.values() if name is not None}
+
+    for name, coord in dataset.coords.items():
+        role = _role_of(str(name), coord)
+
+        if role is not None and roles[role] is None and str(name) not in taken:
+            roles[role] = str(name)
+            taken.add(str(name))
+
+    return roles
+
+
+def _role_of(name: str, coord: "xr.DataArray") -> str | None:
+    standard_name = str(coord.attrs.get("standard_name", "")).lower()
+    units = str(coord.attrs.get("units", "")).lower()
+    lowered = name.lower()
+
+    if (
+        standard_name == "longitude"
+        or units.startswith("degrees_e")
+        or lowered in _ROLE_NAMES["x"]
+    ):
+        return "x"
+
+    if (
+        standard_name == "latitude"
+        or units.startswith("degrees_n")
+        or lowered in _ROLE_NAMES["y"]
+    ):
+        return "y"
+
+    if (
+        standard_name in {"depth", "height", "altitude"}
+        or "positive" in coord.attrs
+        or lowered in _ROLE_NAMES["z"]
+    ):
+        return "z"
+
+    if _is_time(coord) or lowered in _ROLE_NAMES["t"]:
+        return "t"
+
+    return None
+
+
+def _is_time(coord: "xr.DataArray") -> bool:
+    import numpy as np
+
+    if np.issubdtype(coord.dtype, np.datetime64):
+        return True
+
+    values = np.atleast_1d(coord.values)
+
+    return (
+        values.dtype == object
+        and values.size > 0
+        and hasattr(values.flat[0], "calendar")
+    )
+
+
+def _detect_composite(
+    dataset: "xr.Dataset",
+    roles: dict[str, str | None],
+) -> tuple[str | None, set[str]]:
+    # A composite (e.g. trajectory) axis shows up as several role coordinates
+    # that are non-dimension coordinates sharing one dimension.
+    groups: dict[str, set[str]] = {}
+
+    for role, name in roles.items():
+        if name is None or name not in dataset.coords:
+            continue
+
+        coord = dataset.coords[name]
+
+        if coord.ndim == 1 and str(coord.dims[0]) != name:
+            groups.setdefault(str(coord.dims[0]), set()).add(role)
+
+    for dim, grouped in groups.items():
+        if len(grouped) >= 2:
+            return dim, grouped
+
+    return None, set()
+
+
+def _build_axes(
+    dataset: "xr.Dataset",
+    roles: dict[str, str | None],
+    composite_dim: str | None,
+    composite_roles: set[str],
+    compact_regular: bool,
+) -> tuple[dict[str, Axis], dict[str, str]]:
+    axes: dict[str, Axis] = {}
+    # Maps a dataset dimension to the CoverageJSON axis key it became.
+    dim_to_key: dict[str, str] = {}
+
+    if composite_dim is not None:
+        order = tuple(role for role in ("t", "x", "y", "z") if role in composite_roles)
+        columns = [_coord_to_list(dataset[roles[role]]) for role in order]
+        axes["composite"] = Axis(
+            data_type="tuple",
+            coordinates=order,
+            values=tuple(zip(*columns, strict=True)),
+        )
+        dim_to_key[composite_dim] = "composite"
+
+    for role in ("x", "y", "z", "t"):
+        name = roles[role]
+
+        if name is None or role in composite_roles:
+            continue
+
+        coord = dataset[name]
+
+        if coord.ndim == 0:
+            axes[role] = Axis.listed((_scalar(coord),))
+        elif coord.ndim == 1 and str(coord.dims[0]) == name:
+            axes[role] = _axis_from_coord(coord, compact_regular)
+            dim_to_key[name] = role
+
+    # Any remaining dimension becomes an axis under its own name so no range
+    # data is orphaned.
+    for dim in dataset.sizes:
+        key = str(dim)
+
+        if key in dim_to_key:
+            continue
+
+        if key in dataset.coords:
+            axes[key] = _axis_from_coord(dataset[key], compact_regular)
+        else:
+            axes[key] = Axis.listed(tuple(range(dataset.sizes[dim])))
+
+        dim_to_key[key] = key
+
+    return axes, dim_to_key
+
+
+def _axis_from_coord(coord: "xr.DataArray", compact_regular: bool) -> Axis:
+    if _is_time(coord):
+        return Axis.listed(tuple(_time_to_iso(coord)))
+
+    import numpy as np
+
+    values = np.atleast_1d(coord.values).tolist()
+
+    if compact_regular and _is_regular(values):
+        return Axis.regular(float(values[0]), float(values[-1]), len(values))
+
+    return Axis.listed(tuple(values))
+
+
+def _is_regular(values: list[Any]) -> bool:
+    if len(values) < 2:
+        return False
+
+    try:
+        numbers = [float(value) for value in values]
+    except (TypeError, ValueError):
+        return False
+
+    step = numbers[1] - numbers[0]
+
+    if step == 0:
+        return False
+
+    return all(
+        math.isclose(numbers[i + 1] - numbers[i], step, rel_tol=1e-9, abs_tol=1e-12)
+        for i in range(len(numbers) - 1)
+    )
+
+
+def _coord_to_list(coord: "xr.DataArray") -> list[Any]:
+    if _is_time(coord):
+        return _time_to_iso(coord)
+
+    import numpy as np
+
+    return list(np.atleast_1d(coord.values).tolist())
+
+
+def _scalar(coord: "xr.DataArray") -> Any:
+    if _is_time(coord):
+        return _time_to_iso(coord)[0]
+
+    return coord.values.item()
+
+
+def _time_to_iso(coord: "xr.DataArray") -> list[Any]:
+    import numpy as np
+
+    result: list[Any] = []
+
+    for value in np.atleast_1d(coord.values):
+        if isinstance(value, np.datetime64):
+            if np.isnat(value):
+                result.append(None)
+            else:
+                # datetime64[ns] exceeds datetime's microsecond resolution, so
+                # narrow before converting to a Python datetime.
+                moment = value.astype("datetime64[us]").astype(datetime)
+                result.append(moment.isoformat() + "Z")
+        elif hasattr(value, "isoformat"):
+            # A cftime datetime (non-standard calendar).
+            result.append(value.isoformat())
+        else:
+            result.append(None if value is None else str(value))
+
+    return result
+
+
+def _calendar(coord: "xr.DataArray") -> str:
+    import numpy as np
+
+    values = np.atleast_1d(coord.values)
+
+    if values.size > 0 and hasattr(values.flat[0], "calendar"):
+        return str(values.flat[0].calendar)
+
+    return "Gregorian"
+
+
+def _build_referencing(
+    dataset: "xr.Dataset",
+    roles: dict[str, str | None],
+) -> tuple[ReferenceSystemConnection, ...]:
+    connections: list[ReferenceSystemConnection] = []
+
+    if roles["x"] is not None and roles["y"] is not None:
+        crs_id = None
+
+        if "crs" in dataset.coords:
+            crs_id = dataset["crs"].attrs.get("reference_system_id")
+
+        connections.append(
+            ReferenceSystemConnection(
+                coordinates=("x", "y"), system=GeographicCRS(id=crs_id)
+            )
+        )
+
+    if roles["z"] is not None:
+        connections.append(
+            ReferenceSystemConnection(coordinates=("z",), system=VerticalCRS())
+        )
+
+    if roles["t"] is not None:
+        connections.append(
+            ReferenceSystemConnection(
+                coordinates=("t",),
+                system=TemporalRS(calendar=_calendar(dataset[roles["t"]])),
+            )
+        )
+
+    return tuple(connections)
+
+
+def _infer_domain_type(
+    dataset: "xr.Dataset",
+    roles: dict[str, str | None],
+    composite_dim: str | None,
+) -> str | None:
+    if composite_dim is not None:
+        return "Trajectory"
+
+    def is_dim(role: str) -> bool:
+        name = roles[role]
+        return name is not None and name in dataset.sizes
+
+    if is_dim("x") and is_dim("y"):
+        return "Grid"
+
+    if roles["x"] is not None and roles["y"] is not None:
+        if is_dim("t") and not is_dim("z"):
+            return "PointSeries"
+
+        if is_dim("z") and not is_dim("t"):
+            return "VerticalProfile"
+
+        if not is_dim("t") and not is_dim("z"):
+            return "Point"
+
+    return None
+
+
+def _is_grid_mapping(variable: "xr.DataArray") -> bool:
+    return "grid_mapping_name" in variable.attrs
+
+
+def _parameter_from_variable(name: str, variable: "xr.DataArray") -> Parameter | None:
+    import numpy as np
+
+    attrs = variable.attrs
+    label = str(attrs.get("long_name") or attrs.get("standard_name") or name)
+
+    if "flag_values" in attrs and "flag_meanings" in attrs:
+        codes = [int(code) for code in np.atleast_1d(attrs["flag_values"]).tolist()]
+        meanings = str(attrs["flag_meanings"]).split()
+        categories = tuple(
+            Category(id=str(code), label=i18n(meaning.replace("_", " ")))
+            for code, meaning in zip(codes, meanings, strict=False)
+        )
+        observed = ObservedProperty(label=i18n(label), categories=categories)
+
+        return Parameter.categorical(observed, {str(code): code for code in codes})
+
+    if (units := attrs.get("units")) is not None:
+        observed = ObservedProperty(label=i18n(label))
+
+        return Parameter.continuous(observed, Unit(symbol=str(units)))
+
+    # Without a unit there is nothing to put in a (unit-required) continuous
+    # parameter, so the range is emitted without a parameter description.
+    return None
