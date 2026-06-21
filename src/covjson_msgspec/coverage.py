@@ -212,7 +212,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
                 domain, referencing=self.referencing
             )
 
-        return coverage if not changes else msgspec.structs.replace(coverage, **changes)
+        return msgspec.structs.replace(coverage, **changes) if changes else coverage
 
     def to_datatree(self) -> "xr.DataTree":
         """Convert this collection to an `xarray.DataTree`.

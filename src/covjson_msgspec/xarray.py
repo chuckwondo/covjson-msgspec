@@ -660,10 +660,7 @@ def _unit_symbol(unit: Unit) -> str | None:
     if isinstance(unit.symbol, str):
         return unit.symbol
 
-    if unit.symbol is not None:
-        return unit.symbol.value
-
-    return None
+    return unit.symbol.value if unit.symbol is not None else None
 
 
 def _flags(
@@ -901,10 +898,7 @@ def _coord_to_list(coord: "xr.DataArray") -> list[Any]:
 
 
 def _scalar(coord: "xr.DataArray") -> Any:
-    if _is_time(coord):
-        return _time_to_iso(coord)[0]
-
-    return coord.values.item()
+    return _time_to_iso(coord)[0] if _is_time(coord) else coord.values.item()
 
 
 def _time_to_iso(coord: "xr.DataArray") -> list[Any]:
