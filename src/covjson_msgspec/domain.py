@@ -24,17 +24,6 @@ from covjson_msgspec.axis import Axis
 from covjson_msgspec.referencing import ReferenceSystemConnection
 
 
-def _referencing(
-    referencing: Iterable[ReferenceSystemConnection] | None,
-) -> tuple[ReferenceSystemConnection, ...]:
-    return () if referencing is None else tuple(referencing)
-
-
-def _axes(**candidates: Axis | None) -> dict[str, Axis]:
-    # Assemble a name->Axis mapping, dropping the unset (None) optional axes.
-    return {name: axis for name, axis in candidates.items() if axis is not None}
-
-
 class Domain(CovJSONStruct, frozen=True, tag="Domain"):
     """The coordinate space of a coverage: its axes and their referencing.
 
@@ -240,3 +229,14 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
             domain_type="Trajectory",
             referencing=_referencing(referencing),
         )
+
+
+def _referencing(
+    referencing: Iterable[ReferenceSystemConnection] | None,
+) -> tuple[ReferenceSystemConnection, ...]:
+    return () if referencing is None else tuple(referencing)
+
+
+def _axes(**candidates: Axis | None) -> dict[str, Axis]:
+    # Assemble a name->Axis mapping, dropping the unset (None) optional axes.
+    return {name: axis for name, axis in candidates.items() if axis is not None}
