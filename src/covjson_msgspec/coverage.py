@@ -148,9 +148,11 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
             changes["parameter_groups"] = self.parameter_groups
 
         # Push shared referencing down into an inline domain that has none.
-        domain = coverage.domain
-
-        if isinstance(domain, Domain) and not domain.referencing and self.referencing:
+        if (
+            isinstance(domain := coverage.domain, Domain)
+            and not domain.referencing
+            and self.referencing
+        ):
             changes["domain"] = msgspec.structs.replace(
                 domain, referencing=self.referencing
             )

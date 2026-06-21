@@ -245,9 +245,7 @@ def _validate_domain(
     )
 
     for name in rule.single_valued_axes:
-        axis = axes.get(name)
-
-        if axis is not None and _axis_length(axis) != 1:
+        if (axis := axes.get(name)) is not None and _axis_length(axis) != 1:
             issues.append(
                 Issue(
                     code="domain.axis-not-single",
@@ -256,20 +254,21 @@ def _validate_domain(
                 )
             )
 
-    if rule.composite_data_type is not None:
-        composite = axes.get("composite")
-
-        if composite is not None and composite.data_type != rule.composite_data_type:
-            issues.append(
-                Issue(
-                    code="domain.composite-data-type",
-                    message=(
-                        f"{domain_type} domain requires a "
-                        f"{rule.composite_data_type!r} composite axis"
-                    ),
-                    path=_ptr(path, "axes", "composite"),
-                )
+    if (
+        rule.composite_data_type is not None
+        and (composite := axes.get("composite")) is not None
+        and composite.data_type != rule.composite_data_type
+    ):
+        issues.append(
+            Issue(
+                code="domain.composite-data-type",
+                message=(
+                    f"{domain_type} domain requires a "
+                    f"{rule.composite_data_type!r} composite axis"
+                ),
+                path=_ptr(path, "axes", "composite"),
             )
+        )
 
     allowed = set(rule.required_axes) | set(rule.optional_axes)
 
@@ -348,9 +347,7 @@ def _check_categorical_codes(
     if param is None or param.observed_property.categories is None:
         return
 
-    encoding = param.category_encoding
-
-    if encoding is None:
+    if (encoding := param.category_encoding) is None:
         return
 
     valid: set[int] = set()
@@ -504,10 +501,9 @@ def validate(
     # TiledNdArray's only document-level rule (tileShape rank) is already
     # enforced in its __post_init__, so there is nothing extra to check here.
 
-    if mode == "raise":
-        errors = tuple(i for i in issues if i.severity is Severity.ERROR)
-
-        if errors:
-            raise CovJSONValidationError(errors)
+    if mode == "raise" and (
+        errors := tuple(i for i in issues if i.severity is Severity.ERROR)
+    ):
+        raise CovJSONValidationError(errors)
 
     return issues
