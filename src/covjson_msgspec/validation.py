@@ -272,14 +272,14 @@ def validate(
 
 def _ptr(prefix: str, *parts: str | int) -> str:
     # Build a JSON Pointer, escaping "~" and "/" in string tokens (RFC 6901).
-    tokens = (
-        f"/{part.replace('~', '~0').replace('/', '~1')}"
+    escaped = (
+        part.replace("~", "~0").replace("/", "~1")
         if isinstance(part, str)
-        else f"/{part}"
+        else str(part)
         for part in parts
     )
 
-    return prefix + "".join(tokens)
+    return "/".join((prefix, *escaped))
 
 
 def _axis_length(axis: Axis) -> int:
