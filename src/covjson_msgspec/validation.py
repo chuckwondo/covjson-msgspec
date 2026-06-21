@@ -22,7 +22,7 @@ Spec: [Common Domain Types](https://github.com/covjson/specification/blob/master
 
 import enum
 import math
-from typing import Literal
+from typing import Literal, assert_never
 
 import msgspec
 
@@ -263,6 +263,10 @@ def validate(
             # Its only document-level rule (tileShape rank) is already enforced
             # in __post_init__, so there is nothing extra to check here.
             pass
+        case _:
+            # Exhaustiveness: a new CoverageJSON member would fail type checking
+            # here until it is handled above.
+            assert_never(obj)
 
     if mode == "raise" and (
         errors := tuple(i for i in issues if i.severity is Severity.ERROR)

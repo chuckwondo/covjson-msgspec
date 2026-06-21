@@ -30,6 +30,11 @@ def _referencing(
     return () if referencing is None else tuple(referencing)
 
 
+def _axes(**candidates: Axis | None) -> dict[str, Axis]:
+    # Assemble a name->Axis mapping, dropping the unset (None) optional axes.
+    return {name: axis for name, axis in candidates.items() if axis is not None}
+
+
 class Domain(CovJSONStruct, frozen=True, tag="Domain"):
     """The coordinate space of a coverage: its axes and their referencing.
 
@@ -111,15 +116,11 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         Domain
             A Grid domain.
         """
-        axes = {"x": x, "y": y}
-
-        if z is not None:
-            axes["z"] = z
-
-        if t is not None:
-            axes["t"] = t
-
-        return cls(axes=axes, domain_type="Grid", referencing=_referencing(referencing))
+        return cls(
+            axes=_axes(x=x, y=y, z=z, t=t),
+            domain_type="Grid",
+            referencing=_referencing(referencing),
+        )
 
     @classmethod
     def point(
@@ -138,16 +139,8 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         Domain
             A Point domain.
         """
-        axes = {"x": x, "y": y}
-
-        if z is not None:
-            axes["z"] = z
-
-        if t is not None:
-            axes["t"] = t
-
         return cls(
-            axes=axes,
+            axes=_axes(x=x, y=y, z=z, t=t),
             domain_type="Point",
             referencing=_referencing(referencing),
         )
@@ -180,13 +173,8 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         Domain
             A PointSeries domain.
         """
-        axes = {"x": x, "y": y, "t": t}
-
-        if z is not None:
-            axes["z"] = z
-
         return cls(
-            axes=axes,
+            axes=_axes(x=x, y=y, t=t, z=z),
             domain_type="PointSeries",
             referencing=_referencing(referencing),
         )
@@ -219,13 +207,8 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         Domain
             A VerticalProfile domain.
         """
-        axes = {"x": x, "y": y, "z": z}
-
-        if t is not None:
-            axes["t"] = t
-
         return cls(
-            axes=axes,
+            axes=_axes(x=x, y=y, z=z, t=t),
             domain_type="VerticalProfile",
             referencing=_referencing(referencing),
         )
