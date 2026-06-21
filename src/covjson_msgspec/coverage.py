@@ -28,6 +28,7 @@ from covjson_msgspec.range import NdArray, TiledNdArray
 from covjson_msgspec.referencing import ReferenceSystemConnection
 
 if TYPE_CHECKING:
+    import pandas as pd
     import xarray as xr
 
 # A range is inline values (`NdArray` / `TiledNdArray`) or a bare string URL
@@ -129,6 +130,23 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
             t=t,
             compact_regular=compact_regular,
         )
+
+    def to_pandas(self) -> "pd.DataFrame":
+        """Convert this coverage to a tidy `pandas.DataFrame`.
+
+        Requires the ``pandas`` extra. Thin delegate to
+        `covjson_msgspec.pandas.to_pandas`; see it for the full domain/range
+        mapping and the conditions it raises on.
+
+        Returns
+        -------
+        pandas.DataFrame
+            The coverage as a frame of parameter columns over its coordinate
+            axes.
+        """
+        from covjson_msgspec.pandas import to_pandas
+
+        return to_pandas(self)
 
 
 class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):

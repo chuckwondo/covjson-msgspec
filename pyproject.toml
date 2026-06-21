@@ -114,6 +114,12 @@ enable_error_code = ["redundant-expr", "truthy-bool", "ignore-without-code"]
 module = ["cftime"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# pandas ships no py.typed marker (its types live in the separate pandas-stubs
+# package); the pandas bridge treats it as untyped.
+module = ["pandas"]
+ignore_missing_imports = true
+
 [tool.basedpyright]
 include = ["src", "tests"]
 typeCheckingMode = "strict"
