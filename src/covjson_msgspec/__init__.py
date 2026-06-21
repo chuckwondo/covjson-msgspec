@@ -3,6 +3,16 @@
 from importlib.metadata import PackageNotFoundError, version
 
 from covjson_msgspec.axis import Axis
+from covjson_msgspec.coverage import (
+    Coverage,
+    CoverageCollection,
+    CoverageJSON,
+    Range,
+    decode,
+    decode_coverage,
+    decode_coverage_collection,
+    encode,
+)
 from covjson_msgspec.domain import Domain
 from covjson_msgspec.i18n import I18n, i18n
 from covjson_msgspec.parameter import (
@@ -36,6 +46,9 @@ __all__ = [
     "Category",
     "CategoryEncoding",
     "Concept",
+    "Coverage",
+    "CoverageCollection",
+    "CoverageJSON",
     "Domain",
     "GeographicCRS",
     "I18n",
@@ -45,6 +58,7 @@ __all__ = [
     "Parameter",
     "ParameterGroup",
     "ProjectedCRS",
+    "Range",
     "ReferenceSystem",
     "ReferenceSystemConnection",
     "Symbol",
@@ -54,5 +68,9 @@ __all__ = [
     "Unit",
     "VerticalCRS",
     "__version__",
+    "decode",
+    "decode_coverage",
+    "decode_coverage_collection",
+    "encode",
     "i18n",
 ]

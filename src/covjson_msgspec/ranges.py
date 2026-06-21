@@ -19,9 +19,20 @@ if sys.version_info >= (3, 13):
 else:
     from typing_extensions import TypeVar
 
-# Default element type for a bare ``NdArray`` (matches the three ``dataType``s).
+# Element type for a bare ``NdArray`` (matches the three ``dataType``s).
+#
+# Both ``bound`` and ``default`` are set, and they do different jobs:
+#
+# * ``default`` is a PEP 696 default that the *type checker* substitutes when a
+#   bare ``NdArray`` is used, so ``NdArray.values`` reads as a tuple of Scalars.
+# * ``bound`` is what *msgspec* validates against at decode time for a bare
+#   ``NdArray``: msgspec ignores the PEP 696 default at runtime (it would treat
+#   an unparameterized ``T`` as ``Any``, accepting nested arrays, bools, etc.),
+#   but it does honor the bound -- so a bare decode still rejects non-Scalars.
+#
+# An explicit parameter (e.g. ``NdArray[float]``) overrides both for that decode.
 Scalar = float | int | str
-T = TypeVar("T", default=Scalar)
+T = TypeVar("T", bound=Scalar, default=Scalar)
 
 
 class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):

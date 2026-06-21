@@ -106,7 +106,7 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         Domain
             A Grid domain.
         """
-        axes: dict[str, Axis] = {"x": x, "y": y}
+        axes = {"x": x, "y": y}
 
         if z is not None:
             axes["z"] = z
@@ -133,7 +133,7 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         Domain
             A Point domain.
         """
-        axes: dict[str, Axis] = {"x": x, "y": y}
+        axes = {"x": x, "y": y}
 
         if z is not None:
             axes["z"] = z
@@ -142,7 +142,9 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
             axes["t"] = t
 
         return cls(
-            axes=axes, domain_type="Point", referencing=_referencing(referencing)
+            axes=axes,
+            domain_type="Point",
+            referencing=_referencing(referencing),
         )
 
     @classmethod
@@ -173,13 +175,15 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         Domain
             A PointSeries domain.
         """
-        axes: dict[str, Axis] = {"x": x, "y": y, "t": t}
+        axes = {"x": x, "y": y, "t": t}
 
         if z is not None:
             axes["z"] = z
 
         return cls(
-            axes=axes, domain_type="PointSeries", referencing=_referencing(referencing)
+            axes=axes,
+            domain_type="PointSeries",
+            referencing=_referencing(referencing),
         )
 
     @classmethod
@@ -210,7 +214,7 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         Domain
             A VerticalProfile domain.
         """
-        axes: dict[str, Axis] = {"x": x, "y": y, "z": z}
+        axes = {"x": x, "y": y, "z": z}
 
         if t is not None:
             axes["t"] = t

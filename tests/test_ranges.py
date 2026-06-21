@@ -27,6 +27,17 @@ def test_ndarray_typed_decode_and_rejection() -> None:
         )
 
 
+def test_bare_ndarray_enforces_scalar_bound_on_decode() -> None:
+    # msgspec ignores the TypeVar PEP 696 *default* at runtime but honors its
+    # *bound*, so a bare NdArray still rejects non-scalar element values.
+    for blob in (
+        b'{"type":"NdArray","dataType":"float","values":[[1,2]]}',
+        b'{"type":"NdArray","dataType":"float","values":[true]}',
+    ):
+        with pytest.raises(msgspec.ValidationError):
+            msgspec.json.decode(blob, type=NdArray)
+
+
 def test_ndarray_zero_dimensional_defaults() -> None:
     arr = msgspec.json.decode(
         b'{"type":"NdArray","dataType":"float","values":[42.0]}', type=NdArray
