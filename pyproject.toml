@@ -38,7 +38,8 @@ Issues = "https://github.com/chuckwondo/covjson-msgspec/issues"
 # hint if missing.
 [project.optional-dependencies]
 numpy = ["numpy>=1.24"]
-xarray = ["xarray>=2024.1", "numpy>=1.24", "cftime>=1.6"]
+# xarray>=2024.10 first ships xarray.DataTree, used by the collection bridge.
+xarray = ["xarray>=2024.10", "numpy>=1.24", "cftime>=1.6"]
 pandas = ["pandas>=2.0", "numpy>=1.24"]
 geo = ["geopandas>=0.14", "shapely>=2.0"]
 fastapi = ["fastapi>=0.110"]

@@ -52,7 +52,12 @@ from covjson_msgspec.validation import (
     Severity,
     validate,
 )
-from covjson_msgspec.xarray import from_xarray, to_xarray
+from covjson_msgspec.xarray import (
+    from_datatree,
+    from_xarray,
+    to_datatree,
+    to_xarray,
+)
 
 try:
     __version__ = version("covjson-msgspec")
@@ -96,8 +101,10 @@ __all__ = [
     "decode_coverage",
     "decode_coverage_collection",
     "encode",
+    "from_datatree",
     "from_xarray",
     "i18n",
+    "to_datatree",
     "to_xarray",
     "validate",
 ]

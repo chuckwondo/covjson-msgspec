@@ -214,6 +214,57 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
 
         return coverage if not changes else msgspec.structs.replace(coverage, **changes)
 
+    def to_datatree(self) -> "xr.DataTree":
+        """Convert this collection to an `xarray.DataTree`.
+
+        Requires the ``xarray`` extra. Thin delegate to
+        `covjson_msgspec.xarray.to_datatree`; see it for the per-member mapping
+        and the conditions it raises on.
+
+        Returns
+        -------
+        xarray.DataTree
+            A tree with one child node per member coverage.
+        """
+        from covjson_msgspec.xarray import to_datatree
+
+        return to_datatree(self)
+
+    @classmethod
+    def from_datatree(
+        cls,
+        tree: "xr.DataTree",
+        *,
+        domain_type: str | None = None,
+        x: str | None = None,
+        y: str | None = None,
+        z: str | None = None,
+        t: str | None = None,
+        compact_regular: bool = True,
+    ) -> "CoverageCollection":
+        """Build a `CoverageCollection` from an `xarray.DataTree`.
+
+        Requires the ``xarray`` extra. Thin delegate to
+        `covjson_msgspec.xarray.from_datatree`; see it for the per-node
+        conversion and the override seams.
+
+        Returns
+        -------
+        CoverageCollection
+            A collection whose members mirror the tree's data-bearing nodes.
+        """
+        from covjson_msgspec.xarray import from_datatree
+
+        return from_datatree(
+            tree,
+            domain_type=domain_type,
+            x=x,
+            y=y,
+            z=z,
+            t=t,
+            compact_regular=compact_regular,
+        )
+
 
 # The root of any CoverageJSON document. Domain and the range types are valid
 # standalone documents too (e.g. a domain referenced by a coverage's URL range).

@@ -2,7 +2,8 @@
 
 This bridge maps a coverage's domain and ranges onto xarray so the result can be
 written straight to netCDF or Zarr (`Dataset.to_netcdf` / `Dataset.to_zarr`) and
-read by the wider CF-aware ecosystem.
+read by the wider CF-aware ecosystem. A `CoverageCollection` maps to an
+`xarray.DataTree` (one child node per member) via `to_datatree` / `from_datatree`.
 
 Mapping
 -------
@@ -31,7 +32,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
 from covjson_msgspec.axis import Axis
-from covjson_msgspec.coverage import Coverage, Range
+from covjson_msgspec.coverage import Coverage, CoverageCollection, Range
 from covjson_msgspec.domain import Domain
 from covjson_msgspec.i18n import I18n, i18n
 from covjson_msgspec.parameter import (
@@ -279,7 +280,173 @@ def from_xarray(
         if (parameter := _parameter_from_variable(key, variable)) is not None:
             parameters[key] = parameter
 
-    return Coverage(domain=domain, ranges=ranges, parameters=parameters or None)
+    coverage_id = dataset.attrs.get("id")
+
+    return Coverage(
+        domain=domain,
+        ranges=ranges,
+        id=None if coverage_id is None else str(coverage_id),
+        parameters=parameters or None,
+    )
+
+
+def to_datatree(collection: CoverageCollection) -> "xr.DataTree":
+    """Convert a `CoverageCollection` to an `xarray.DataTree`.
+
+    Requires the ``xarray`` extra (and xarray with ``DataTree`` support). Each
+    member coverage becomes a child node holding the `Dataset` that `to_xarray`
+    would produce for it, named ``coverage_0``, ``coverage_1``, and so on in
+    member order. Inheritance is applied first (via
+    `CoverageCollection.resolved_coverages`) so every node is self-contained.
+
+    Parameters
+    ----------
+    collection
+        The collection to convert. Every member's domain must be an inline
+        `Domain` and every range an inline `NdArray` (see `to_xarray`).
+
+    Returns
+    -------
+    xarray.DataTree
+        A tree whose child nodes are the member coverages as datasets.
+
+    Raises
+    ------
+    ValueError
+        If any member cannot be converted by `to_xarray` (e.g. a polygon
+        domain, a URL-reference domain, or a non-inline range).
+
+    Examples
+    --------
+    >>> from covjson_msgspec import (
+    ...     Axis, Coverage, CoverageCollection, Domain, NdArray
+    ... )
+    >>> collection = CoverageCollection(
+    ...     coverages=(
+    ...         Coverage(
+    ...             domain=Domain.point(
+    ...                 x=Axis.listed((1.0,)), y=Axis.listed((2.0,))
+    ...             ),
+    ...             ranges={"t": NdArray(data_type="float", values=(280.0,))},
+    ...         ),
+    ...     ),
+    ...     domain_type="Point",
+    ... )
+    >>> tree = to_datatree(collection)
+    >>> list(tree.children)
+    ['coverage_0']
+    >>> tree["coverage_0"]["t"].item()
+    280.0
+    """
+    _require_datatree()
+
+    import xarray as xr
+
+    nodes = {
+        f"coverage_{index}": to_xarray(coverage)
+        for index, coverage in enumerate(collection.resolved_coverages())
+    }
+
+    return xr.DataTree.from_dict(nodes)
+
+
+def from_datatree(
+    tree: "xr.DataTree",
+    *,
+    domain_type: str | None = None,
+    x: str | None = None,
+    y: str | None = None,
+    z: str | None = None,
+    t: str | None = None,
+    compact_regular: bool = True,
+) -> CoverageCollection:
+    """Build a `CoverageCollection` from an `xarray.DataTree`.
+
+    Requires the ``xarray`` extra. This is the inverse of `to_datatree`: each
+    child node holding data variables becomes a member coverage via
+    `from_xarray`, in child order. A single-node tree whose root itself holds
+    data is treated as a one-member collection.
+
+    The result is *flat*: each coverage carries its own parameters and
+    referencing rather than hoisting the shared fields onto the collection, so a
+    round-trip preserves the data without reconstructing the original
+    inheritance. The keyword seams are forwarded unchanged to `from_xarray` and
+    apply to every node.
+
+    Parameters
+    ----------
+    tree
+        The tree to convert. Its data-bearing nodes become member coverages.
+    domain_type
+        The domain type for every member, inferred per node when omitted.
+    x, y, z, t
+        Names of the coordinates playing each role, overriding detection for
+        every node.
+    compact_regular
+        Compact evenly spaced numeric axes to the regular form.
+
+    Returns
+    -------
+    CoverageCollection
+        A collection whose members mirror the tree's data-bearing nodes.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import (
+    ...     Axis, Coverage, CoverageCollection, Domain, NdArray
+    ... )
+    >>> source = CoverageCollection(
+    ...     coverages=(
+    ...         Coverage(
+    ...             domain=Domain.point(
+    ...                 x=Axis.listed((1.0,)), y=Axis.listed((2.0,))
+    ...             ),
+    ...             ranges={"t": NdArray(data_type="float", values=(280.0,))},
+    ...         ),
+    ...     ),
+    ...     domain_type="Point",
+    ... )
+    >>> back = from_datatree(to_datatree(source))
+    >>> back.coverages[0].ranges["t"].values
+    (280.0,)
+    """
+    _require_datatree()
+
+    def convert(dataset: "xr.Dataset") -> Coverage:
+        return from_xarray(
+            dataset,
+            domain_type=domain_type,
+            x=x,
+            y=y,
+            z=z,
+            t=t,
+            compact_regular=compact_regular,
+        )
+
+    coverages = [
+        convert(dataset)
+        for node in tree.children.values()
+        if (dataset := node.to_dataset()).data_vars
+    ]
+
+    # A degenerate single-node tree carries its data on the root, not a child.
+    if not coverages and (root := tree.to_dataset()).data_vars:
+        coverages.append(convert(root))
+
+    return CoverageCollection(coverages=tuple(coverages))
+
+
+def _require_datatree() -> None:
+    try:
+        import xarray as xr
+    except ModuleNotFoundError as exc:  # pragma: no cover - env-dependent
+        raise ModuleNotFoundError(_INSTALL_HINT) from exc
+
+    if not hasattr(xr, "DataTree"):  # pragma: no cover - version-dependent
+        raise ModuleNotFoundError(
+            "xarray.DataTree is required for collection conversion; "
+            "upgrade to xarray>=2024.10"
+        )
 
 
 def _coordinate_systems(domain: Domain) -> dict[str, ReferenceSystem]:

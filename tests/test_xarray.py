@@ -8,6 +8,7 @@ from covjson_msgspec import (
     Axis,
     Category,
     Coverage,
+    CoverageCollection,
     Domain,
     GeographicCRS,
     NdArray,
@@ -19,8 +20,10 @@ from covjson_msgspec import (
     TileSet,
     Unit,
     VerticalCRS,
+    from_datatree,
     from_xarray,
     i18n,
+    to_datatree,
     to_xarray,
 )
 
@@ -535,3 +538,77 @@ def test_coverage_from_xarray_method() -> None:
     back = Coverage.from_xarray(cov.to_xarray())
 
     assert _nd(back, "v").values == (9.0,)
+
+
+def test_roundtrip_recovers_coverage_id() -> None:
+    cov = Coverage(
+        id="urn:cov:42",
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={"v": NdArray(data_type="float", values=(9.0,))},
+    )
+    back = from_xarray(to_xarray(cov))
+
+    assert back.id == "urn:cov:42"
+
+
+def _collection() -> CoverageCollection:
+    members = (
+        Coverage(
+            id="point-a",
+            domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+            ranges={"t": NdArray(data_type="float", values=(280.0,))},
+        ),
+        Coverage(
+            id="point-b",
+            domain=Domain.point(x=Axis.listed((3.0,)), y=Axis.listed((4.0,))),
+            ranges={"t": NdArray(data_type="float", values=(281.0,))},
+        ),
+    )
+
+    return CoverageCollection(
+        coverages=members,
+        domain_type="Point",
+        parameters={"t": _temperature()},
+    )
+
+
+def test_collection_to_datatree_one_node_per_coverage() -> None:
+    tree = to_datatree(_collection())
+
+    assert list(tree.children) == ["coverage_0", "coverage_1"]
+    assert tree["coverage_0"]["t"].item() == 280.0
+    assert tree["coverage_1"]["t"].item() == 281.0
+    # Inherited parameters land on each node as CF attributes.
+    assert tree["coverage_0"]["t"].attrs["units"] == "K"
+
+
+def test_collection_datatree_roundtrip() -> None:
+    back = from_datatree(to_datatree(_collection()))
+
+    assert len(back.coverages) == 2
+    assert [c.id for c in back.coverages] == ["point-a", "point-b"]
+    assert _nd(back.coverages[0], "t").values == (280.0,)
+    # The flat result carries parameters per member rather than hoisting them.
+    assert back.coverages[0].parameters is not None
+    assert back.coverages[0].parameters["t"].unit is not None
+    assert back.coverages[0].parameters["t"].unit.symbol == "K"
+
+
+def test_collection_method_delegates() -> None:
+    collection = _collection()
+    tree = collection.to_datatree()
+    back = CoverageCollection.from_datatree(tree)
+
+    assert len(back.coverages) == 2
+    assert _nd(back.coverages[1], "t").values == (281.0,)
+
+
+def test_from_datatree_single_node_root_data() -> None:
+    ds = xr.Dataset(
+        {"temp": (("lat", "lon"), np.arange(6.0).reshape(3, 2), {"units": "K"})},
+        coords={"lon": [0.0, 10.0], "lat": [0.0, 5.0, 10.0]},
+    )
+    collection = from_datatree(xr.DataTree(dataset=ds))
+
+    assert len(collection.coverages) == 1
+    assert _dom(collection.coverages[0]).domain_type == "Grid"
