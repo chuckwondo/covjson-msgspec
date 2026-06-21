@@ -10,6 +10,8 @@ that references them.
 Per the CoverageJSON standard the three spatial CRS types share the same shape
 (an optional ``id`` URI and ``description``); the standard does not define an
 embedded coordinate-system (``cs``) object, so CRSs are identified by ``id``.
+
+Spec: [Reference system objects](https://github.com/covjson/specification/blob/master/spec.md#5-reference-system-objects).
 """
 
 from covjson_msgspec._base import CovJSONStruct

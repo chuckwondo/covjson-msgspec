@@ -16,6 +16,8 @@ the value-scanning checks that are skipped by default.
 The per-domain-type axis rules live in the `DOMAIN_TYPE_RULES` registry, keyed by
 `DomainType`. The registry is a plain dict: add or replace an entry to teach
 `validate` about a custom domain type or to override a built-in rule.
+
+Spec: [Common Domain Types](https://github.com/covjson/specification/blob/master/domain-types.md).
 """
 
 import enum
@@ -121,9 +123,10 @@ class DomainTypeRule(msgspec.Struct, frozen=True):
     composite_data_type: Literal["tuple", "polygon"] | None = None
 
 
-# Derived from the OGC "Common CoverageJSON Domain Types" specification. The
-# composite axis's coordinate identifiers (e.g. ["t","x","y"]) are part of the
-# spec but not yet enforced here. Override or extend by mutating this dict.
+# Derived from the Common Domain Types specification (linked in the module
+# docstring). The composite axis's coordinate identifiers (e.g. ["t","x","y"])
+# are part of the spec but not yet enforced here. Override or extend by mutating
+# this dict.
 DOMAIN_TYPE_RULES: dict[str, DomainTypeRule] = {
     DomainType.GRID: DomainTypeRule(
         required_axes=("x", "y"),
@@ -201,7 +204,7 @@ def _ptr(prefix: str, *parts: str | int) -> str:
         else:
             token = str(part)
 
-        out += "/" + token
+        out += f"/{token}"
 
     return out
 
@@ -231,15 +234,15 @@ def _validate_domain(
 
     axes = domain.axes
 
-    for name in rule.required_axes:
-        if name not in axes:
-            issues.append(
-                Issue(
-                    code="domain.missing-axis",
-                    message=f"{domain_type} domain requires a {name!r} axis",
-                    path=_ptr(path, "axes", name),
-                )
-            )
+    issues.extend(
+        Issue(
+            code="domain.missing-axis",
+            message=f"{domain_type} domain requires a {name!r} axis",
+            path=_ptr(path, "axes", name),
+        )
+        for name in rule.required_axes
+        if name not in axes
+    )
 
     for name in rule.single_valued_axes:
         axis = axes.get(name)
@@ -270,16 +273,16 @@ def _validate_domain(
 
     allowed = set(rule.required_axes) | set(rule.optional_axes)
 
-    for name in axes:
-        if name not in allowed:
-            issues.append(
-                Issue(
-                    code="domain.unexpected-axis",
-                    message=f"{domain_type} domain has an unexpected {name!r} axis",
-                    path=_ptr(path, "axes", name),
-                    severity=Severity.WARNING,
-                )
-            )
+    issues.extend(
+        Issue(
+            code="domain.unexpected-axis",
+            message=f"{domain_type} domain has an unexpected {name!r} axis",
+            path=_ptr(path, "axes", name),
+            severity=Severity.WARNING,
+        )
+        for name in axes
+        if name not in allowed
+    )
 
 
 def _validate_ndarray(arr: NdArray, path: str, issues: list[Issue]) -> None:

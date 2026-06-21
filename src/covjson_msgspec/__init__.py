@@ -1,4 +1,12 @@
-"""Fast, fully-typed CoverageJSON models built on msgspec."""
+"""Fast, fully-typed CoverageJSON models built on msgspec.
+
+These types model the CoverageJSON format, published as OGC Community Standard
+21-069r2. The canonical, navigable specification (with the section anchors linked
+from each submodule) lives at
+https://github.com/covjson/specification/blob/master/spec.md, and the well-known
+domain types at
+https://github.com/covjson/specification/blob/master/domain-types.md.
+"""
 
 from importlib.metadata import PackageNotFoundError, version
 

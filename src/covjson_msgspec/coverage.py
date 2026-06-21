@@ -10,6 +10,11 @@ document, and `decode_coverage` / `decode_coverage_collection` decode a known
 document type. Inheritance is applied on demand by
 `CoverageCollection.resolved_coverages`, never silently on decode, so a decoded
 document round-trips byte-for-byte.
+
+Spec: [Coverage][spec-coverage] and [CoverageCollection][spec-collection] objects.
+
+[spec-coverage]: https://github.com/covjson/specification/blob/master/spec.md#64-coverage-objects
+[spec-collection]: https://github.com/covjson/specification/blob/master/spec.md#65-coverage-collection-objects
 """
 
 from typing import Final

@@ -4,8 +4,10 @@ In CoverageJSON, human-readable text members (``label``, ``description``) are
 *language maps*: JSON objects whose keys are RFC 5646 language tags and whose
 values are the corresponding strings. The special tag ``"und"`` (undetermined)
 labels text whose language is unknown. The spec has no bare-string form for
-these members, so we model i18n as ``dict[str, str]`` and provide :func:`i18n`
-to build one without hand-writing the mapping.
+these members, so we model i18n as ``dict[str, str]`` and provide `i18n` to
+build one without hand-writing the mapping.
+
+Spec: [i18n objects](https://github.com/covjson/specification/blob/master/spec.md#2-i18n-objects).
 """
 
 # A CoverageJSON i18n object: language tag -> string ("und" if undetermined).

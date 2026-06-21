@@ -11,6 +11,11 @@ parameter's ``data_type`` can decode ``NdArray[float]`` (etc.) for precise typin
 With the ``numpy`` extra installed, `NdArray.to_numpy` and `NdArray.from_numpy`
 convert to and from NumPy arrays, mapping CoverageJSON's ``null`` to NaN (float),
 a masked entry (integer), or ``None`` (string), and back.
+
+Spec: [NdArray objects][spec-ndarray] and [TiledNdArray objects][spec-tiled].
+
+[spec-ndarray]: https://github.com/covjson/specification/blob/master/spec.md#62-ndarray-objects
+[spec-tiled]: https://github.com/covjson/specification/blob/master/spec.md#63-tiledndarray-objects
 """
 
 import math

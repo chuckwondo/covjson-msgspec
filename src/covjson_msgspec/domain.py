@@ -9,6 +9,11 @@ Builders construct the common domain types with their expected axes
 (`Domain.grid`, `Domain.point`, `Domain.point_series`, `Domain.vertical_profile`,
 `Domain.trajectory`), and the ``x`` / ``y`` / ``z`` / ``t`` properties give
 convenient access to the standard axes.
+
+Spec: [Domain objects](https://github.com/covjson/specification/blob/master/spec.md#61-domain-objects).
+The well-known ``domain_type`` values and their axis rules are validated against
+the [Common Domain Types](https://github.com/covjson/specification/blob/master/domain-types.md)
+specification (see `covjson_msgspec.validation`).
 """
 
 from collections.abc import Iterable

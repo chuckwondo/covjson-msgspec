@@ -12,6 +12,11 @@ It comes in two mutually exclusive shapes:
 Use the builders `Parameter.continuous` and `Parameter.categorical`, which each
 expose only the fields valid for that shape. The continuous/categorical rule is
 enforced whenever a `Parameter` is created, including when one is decoded.
+
+Spec: [Parameter objects][spec-parameter] and [ParameterGroup objects][spec-group].
+
+[spec-parameter]: https://github.com/covjson/specification/blob/master/spec.md#3-parameter-objects
+[spec-group]: https://github.com/covjson/specification/blob/master/spec.md#4-parametergroup-objects
 """
 
 from typing import Self

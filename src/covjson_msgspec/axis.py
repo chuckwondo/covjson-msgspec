@@ -12,6 +12,8 @@ An axis describes the coordinate values along one domain dimension. A single
 Builders cover the two common numeric forms (`Axis.regular`, `Axis.listed`);
 composite axes still *decode* fully (their builders arrive with the
 composite-domain support).
+
+Spec: [Axis objects](https://github.com/covjson/specification/blob/master/spec.md#611-axis-objects).
 """
 
 from collections.abc import Iterable
