@@ -194,6 +194,82 @@ DOMAIN_TYPE_RULES: dict[str, DomainTypeRule] = {
 }
 
 
+def validate(
+    obj: CoverageJSON,
+    *,
+    check_values: bool = False,
+    mode: Literal["collect", "raise"] = "collect",
+) -> list[Issue]:
+    """Check a CoverageJSON document for cross-cutting, document-level problems.
+
+    Parameters
+    ----------
+    obj
+        Any decoded CoverageJSON document.
+    check_values
+        Also run the checks that scan range values (currently: categorical codes
+        must be defined in the parameter's encoding). Off by default because it
+        is O(number of values).
+    mode
+        ``"collect"`` (default) returns every issue found. ``"raise"`` raises a
+        `CovJSONValidationError` if any error-severity issue is found, and
+        otherwise returns the (warning-only) issues.
+
+    Returns
+    -------
+    list of Issue
+        Every issue found, in document order.
+
+    Raises
+    ------
+    CovJSONValidationError
+        If ``mode="raise"`` and at least one error-severity issue is found.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain
+    >>> grid = Domain.grid(x=Axis.regular(0, 10, 3), y=Axis.regular(0, 10, 3))
+    >>> validate(grid)
+    []
+
+    A Grid domain missing its ``y`` axis yields an error issue:
+
+    >>> incomplete = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
+    >>> issue = validate(incomplete)[0]
+    >>> issue.code
+    'domain.missing-axis'
+    >>> issue.path
+    '/axes/y'
+
+    In ``"raise"`` mode the same document raises:
+
+    >>> validate(incomplete, mode="raise")
+    Traceback (most recent call last):
+        ...
+    covjson_msgspec.validation.CovJSONValidationError: Grid domain requires a 'y' axis
+    """
+    issues: list[Issue] = []
+
+    if isinstance(obj, Domain):
+        _validate_domain(obj, obj.domain_type, "", issues)
+    elif isinstance(obj, Coverage):
+        _validate_coverage(obj, "", issues, check_values)
+    elif isinstance(obj, CoverageCollection):
+        _validate_collection(obj, "", issues, check_values)
+    elif isinstance(obj, NdArray):
+        _validate_ndarray(obj, "", issues)
+
+    # TiledNdArray's only document-level rule (tileShape rank) is already
+    # enforced in its __post_init__, so there is nothing extra to check here.
+
+    if mode == "raise" and (
+        errors := tuple(i for i in issues if i.severity is Severity.ERROR)
+    ):
+        raise CovJSONValidationError(errors)
+
+    return issues
+
+
 def _ptr(prefix: str, *parts: str | int) -> str:
     # Build a JSON Pointer, escaping "~" and "/" in string tokens (RFC 6901).
     out = prefix
@@ -322,10 +398,7 @@ def _check_range_against_domain(
                     path=_ptr(path, "axisNames", i),
                 )
             )
-
-            continue
-
-        if i < len(arr.shape):
+        elif i < len(arr.shape):
             axis_len = _axis_length(domain.axes[name])
 
             if arr.shape[i] != axis_len:
@@ -350,26 +423,23 @@ def _check_categorical_codes(
     if (encoding := param.category_encoding) is None:
         return
 
-    valid: set[int] = set()
+    # Each encoding entry is a single code or a tuple of codes; normalize a bare
+    # code to a 1-tuple so one comprehension flattens them all.
+    valid = {
+        code
+        for entry in encoding.values()
+        for code in (entry if isinstance(entry, tuple) else (entry,))
+    }
 
-    for code in encoding.values():
-        if isinstance(code, tuple):
-            valid.update(code)
-        else:
-            valid.add(code)
-
-    for i, value in enumerate(arr.values):
-        if value is None:
-            continue
-
-        if not isinstance(value, int) or value not in valid:
-            issues.append(
-                Issue(
-                    code="range.invalid-category-code",
-                    message=f"value {value!r} is not a defined category code",
-                    path=_ptr(path, "values", i),
-                )
-            )
+    issues.extend(
+        Issue(
+            code="range.invalid-category-code",
+            message=f"value {value!r} is not a defined category code",
+            path=_ptr(path, "values", i),
+        )
+        for i, value in enumerate(arr.values)
+        if value is not None and (not isinstance(value, int) or value not in valid)
+    )
 
 
 def _validate_coverage(
@@ -385,17 +455,15 @@ def _validate_coverage(
 
     if coverage.parameter_groups is not None and parameters is not None:
         for i, group in enumerate(coverage.parameter_groups):
-            for member in group.members:
-                if member not in parameters:
-                    issues.append(
-                        Issue(
-                            code="parameter-group.unknown-member",
-                            message=(
-                                f"parameter group references unknown member {member!r}"
-                            ),
-                            path=_ptr(path, "parameterGroups", i),
-                        )
-                    )
+            issues.extend(
+                Issue(
+                    code="parameter-group.unknown-member",
+                    message=(f"parameter group references unknown member {member!r}"),
+                    path=_ptr(path, "parameterGroups", i),
+                )
+                for member in group.members
+                if member not in parameters
+            )
 
     for key, range_ in coverage.ranges.items():
         range_path = _ptr(path, "ranges", key)
@@ -431,79 +499,3 @@ def _validate_collection(
     # Resolve first so inherited parameters / domainType apply to each member.
     for i, coverage in enumerate(collection.resolved_coverages()):
         _validate_coverage(coverage, _ptr(path, "coverages", i), issues, check_values)
-
-
-def validate(
-    obj: CoverageJSON,
-    *,
-    check_values: bool = False,
-    mode: Literal["collect", "raise"] = "collect",
-) -> list[Issue]:
-    """Check a CoverageJSON document for cross-cutting, document-level problems.
-
-    Parameters
-    ----------
-    obj
-        Any decoded CoverageJSON document.
-    check_values
-        Also run the checks that scan range values (currently: categorical codes
-        must be defined in the parameter's encoding). Off by default because it
-        is O(number of values).
-    mode
-        ``"collect"`` (default) returns every issue found. ``"raise"`` raises a
-        `CovJSONValidationError` if any error-severity issue is found, and
-        otherwise returns the (warning-only) issues.
-
-    Returns
-    -------
-    list of Issue
-        Every issue found, in document order.
-
-    Raises
-    ------
-    CovJSONValidationError
-        If ``mode="raise"`` and at least one error-severity issue is found.
-
-    Examples
-    --------
-    >>> from covjson_msgspec import Axis, Domain
-    >>> grid = Domain.grid(x=Axis.regular(0, 10, 3), y=Axis.regular(0, 10, 3))
-    >>> validate(grid)
-    []
-
-    A Grid domain missing its ``y`` axis yields an error issue:
-
-    >>> incomplete = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
-    >>> issue = validate(incomplete)[0]
-    >>> issue.code
-    'domain.missing-axis'
-    >>> issue.path
-    '/axes/y'
-
-    In ``"raise"`` mode the same document raises:
-
-    >>> validate(incomplete, mode="raise")
-    Traceback (most recent call last):
-        ...
-    covjson_msgspec.validation.CovJSONValidationError: Grid domain requires a 'y' axis
-    """
-    issues: list[Issue] = []
-
-    if isinstance(obj, Domain):
-        _validate_domain(obj, obj.domain_type, "", issues)
-    elif isinstance(obj, Coverage):
-        _validate_coverage(obj, "", issues, check_values)
-    elif isinstance(obj, CoverageCollection):
-        _validate_collection(obj, "", issues, check_values)
-    elif isinstance(obj, NdArray):
-        _validate_ndarray(obj, "", issues)
-
-    # TiledNdArray's only document-level rule (tileShape rank) is already
-    # enforced in its __post_init__, so there is nothing extra to check here.
-
-    if mode == "raise" and (
-        errors := tuple(i for i in issues if i.severity is Severity.ERROR)
-    ):
-        raise CovJSONValidationError(errors)
-
-    return issues
