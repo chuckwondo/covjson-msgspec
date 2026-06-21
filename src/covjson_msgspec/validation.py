@@ -34,7 +34,7 @@ from covjson_msgspec.coverage import (
 )
 from covjson_msgspec.domain import Domain
 from covjson_msgspec.parameter import Parameter
-from covjson_msgspec.range import NdArray
+from covjson_msgspec.range import NdArray, TiledNdArray
 
 
 class Severity(enum.StrEnum):
@@ -250,17 +250,19 @@ def validate(
     """
     issues: list[Issue] = []
 
-    if isinstance(obj, Domain):
-        _validate_domain(obj, obj.domain_type, "", issues)
-    elif isinstance(obj, Coverage):
-        _validate_coverage(obj, "", issues, check_values)
-    elif isinstance(obj, CoverageCollection):
-        _validate_collection(obj, "", issues, check_values)
-    elif isinstance(obj, NdArray):
-        _validate_ndarray(obj, "", issues)
-
-    # TiledNdArray's only document-level rule (tileShape rank) is already
-    # enforced in its __post_init__, so there is nothing extra to check here.
+    match obj:
+        case Domain():
+            _validate_domain(obj, obj.domain_type, "", issues)
+        case Coverage():
+            _validate_coverage(obj, "", issues, check_values)
+        case CoverageCollection():
+            _validate_collection(obj, "", issues, check_values)
+        case NdArray():
+            _validate_ndarray(obj, "", issues)
+        case TiledNdArray():
+            # Its only document-level rule (tileShape rank) is already enforced
+            # in __post_init__, so there is nothing extra to check here.
+            pass
 
     if mode == "raise" and (
         errors := tuple(i for i in issues if i.severity is Severity.ERROR)
