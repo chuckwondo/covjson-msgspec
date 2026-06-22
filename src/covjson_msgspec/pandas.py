@@ -39,29 +39,24 @@ Spec: [Coverage objects](https://github.com/covjson/specification/blob/master/sp
 
 from typing import TYPE_CHECKING, Any, cast
 
+from covjson_msgspec._bridging import (
+    POLYGON_DOMAIN_TYPES,
+    broadcast,
+    maybe_datetime,
+    range_column,
+    require_inline_ndarray,
+    temporal_coordinates,
+)
 from covjson_msgspec.coverage import Coverage, CoverageCollection
 from covjson_msgspec.domain import Domain
-from covjson_msgspec.range import NdArray
-from covjson_msgspec.referencing import TemporalRS
 
 if TYPE_CHECKING:
-    import numpy as np
     import pandas as pd
 
 # Raised (as the message) when the bridge is used without its dependencies.
 _INSTALL_HINT = (
     "pandas and numpy are required for this conversion; install covjson-msgspec[pandas]"
 )
-
-# Polygon domains are vector geometry, not tabular: they route to the geopandas
-# bridge instead of pandas.
-_POLYGON_DOMAIN_TYPES = frozenset(
-    {"Polygon", "PolygonSeries", "MultiPolygon", "MultiPolygonSeries"}
-)
-
-# Calendars whose dates pandas can parse to datetime64; anything else stays as
-# the original ISO strings.
-_STANDARD_CALENDARS = frozenset({"gregorian", "standard", "proleptic_gregorian"})
 
 
 def to_pandas(obj: Coverage | CoverageCollection) -> "pd.DataFrame":
@@ -190,36 +185,29 @@ def _coverage_to_pandas(coverage: Coverage) -> "pd.DataFrame":
         )
         raise ValueError(msg)
 
-    domain_type = domain.domain_type or coverage.domain_type
+    domain_type = coverage.effective_domain_type
 
-    if domain_type in _POLYGON_DOMAIN_TYPES:
+    if domain_type in POLYGON_DOMAIN_TYPES:
         msg = (
             f"{domain_type!r} is a polygon domain (vector geometry); use the "
             "geopandas bridge instead of pandas"
         )
         raise ValueError(msg)
 
-    temporal = _temporal_coordinates(domain)
+    temporal = temporal_coordinates(domain)
     layout = _axis_layout(domain, temporal)
 
     columns: dict[str, Any] = {}
 
     for name, dim, values in layout.composite_columns:
-        columns[name] = _broadcast(values, (dim,), layout.dims, layout.sizes)
+        columns[name] = broadcast(values, (dim,), layout.dims, layout.sizes)
 
     for name, value in layout.scalars.items():
-        columns[name] = _broadcast(value, (), layout.dims, layout.sizes)
+        columns[name] = broadcast(value, (), layout.dims, layout.sizes)
 
     for key, range_ in coverage.ranges.items():
-        if not isinstance(range_, NdArray):
-            msg = (
-                f"range {key!r} is not an inline NdArray (got "
-                f"{type(range_).__name__}); resolve URL ranges and assemble "
-                "TiledNdArray tiles before converting to pandas"
-            )
-            raise ValueError(msg)
-
-        columns[key] = _range_column(range_, layout.dims, layout.sizes)
+        array = require_inline_ndarray(key, range_, "pandas")
+        columns[key] = range_column(array, layout.dims, layout.sizes)
 
     frame = pd.DataFrame(columns, index=_index(layout))
 
@@ -298,10 +286,10 @@ def _axis_layout(domain: Domain, temporal: set[str]) -> _AxisLayout:
             for index, component in enumerate(components):
                 column = [row[index] for row in rows]
                 layout.composite_columns.append(
-                    (component, key, _maybe_datetime(column, component in temporal))
+                    (component, key, maybe_datetime(column, component in temporal))
                 )
         else:
-            values = _maybe_datetime(list(axis.coordinate_values), key in temporal)
+            values = maybe_datetime(list(axis.coordinate_values), key in temporal)
 
             if len(values) == 1:
                 # Single-valued axis: a scalar coordinate, kept as a constant
@@ -328,83 +316,3 @@ def _index(layout: _AxisLayout) -> "pd.Index[Any]":
     return pd.MultiIndex.from_product(
         [layout.values[dim] for dim in layout.dims], names=layout.dims
     )
-
-
-def _range_column(
-    range_: NdArray,
-    dims: list[str],
-    sizes: dict[str, int],
-) -> "np.ndarray[Any, np.dtype[Any]]":
-    import numpy as np
-
-    array = range_.to_numpy()
-
-    if isinstance(array, np.ma.MaskedArray):
-        # pandas has no general masked integer column, so a masked entry becomes
-        # NaN; cast to float first since NaN cannot live in an integer array.
-        array = np.ma.filled(array.astype(np.float64), np.nan)
-
-    # Transpose the range's own axis order onto the canonical dim order, pushing
-    # any axes that are not dims (single-valued, size 1) to the back.
-    present = [dim for dim in dims if dim in range_.axis_names]
-    rest = [index for index, name in enumerate(range_.axis_names) if name not in dims]
-    order = [range_.axis_names.index(dim) for dim in present] + rest
-
-    return _broadcast(np.transpose(array, order), present, dims, sizes)
-
-
-def _broadcast(
-    data: Any,
-    present: "tuple[str, ...] | list[str]",
-    dims: list[str],
-    sizes: dict[str, int],
-) -> "np.ndarray[Any, np.dtype[Any]]":
-    # Lay ``data`` (varying only over ``present``) over the full grid of ``dims``
-    # in row-major (C) order, matching pandas' MultiIndex.from_product layout.
-    import numpy as np
-
-    array = np.asarray(data)
-
-    if not dims:
-        return array.reshape(1)
-
-    # ``data`` is in canonical order over ``present`` with any trailing size-1
-    # axes, so reshaping to the broadcast shape (1 where an axis is absent)
-    # preserves element order.
-    shape = tuple(sizes[dim] if dim in present else 1 for dim in dims)
-    full = tuple(sizes[dim] for dim in dims)
-
-    return np.broadcast_to(array.reshape(shape), full).ravel()
-
-
-def _temporal_coordinates(domain: Domain) -> set[str]:
-    # The coordinate identifiers governed by a standard-calendar temporal system;
-    # only these are parsed to datetimes (other calendars stay as ISO strings).
-    coordinates: set[str] = set()
-
-    for connection in domain.referencing:
-        if isinstance(system := connection.system, TemporalRS):
-            calendar = system.calendar.rsplit("/", 1)[-1].lower()
-
-            if calendar in _STANDARD_CALENDARS:
-                coordinates.update(connection.coordinates)
-
-    return coordinates
-
-
-def _maybe_datetime(values: list[Any], is_temporal: bool) -> Any:
-    if not is_temporal:
-        return values
-
-    import pandas as pd
-
-    # ISO 8601 may carry a trailing "Z"; strip it so the result is tz-naive
-    # (matching the xarray bridge, which treats naive times as UTC).
-    cleaned = [
-        value.removesuffix("Z") if isinstance(value, str) else value for value in values
-    ]
-
-    try:
-        return pd.to_datetime(cleaned)
-    except (ValueError, TypeError):  # pragma: no cover - malformed time strings
-        return values

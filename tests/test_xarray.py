@@ -14,6 +14,7 @@ from covjson_msgspec import (
     NdArray,
     ObservedProperty,
     Parameter,
+    ProjectedCRS,
     ReferenceSystemConnection,
     TemporalRS,
     TiledNdArray,
@@ -436,6 +437,50 @@ def test_roundtrip_recovers_geographic_referencing() -> None:
     assert isinstance(system, GeographicCRS)
     assert connection.coordinates == ("x", "y")
     assert system.id == "http://www.opengis.net/def/crs/OGC/1.3/CRS84"
+
+
+def test_roundtrip_recovers_projected_referencing() -> None:
+    # A projected system has no CF projection params here; the bridge records its
+    # id (and that it is projected) on the crs variable so it round-trips as a
+    # ProjectedCRS rather than collapsing to a GeographicCRS.
+    crs_id = "http://www.opengis.net/def/crs/EPSG/0/27700"
+    cov = Coverage(
+        domain=Domain.grid(
+            x=Axis.regular(0.0, 10.0, 2),
+            y=Axis.regular(0.0, 5.0, 2),
+            referencing=(
+                ReferenceSystemConnection(
+                    coordinates=("x", "y"), system=ProjectedCRS(id=crs_id)
+                ),
+            ),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=(1.0, 2.0, 3.0, 4.0),
+                shape=(2, 2),
+                axis_names=("y", "x"),
+            )
+        },
+    )
+    ds = to_xarray(cov)
+
+    assert ds["crs"].attrs["reference_system_type"] == "ProjectedCRS"
+
+    back = from_xarray(ds)
+
+    (connection,) = [
+        c for c in _dom(back).referencing if isinstance(c.system, ProjectedCRS)
+    ]
+    system = connection.system
+    assert isinstance(system, ProjectedCRS)
+    assert connection.coordinates == ("x", "y")
+    assert system.id == crs_id
+
+
+def test_to_xarray_rejects_a_collection() -> None:
+    with pytest.raises(TypeError, match="use to_datatree"):
+        to_xarray(CoverageCollection(coverages=()))  # type: ignore[arg-type]
 
 
 def test_roundtrip_continuous_parameter() -> None:

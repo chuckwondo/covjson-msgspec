@@ -17,8 +17,10 @@ Mapping
 - A Polygon / PolygonSeries domain becomes one feature (repeated over ``t`` for a
   series); a MultiPolygon / MultiPolygonSeries domain becomes one feature per
   polygon. The ``composite`` axis supplies the ``Polygon`` geometry.
-- A vertical (``z``) coordinate is carried into the geometry as a third dimension
-  (a ``POINT Z`` / ``POLYGON Z``), and also kept as a column.
+- A vertical (``z``) coordinate is carried into point geometry as a third
+  dimension (a ``POINT Z``) and also kept as a column. For a polygon it reaches
+  the geometry (a ``POLYGON Z``) only when ``z`` is one of the ``composite`` ring
+  coordinates; a standalone ``z`` axis on a polygon stays a column only.
 - A geographic reference system tags the result as ``EPSG:4326`` (CoverageJSON's
   default geographic CRS is longitude/latitude on WGS84); a projected reference
   system tags it with that system's ``id`` (an EPSG / OGC CRS URI).
@@ -39,9 +41,16 @@ import json
 import warnings
 from typing import TYPE_CHECKING, Any, Literal, cast
 
+from covjson_msgspec._bridging import (
+    POLYGON_DOMAIN_TYPES,
+    broadcast,
+    maybe_datetime,
+    range_column,
+    require_inline_ndarray,
+    temporal_coordinates,
+)
 from covjson_msgspec.coverage import Coverage, CoverageCollection
 from covjson_msgspec.domain import Domain
-from covjson_msgspec.range import NdArray
 from covjson_msgspec.referencing import GeographicCRS, ProjectedCRS
 
 if TYPE_CHECKING:
@@ -51,11 +60,6 @@ if TYPE_CHECKING:
 _INSTALL_HINT = (
     "geopandas and shapely are required for this conversion; "
     "install covjson-msgspec[geo]"
-)
-
-# Domain types whose geometry comes from the composite polygon axis.
-_POLYGON_DOMAIN_TYPES = frozenset(
-    {"Polygon", "PolygonSeries", "MultiPolygon", "MultiPolygonSeries"}
 )
 
 # How a Trajectory's vertices map to geometry: one ``Point`` feature per vertex
@@ -111,8 +115,10 @@ def to_geopandas(
     ------
     ValueError
         If a domain is a URL reference, a point-like domain lacks ``x`` / ``y``
-        coordinates, a range is not an inline `NdArray`, or ``trajectory_as`` is
-        not ``"points"`` or ``"linestring"``.
+        coordinates, a range is not an inline `NdArray`, ``trajectory_as`` is not
+        ``"points"`` or ``"linestring"``, or (in ``"linestring"`` mode) a
+        Trajectory has fewer than two vertices or a ``composite`` axis without
+        ``x`` / ``y``.
 
     Warns
     -----
@@ -130,6 +136,16 @@ def to_geopandas(
         import geopandas  # noqa: F401
     except ModuleNotFoundError as exc:  # pragma: no cover - env-dependent
         raise ModuleNotFoundError(_INSTALL_HINT) from exc
+
+    # Warn from this public entry point (not the helpers) so stacklevel=2 lands on
+    # the caller's code rather than a private frame; a collection warns once if any
+    # member is a Grid.
+    members = (
+        obj.resolved_coverages() if isinstance(obj, CoverageCollection) else (obj,)
+    )
+
+    if any(member.effective_domain_type == "Grid" for member in members):
+        warnings.warn(_GRID_WARNING, UserWarning, stacklevel=2)
 
     if isinstance(obj, CoverageCollection):
         return _collection_to_geopandas(obj, trajectory_as)
@@ -169,6 +185,12 @@ def to_geojson(
         Propagated from `to_geopandas` (URL domain, missing ``x`` / ``y``, a
         non-inline range, or an invalid ``trajectory_as``).
 
+    Warns
+    -----
+    UserWarning
+        Propagated from `to_geopandas` when a domain is a Grid (emitted as one
+        point feature per cell; the xarray bridge is the better fit).
+
     Examples
     --------
     >>> from covjson_msgspec import decode_coverage
@@ -186,6 +208,12 @@ def to_geojson(
     # geopandas' to_json serializes geometry, columns, datetimes, and (unlike the
     # __geo_interface__ mapping) drops the row index, giving clean JSON output.
     gdf = to_geopandas(coverage, trajectory_as=trajectory_as)
+
+    # An empty CoverageCollection yields a frame with no geometry column, on which
+    # to_json would raise; emit an empty FeatureCollection directly instead.
+    if "geometry" not in gdf.columns:
+        return {"type": "FeatureCollection", "features": []}
+
     return cast("dict[str, Any]", json.loads(gdf.to_json()))
 
 
@@ -201,12 +229,11 @@ def _coverage_to_geopandas(
         )
         raise ValueError(msg)
 
-    domain_type = domain.domain_type or coverage.domain_type
+    # The Grid UserWarning is emitted at the public boundary (to_geopandas), which
+    # also covers each member when converting a collection.
+    domain_type = coverage.effective_domain_type
 
-    if domain_type == "Grid":
-        warnings.warn(_GRID_WARNING, UserWarning, stacklevel=2)
-
-    if domain_type in _POLYGON_DOMAIN_TYPES:
+    if domain_type in POLYGON_DOMAIN_TYPES:
         frame, geometry = _polygon_frame(coverage, domain)
     elif domain_type == "Trajectory" and trajectory_as == "linestring":
         frame, geometry = _trajectory_linestring_frame(coverage, domain)
@@ -340,13 +367,6 @@ def _polygon_frame(coverage: Coverage, domain: Domain) -> "tuple[Any, Any]":
     import pandas as pd
     import shapely
 
-    from covjson_msgspec.pandas import (
-        _broadcast,
-        _maybe_datetime,
-        _range_column,
-        _temporal_coordinates,
-    )
-
     composite = domain.axes["composite"]
     coords = composite.coordinates or ("x", "y")
     x_index = coords.index("x") if "x" in coords else 0
@@ -372,30 +392,23 @@ def _polygon_frame(coverage: Coverage, domain: Domain) -> "tuple[Any, Any]":
     columns: dict[str, Any] = {}
 
     for key, range_ in coverage.ranges.items():
-        if not isinstance(range_, NdArray):
-            msg = (
-                f"range {key!r} is not an inline NdArray (got "
-                f"{type(range_).__name__}); resolve URL ranges and assemble "
-                "TiledNdArray tiles before converting to geopandas"
-            )
-            raise ValueError(msg)
+        array = require_inline_ndarray(key, range_, "geopandas")
+        columns[key] = range_column(array, dims, sizes)
 
-        columns[key] = _range_column(range_, dims, sizes)
-
-    temporal = _temporal_coordinates(domain)
+    temporal = temporal_coordinates(domain)
 
     if times:
         present = ("t",) if "t" in dims else ()
-        column = _broadcast(np.asarray(times, dtype=object), present, dims, sizes)
-        columns["t"] = _maybe_datetime(list(column), "t" in temporal)
+        column = broadcast(np.asarray(times, dtype=object), present, dims, sizes)
+        columns["t"] = maybe_datetime(list(column), "t" in temporal)
 
     z_axis = domain.axes.get("z")
 
     if z_axis is not None:
         z_values = list(z_axis.coordinate_values)
-        columns["z"] = _broadcast(np.asarray(z_values, dtype=object), (), dims, sizes)
+        columns["z"] = broadcast(np.asarray(z_values, dtype=object), (), dims, sizes)
 
-    indices = _broadcast(np.arange(len(polygons)), ("composite",), dims, sizes)
+    indices = broadcast(np.arange(len(polygons)), ("composite",), dims, sizes)
     geometry = np.array([polygons[index] for index in indices], dtype=object)
 
     return pd.DataFrame(columns), geometry

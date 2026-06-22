@@ -412,6 +412,14 @@ def test_empty_collection_is_empty_frame() -> None:
     assert len(to_geopandas(CoverageCollection(coverages=()))) == 0
 
 
+def test_empty_collection_to_geojson_is_empty_feature_collection() -> None:
+    # The empty frame has no geometry column, so to_json would raise; the bridge
+    # emits an empty FeatureCollection instead.
+    gj = to_geojson(CoverageCollection(coverages=()))
+
+    assert gj == {"type": "FeatureCollection", "features": []}
+
+
 def test_vertical_profile_carries_z_into_point_geometry() -> None:
     cov = Coverage(
         domain=Domain.vertical_profile(

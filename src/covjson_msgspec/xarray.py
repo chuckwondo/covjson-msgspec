@@ -15,8 +15,9 @@ Mapping
   non-dimension coordinate per tuple component (the tuples are transposed).
 - Referencing drives CF attributes: a temporal system parses the coordinate to
   ``datetime64`` (cftime for non-standard calendars), a geographic system tags
-  longitude/latitude with their ``standard_name`` / ``units`` and adds a
-  ``grid_mapping`` variable, and a vertical system sets ``positive`` up/down.
+  longitude/latitude with their ``standard_name`` / ``units``, a horizontal
+  (geographic or projected) system adds a ``grid_mapping`` variable carrying its
+  ``id``, and a vertical system sets ``positive`` up/down.
 - A continuous parameter contributes ``units`` (and ``standard_name`` /
   ``long_name``); a categorical parameter contributes CF ``flag_values`` /
   ``flag_meanings``.
@@ -31,6 +32,11 @@ import math
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
+from covjson_msgspec._bridging import (
+    POLYGON_DOMAIN_TYPES,
+    STANDARD_CALENDARS,
+    require_inline_ndarray,
+)
 from covjson_msgspec.axis import Axis
 from covjson_msgspec.coverage import Coverage, CoverageCollection, Range
 from covjson_msgspec.domain import Domain
@@ -45,6 +51,7 @@ from covjson_msgspec.parameter import (
 from covjson_msgspec.range import NdArray
 from covjson_msgspec.referencing import (
     GeographicCRS,
+    ProjectedCRS,
     ReferenceSystem,
     ReferenceSystemConnection,
     TemporalRS,
@@ -60,15 +67,6 @@ _INSTALL_HINT = (
     "xarray, numpy, and cftime are required for this conversion; "
     "install covjson-msgspec[xarray]"
 )
-
-# Polygon domains are vector geometry, not gridded arrays: they route to the
-# geopandas bridge instead of xarray.
-_POLYGON_DOMAIN_TYPES = frozenset(
-    {"Polygon", "PolygonSeries", "MultiPolygon", "MultiPolygonSeries"}
-)
-
-# Calendars whose dates fit numpy's datetime64; anything else needs cftime.
-_STANDARD_CALENDARS = frozenset({"gregorian", "standard", "proleptic_gregorian"})
 
 # The CoverageJSON ordering of a geographic system's coordinates.
 _GEOGRAPHIC_ROLES = ("longitude", "latitude", "height")
@@ -146,6 +144,13 @@ def to_xarray(coverage: Coverage) -> "xr.Dataset":
         Conventions:  CF-1.10
         domain_type:  Grid
     """
+    if isinstance(coverage, CoverageCollection):
+        msg = (
+            "to_xarray converts a single Coverage; use to_datatree (or "
+            "CoverageCollection.to_datatree) to convert a CoverageCollection"
+        )
+        raise TypeError(msg)
+
     try:
         import xarray as xr
     except ModuleNotFoundError as exc:  # pragma: no cover - env-dependent
@@ -158,9 +163,9 @@ def to_xarray(coverage: Coverage) -> "xr.Dataset":
         )
         raise ValueError(msg)
 
-    domain_type = domain.domain_type or coverage.domain_type
+    domain_type = coverage.effective_domain_type
 
-    if domain_type in _POLYGON_DOMAIN_TYPES:
+    if domain_type in POLYGON_DOMAIN_TYPES:
         msg = (
             f"{domain_type!r} is a polygon domain (vector geometry); use the "
             "geopandas bridge instead of xarray"
@@ -216,8 +221,9 @@ def from_xarray(
     a single-valued axis (the original size-1 dimension is not recovered), an
     evenly spaced numeric axis is compacted to ``start`` / ``stop`` / ``num``
     when ``compact_regular`` is set, the domain type is inferred when not given,
-    and only ``units`` (continuous) or ``flag_values`` / ``flag_meanings``
-    (categorical) are reconstructed into parameters.
+    CF bounds variables (``*_bnds`` / ``*_bounds``) are dropped, and only
+    ``units`` (continuous) or ``flag_values`` / ``flag_meanings`` (categorical)
+    are reconstructed into parameters.
 
     Parameters
     ----------
@@ -668,7 +674,7 @@ def _parse_times(column: list[Any], calendar: str) -> "np.ndarray[Any, np.dtype[
         None if value is None else str(value).removesuffix("Z") for value in column
     ]
 
-    if normalized in _STANDARD_CALENDARS:
+    if normalized in STANDARD_CALENDARS:
         try:
             return np.array(cleaned, dtype="datetime64[ns]")
         except (ValueError, OverflowError):
@@ -712,9 +718,19 @@ def _vertical_attrs(system: VerticalCRS) -> dict[str, str]:
 
 
 def _crs_coordinate(domain: Domain) -> _Variable | None:
+    # The horizontal CRS becomes a CF grid-mapping variable. ``reference_system_type``
+    # records which CoverageJSON system it was so the round-trip can rebuild the
+    # right class (CF has no projection params for a CRS identified only by id).
     for connection in domain.referencing:
-        if isinstance(system := connection.system, GeographicCRS):
-            attrs: dict[str, Any] = {"grid_mapping_name": "latitude_longitude"}
+        system = connection.system
+
+        if isinstance(system, GeographicCRS | ProjectedCRS):
+            attrs: dict[str, Any] = {
+                "reference_system_type": type(system).__name__,
+            }
+
+            if isinstance(system, GeographicCRS):
+                attrs["grid_mapping_name"] = "latitude_longitude"
 
             if system.id is not None:
                 attrs["reference_system_id"] = system.id
@@ -729,17 +745,10 @@ def _data_variable(
     range_: Any,
     parameters: dict[str, Parameter] | None,
 ) -> _Variable:
-    if not isinstance(range_, NdArray):
-        msg = (
-            f"range {key!r} is not an inline NdArray (got "
-            f"{type(range_).__name__}); resolve URL ranges and assemble "
-            "TiledNdArray tiles before converting to xarray"
-        )
-        raise ValueError(msg)
-
+    array = require_inline_ndarray(key, range_, "xarray")
     parameter = parameters.get(key) if parameters is not None else None
 
-    return (range_.axis_names, range_.to_numpy(), _variable_attrs(parameter))
+    return (array.axis_names, array.to_numpy(), _variable_attrs(parameter))
 
 
 def _variable_attrs(parameter: Parameter | None) -> dict[str, Any]:
@@ -1064,14 +1073,20 @@ def _build_referencing(
 
     if roles["x"] is not None and roles["y"] is not None:
         crs_id = None
+        crs_type = "GeographicCRS"
 
         if "crs" in dataset.coords:
-            crs_id = dataset["crs"].attrs.get("reference_system_id")
+            crs_attrs = dataset["crs"].attrs
+            crs_id = crs_attrs.get("reference_system_id")
+            crs_type = crs_attrs.get("reference_system_type", crs_type)
 
+        horizontal: ReferenceSystem = (
+            ProjectedCRS(id=crs_id)
+            if crs_type == "ProjectedCRS"
+            else GeographicCRS(id=crs_id)
+        )
         connections.append(
-            ReferenceSystemConnection(
-                coordinates=("x", "y"), system=GeographicCRS(id=crs_id)
-            )
+            ReferenceSystemConnection(coordinates=("x", "y"), system=horizontal)
         )
 
     if roles["z"] is not None:
