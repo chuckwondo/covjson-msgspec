@@ -311,3 +311,67 @@ def test_collection_features_carry_coverage_property() -> None:
 
 def test_empty_collection_is_empty_frame() -> None:
     assert len(to_geopandas(CoverageCollection(coverages=()))) == 0
+
+
+def test_vertical_profile_carries_z_into_point_geometry() -> None:
+    cov = Coverage(
+        domain=Domain.vertical_profile(
+            x=Axis.listed((1.0,)),
+            y=Axis.listed((2.0,)),
+            z=Axis.listed((10.0, 20.0)),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float", values=(5.0, 6.0), shape=(2,), axis_names=("z",)
+            )
+        },
+    )
+    gdf = to_geopandas(cov)
+
+    assert all(g.has_z for g in gdf.geometry)
+    assert [(g.x, g.y, g.z) for g in gdf.geometry] == [
+        (1.0, 2.0, 10.0),
+        (1.0, 2.0, 20.0),
+    ]
+    # z is also kept as a column.
+    assert gdf["z"].tolist() == [10.0, 20.0]
+
+
+def test_point_without_z_stays_2d() -> None:
+    cov = Coverage(
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={},
+    )
+
+    assert not to_geopandas(cov).geometry.iloc[0].has_z
+
+
+def test_to_geojson_emits_3d_coordinates() -> None:
+    cov = Coverage(
+        domain=Domain.vertical_profile(
+            x=Axis.listed((1.0,)),
+            y=Axis.listed((2.0,)),
+            z=Axis.listed((10.0,)),
+        ),
+        ranges={},
+    )
+    gj = to_geojson(cov)
+
+    assert gj["features"][0]["geometry"]["coordinates"] == [1.0, 2.0, 10.0]
+
+
+def test_polygon_carries_z_into_geometry() -> None:
+    exterior = [
+        (0.0, 0.0, 5.0),
+        (2.0, 0.0, 5.0),
+        (2.0, 2.0, 5.0),
+        (0.0, 0.0, 5.0),
+    ]
+    cov = Coverage(
+        domain=Domain.polygon(exterior, coordinates=("x", "y", "z")),
+        ranges={},
+    )
+    polygon = to_geopandas(cov).geometry.iloc[0]
+
+    assert polygon.has_z
+    assert list(polygon.exterior.coords) == exterior

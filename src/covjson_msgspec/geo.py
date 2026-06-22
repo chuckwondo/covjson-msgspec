@@ -15,6 +15,8 @@ Mapping
 - A Polygon / PolygonSeries domain becomes one feature (repeated over ``t`` for a
   series); a MultiPolygon / MultiPolygonSeries domain becomes one feature per
   polygon. The ``composite`` axis supplies the ``Polygon`` geometry.
+- A vertical (``z``) coordinate is carried into the geometry as a third dimension
+  (a ``POINT Z`` / ``POLYGON Z``), and also kept as a column.
 - A geographic reference system tags the result as ``EPSG:4326`` (CoverageJSON's
   default geographic CRS is longitude/latitude on WGS84).
 
@@ -224,7 +226,16 @@ def _point_frame(coverage: Coverage, domain: Domain) -> "tuple[Any, Any]":
         )
         raise ValueError(msg)
 
-    geometry = shapely.points(frame["x"].to_numpy(), frame["y"].to_numpy())
+    # Carry a vertical coordinate into the geometry as a 3D point (POINT Z) when
+    # the domain has one (a VerticalProfile, or a trajectory with a z component);
+    # z also remains a column. GeoJSON allows the third coordinate.
+    if "z" in frame.columns:
+        geometry = shapely.points(
+            frame["x"].to_numpy(), frame["y"].to_numpy(), frame["z"].to_numpy()
+        )
+    else:
+        geometry = shapely.points(frame["x"].to_numpy(), frame["y"].to_numpy())
+
     return frame, geometry
 
 
@@ -244,8 +255,10 @@ def _polygon_frame(coverage: Coverage, domain: Domain) -> "tuple[Any, Any]":
     coords = composite.coordinates or ("x", "y")
     x_index = coords.index("x") if "x" in coords else 0
     y_index = coords.index("y") if "y" in coords else 1
+    # A vertical component in the ring positions becomes a 3D polygon (POLYGON Z).
+    z_index = coords.index("z") if "z" in coords else None
     polygons = [
-        _shapely_polygon(polygon, x_index, y_index, shapely)
+        _shapely_polygon(polygon, x_index, y_index, z_index, shapely)
         for polygon in (composite.values or ())
     ]
 
@@ -292,12 +305,17 @@ def _polygon_frame(coverage: Coverage, domain: Domain) -> "tuple[Any, Any]":
     return pd.DataFrame(columns), geometry
 
 
-def _shapely_polygon(polygon: Any, x_index: int, y_index: int, shapely: Any) -> Any:
+def _shapely_polygon(
+    polygon: Any, x_index: int, y_index: int, z_index: int | None, shapely: Any
+) -> Any:
     # A polygon is a sequence of rings; ring 0 is the exterior, the rest holes.
-    rings = [
-        [(position[x_index], position[y_index]) for position in ring]
-        for ring in polygon
-    ]
+    # Include the vertical component per position when the axis carries one.
+    def position_coords(position: Any) -> tuple[float, ...]:
+        if z_index is None:
+            return (position[x_index], position[y_index])
+        return (position[x_index], position[y_index], position[z_index])
+
+    rings = [[position_coords(position) for position in ring] for ring in polygon]
     shell, *holes = rings
     return shapely.Polygon(shell, holes)
 
