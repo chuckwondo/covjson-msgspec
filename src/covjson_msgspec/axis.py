@@ -17,7 +17,7 @@ Spec: [Axis objects](https://github.com/covjson/specification/blob/master/spec.m
 """
 
 from collections.abc import Iterable
-from typing import Any, Literal, Self
+from typing import Any, Self
 
 from covjson_msgspec._base import CovJSONStruct
 
@@ -72,8 +72,11 @@ class Axis(CovJSONStruct, frozen=True):
     start: float | None = None
     stop: float | None = None
     num: int | None = None
-    # Wire name ``dataType``; ``None`` means the default "primitive".
-    data_type: Literal["primitive", "tuple", "polygon"] | None = None
+    # Wire name ``dataType``. The spec defines "primitive" (the default when
+    # omitted), "tuple", and "polygon", but explicitly allows custom extension
+    # values (spec 6.1.1), so this stays a free string rather than a Literal; an
+    # unrecognized value is treated as primitive-like. ``None`` means "primitive".
+    data_type: str | None = None
     coordinates: tuple[str, ...] | None = None
     bounds: tuple[float | str, ...] | None = None
 

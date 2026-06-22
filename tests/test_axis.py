@@ -46,3 +46,14 @@ def test_composite_tuple_axis_decodes() -> None:
     assert ax.data_type == "tuple"
     assert ax.coordinates == ("t", "x", "y")
     assert ax.values == (("2020-01-01T00:00:00Z", 1, 2),)
+
+
+def test_custom_data_type_decodes() -> None:
+    # The spec (6.1.1) allows custom extension dataType values; the model accepts
+    # any string and treats an unrecognized one as primitive-like (no composite
+    # coordinates required).
+    blob = b'{"dataType": "knmi:range", "values": ["2022-01-01T04:03:00Z"]}'
+    ax = msgspec.json.decode(blob, type=Axis)
+
+    assert ax.data_type == "knmi:range"
+    assert ax.values == ("2022-01-01T04:03:00Z",)
