@@ -11,6 +11,7 @@ from covjson_msgspec import (
     Domain,
     GeographicCRS,
     NdArray,
+    ProjectedCRS,
     ReferenceSystemConnection,
     TemporalRS,
     TiledNdArray,
@@ -80,6 +81,45 @@ def test_point_series_is_one_feature_per_time() -> None:
 def test_no_geographic_referencing_leaves_crs_unset() -> None:
     cov = Coverage(
         domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={},
+    )
+
+    assert to_geopandas(cov).crs is None
+
+
+def test_projected_referencing_passes_its_id_through() -> None:
+    # A projected system is identified by its id (here an OGC CRS URI); the
+    # bridge passes it through and pyproj resolves it to the EPSG code.
+    cov = Coverage(
+        domain=Domain.point(
+            x=Axis.listed((400000.0,)),
+            y=Axis.listed((100000.0,)),
+            referencing=(
+                ReferenceSystemConnection(
+                    coordinates=("x", "y"),
+                    system=ProjectedCRS(
+                        id="http://www.opengis.net/def/crs/EPSG/0/27700"
+                    ),
+                ),
+            ),
+        ),
+        ranges={},
+    )
+
+    assert to_geopandas(cov).crs.to_epsg() == 27700
+
+
+def test_projected_referencing_without_id_leaves_crs_unset() -> None:
+    cov = Coverage(
+        domain=Domain.point(
+            x=Axis.listed((1.0,)),
+            y=Axis.listed((2.0,)),
+            referencing=(
+                ReferenceSystemConnection(
+                    coordinates=("x", "y"), system=ProjectedCRS()
+                ),
+            ),
+        ),
         ranges={},
     )
 
@@ -377,9 +417,7 @@ def test_polygon_carries_z_into_geometry() -> None:
     assert list(polygon.exterior.coords) == exterior
 
 
-def _trajectory(
-    *coordinates: str, values: tuple[tuple[object, ...], ...]
-) -> Coverage:
+def _trajectory(*coordinates: str, values: tuple[tuple[object, ...], ...]) -> Coverage:
     composite = Axis(data_type="tuple", coordinates=coordinates, values=values)
     return Coverage(
         domain=Domain.trajectory(composite),

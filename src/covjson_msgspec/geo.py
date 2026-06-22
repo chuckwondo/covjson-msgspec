@@ -20,7 +20,8 @@ Mapping
 - A vertical (``z``) coordinate is carried into the geometry as a third dimension
   (a ``POINT Z`` / ``POLYGON Z``), and also kept as a column.
 - A geographic reference system tags the result as ``EPSG:4326`` (CoverageJSON's
-  default geographic CRS is longitude/latitude on WGS84).
+  default geographic CRS is longitude/latitude on WGS84); a projected reference
+  system tags it with that system's ``id`` (an EPSG / OGC CRS URI).
 
 A multi-dimensional gridded domain (Grid) is degenerately emitted as one point
 feature per cell; the xarray bridge is the better fit for gridded data.
@@ -39,7 +40,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from covjson_msgspec.coverage import Coverage, CoverageCollection
 from covjson_msgspec.domain import Domain
 from covjson_msgspec.range import NdArray
-from covjson_msgspec.referencing import GeographicCRS
+from covjson_msgspec.referencing import GeographicCRS, ProjectedCRS
 
 if TYPE_CHECKING:
     import geopandas as gpd
@@ -93,9 +94,9 @@ def to_geopandas(
     -------
     geopandas.GeoDataFrame
         A frame of the parameter and coordinate columns with a ``geometry``
-        column; ``EPSG:4326`` when the domain has a geographic reference system.
-        For a collection, the member frames concatenated under a leading
-        ``coverage`` column.
+        column; its CRS is ``EPSG:4326`` for a geographic reference system, or
+        the projected system's ``id`` for a projected one. For a collection, the
+        member frames concatenated under a leading ``coverage`` column.
 
     Raises
     ------
@@ -105,10 +106,7 @@ def to_geopandas(
         not ``"points"`` or ``"linestring"``.
     """
     if trajectory_as not in _TRAJECTORY_AS:
-        msg = (
-            "trajectory_as must be 'points' or 'linestring'; "
-            f"got {trajectory_as!r}"
-        )
+        msg = f"trajectory_as must be 'points' or 'linestring'; got {trajectory_as!r}"
         raise ValueError(msg)
 
     # Surface the friendly install hint here; the helpers re-import geopandas
@@ -233,9 +231,7 @@ def _collection_to_geopandas(
 
     # Concatenate as plain frames, then rebuild geometry with a single explicit
     # CRS (members of a collection share referencing, so it is uniform).
-    combined = pd.concat(
-        [pd.DataFrame(frame) for frame in frames], ignore_index=True
-    )
+    combined = pd.concat([pd.DataFrame(frame) for frame in frames], ignore_index=True)
     crs = next((frame.crs for frame in frames if frame.crs is not None), None)
     result = gpd.GeoDataFrame(combined, geometry="geometry", crs=crs)
 
@@ -403,10 +399,18 @@ def _shapely_polygon(
 
 
 def _crs(domain: Domain) -> str | None:
-    # CoverageJSON's default geographic CRS is longitude/latitude on WGS84; map a
-    # geographic reference system to EPSG:4326 and leave anything else unset.
+    # A horizontal reference system supplies the result CRS. A geographic system
+    # maps to EPSG:4326 (CoverageJSON's default geographic CRS is
+    # longitude/latitude on WGS84). A projected system is identified by its `id`
+    # (an EPSG / OGC CRS URI that pyproj resolves); pass it through, falling back
+    # to unset when it carries none. Any other system leaves the CRS unset.
     for connection in domain.referencing:
-        if isinstance(connection.system, GeographicCRS):
+        system = connection.system
+
+        if isinstance(system, GeographicCRS):
             return "EPSG:4326"
+
+        if isinstance(system, ProjectedCRS) and system.id is not None:
+            return system.id
 
     return None
