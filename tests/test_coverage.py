@@ -51,6 +51,32 @@ def test_coverage_range_can_be_url_string() -> None:
     assert cov.ranges["t"] == "http://ex/t.covjson"
 
 
+def test_effective_domain_type_prefers_inline_domain() -> None:
+    cov = Coverage(
+        domain=Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid"),
+        ranges={},
+        domain_type="Point",  # a (spec-discouraged) mismatch; the domain wins
+    )
+
+    assert cov.effective_domain_type == "Grid"
+
+
+def test_effective_domain_type_falls_back_for_url_domain() -> None:
+    # A URL-reference domain contributes no type, so the coverage-level one (such
+    # as a value a collection supplied) is used.
+    cov = Coverage(
+        domain="http://ex/domain.covjson", ranges={}, domain_type="Trajectory"
+    )
+
+    assert cov.effective_domain_type == "Trajectory"
+
+
+def test_effective_domain_type_is_none_when_unspecified() -> None:
+    cov = Coverage(domain=Domain(axes={"x": Axis.listed((1.0,))}), ranges={})
+
+    assert cov.effective_domain_type is None
+
+
 def test_decode_dispatches_on_type() -> None:
     cov = decode(encode(_point_coverage()))
 

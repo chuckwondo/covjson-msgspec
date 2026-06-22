@@ -451,8 +451,9 @@ def _validate_coverage(
     domain = coverage.domain
 
     if isinstance(domain, Domain):
-        domain_type = domain.domain_type or coverage.domain_type
-        _validate_domain(domain, domain_type, _ptr(path, "domain"), issues)
+        _validate_domain(
+            domain, coverage.effective_domain_type, _ptr(path, "domain"), issues
+        )
 
     parameters = coverage.parameters
 

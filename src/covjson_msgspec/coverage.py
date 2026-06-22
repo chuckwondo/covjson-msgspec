@@ -80,6 +80,29 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
     parameters: dict[str, Parameter] | None = None
     parameter_groups: tuple[ParameterGroup, ...] | None = None
 
+    @property
+    def effective_domain_type(self) -> str | None:
+        """The domain type in effect for this coverage, or ``None`` if unknown.
+
+        CoverageJSON lets ``domainType`` appear in more than one place: on the
+        inline `Domain` (its natural home), and on the `Coverage` itself (a
+        denormalized copy, used when the domain is an external URL reference, or
+        supplied by a `CoverageCollection` that declares the type once for all
+        members; see `CoverageCollection.resolved_coverages`). When both are
+        present the spec requires them to match, so this prefers the domain's own
+        value and falls back to the coverage-level one (which is all that is
+        available for a URL-reference domain).
+
+        Returns
+        -------
+        str or None
+            The domain type, e.g. ``"Grid"`` or ``"Trajectory"``.
+        """
+        domain = self.domain
+        declared = domain.domain_type if isinstance(domain, Domain) else None
+
+        return declared or self.domain_type
+
     def to_xarray(self) -> "xr.Dataset":
         """Convert this coverage to a CF-aware `xarray.Dataset`.
 
