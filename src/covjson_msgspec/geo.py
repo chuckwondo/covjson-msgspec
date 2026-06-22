@@ -24,7 +24,8 @@ Mapping
   system tags it with that system's ``id`` (an EPSG / OGC CRS URI).
 
 A multi-dimensional gridded domain (Grid) is degenerately emitted as one point
-feature per cell; the xarray bridge is the better fit for gridded data.
+feature per cell (with a `UserWarning`, since the xarray bridge is the better fit
+for gridded data).
 
 A `CoverageCollection` is converted by concatenating its resolved members into one
 frame, with a leading ``coverage`` column identifying each member (its ``id`` when
@@ -35,6 +36,7 @@ Spec: [Coverage objects](https://github.com/covjson/specification/blob/master/sp
 """
 
 import json
+import warnings
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from covjson_msgspec.coverage import Coverage, CoverageCollection
@@ -60,6 +62,13 @@ _POLYGON_DOMAIN_TYPES = frozenset(
 # (keeping each vertex's measurements), or a single ``LineString`` for the path.
 TrajectoryAs = Literal["points", "linestring"]
 _TRAJECTORY_AS = frozenset({"points", "linestring"})
+
+# A Grid is gridded data, not vector features; we degenerately emit one point per
+# cell, but the xarray bridge is the better fit, so warn rather than do it silently.
+_GRID_WARNING = (
+    "converting a Grid domain to vector geometry emits one point feature per "
+    "cell, which is rarely what you want; consider to_xarray for gridded data"
+)
 
 
 def to_geopandas(
@@ -104,6 +113,12 @@ def to_geopandas(
         If a domain is a URL reference, a point-like domain lacks ``x`` / ``y``
         coordinates, a range is not an inline `NdArray`, or ``trajectory_as`` is
         not ``"points"`` or ``"linestring"``.
+
+    Warns
+    -----
+    UserWarning
+        If a domain is a Grid, which is degenerately emitted as one point feature
+        per cell (the xarray bridge is the better fit for gridded data).
     """
     if trajectory_as not in _TRAJECTORY_AS:
         msg = f"trajectory_as must be 'points' or 'linestring'; got {trajectory_as!r}"
@@ -187,6 +202,9 @@ def _coverage_to_geopandas(
         raise ValueError(msg)
 
     domain_type = domain.domain_type or coverage.domain_type
+
+    if domain_type == "Grid":
+        warnings.warn(_GRID_WARNING, UserWarning, stacklevel=2)
 
     if domain_type in _POLYGON_DOMAIN_TYPES:
         frame, geometry = _polygon_frame(coverage, domain)

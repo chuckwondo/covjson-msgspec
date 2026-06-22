@@ -153,6 +153,65 @@ def test_trajectory_is_one_point_per_vertex() -> None:
     assert gdf["v"].tolist() == [5.0, 6.0]
 
 
+def test_multipoint_is_one_point_per_member() -> None:
+    # MultiPoint carries its positions in a composite (x, y) tuple axis; each
+    # tuple becomes one point feature with its measurement.
+    composite = Axis(
+        data_type="tuple",
+        coordinates=("x", "y"),
+        values=((1.0, 10.0), (2.0, 20.0), (3.0, 30.0)),
+    )
+    cov = Coverage(
+        domain=Domain(axes={"composite": composite}, domain_type="MultiPoint"),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=(5.0, 6.0, 7.0),
+                shape=(3,),
+                axis_names=("composite",),
+            )
+        },
+    )
+    gdf = to_geopandas(cov)
+
+    assert [g.geom_type for g in gdf.geometry] == ["Point", "Point", "Point"]
+    assert [(g.x, g.y) for g in gdf.geometry] == [(1.0, 10.0), (2.0, 20.0), (3.0, 30.0)]
+    assert gdf["v"].tolist() == [5.0, 6.0, 7.0]
+
+
+def test_grid_is_one_point_per_cell() -> None:
+    cov = Coverage(
+        domain=Domain.grid(x=Axis.listed((0.0, 1.0)), y=Axis.listed((10.0, 20.0))),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=(1.0, 2.0, 3.0, 4.0),
+                shape=(2, 2),
+                axis_names=("y", "x"),
+            )
+        },
+    )
+
+    with pytest.warns(UserWarning, match="one point feature per"):
+        gdf = to_geopandas(cov)
+
+    # One feature per cell of the 2x2 grid, range values aligned by (y, x).
+    assert len(gdf) == 4
+    assert {(g.x, g.y) for g in gdf.geometry} == {
+        (0.0, 10.0),
+        (1.0, 10.0),
+        (0.0, 20.0),
+        (1.0, 20.0),
+    }
+    cells = zip(zip(gdf["x"], gdf["y"], strict=True), gdf["v"], strict=True)
+    assert dict(cells) == {
+        (0.0, 10.0): 1.0,
+        (1.0, 10.0): 2.0,
+        (0.0, 20.0): 3.0,
+        (1.0, 20.0): 4.0,
+    }
+
+
 def test_polygon_is_single_polygon_feature() -> None:
     cov = Coverage(
         domain=Domain.polygon([(0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 0.0)]),
