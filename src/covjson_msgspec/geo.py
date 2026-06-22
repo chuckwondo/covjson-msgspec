@@ -161,7 +161,7 @@ def to_geopandas(
 
 
 def to_geojson(
-    coverage: Coverage | CoverageCollection,
+    obj: Coverage | CoverageCollection,
     *,
     trajectory_as: TrajectoryAs = "points",
 ) -> dict[str, Any]:
@@ -175,7 +175,7 @@ def to_geojson(
 
     Parameters
     ----------
-    coverage
+    obj
         The coverage or collection to convert (same requirements as
         `to_geopandas`).
     trajectory_as
@@ -214,7 +214,7 @@ def to_geojson(
     """
     # geopandas' to_json serializes geometry, columns, datetimes, and (unlike the
     # __geo_interface__ mapping) drops the row index, giving clean JSON output.
-    gdf = to_geopandas(coverage, trajectory_as=trajectory_as)
+    gdf = to_geopandas(obj, trajectory_as=trajectory_as)
 
     # An empty CoverageCollection yields a frame with no geometry column, on which
     # to_json would raise; emit an empty FeatureCollection directly instead.
