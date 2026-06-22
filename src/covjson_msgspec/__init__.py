@@ -22,6 +22,7 @@ from covjson_msgspec.coverage import (
     encode,
 )
 from covjson_msgspec.domain import Domain
+from covjson_msgspec.geo import to_geojson, to_geopandas
 from covjson_msgspec.i18n import I18n, i18n
 from covjson_msgspec.pandas import to_pandas
 from covjson_msgspec.parameter import (
@@ -106,6 +107,8 @@ __all__ = [
     "from_xarray",
     "i18n",
     "to_datatree",
+    "to_geojson",
+    "to_geopandas",
     "to_pandas",
     "to_xarray",
     "validate",

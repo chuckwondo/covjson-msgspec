@@ -121,6 +121,12 @@ ignore_missing_imports = true
 module = ["pandas"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+# geopandas and shapely type coverage is partial; the geo bridge treats them as
+# untyped (it lazy-imports them only inside its functions).
+module = ["geopandas", "shapely"]
+ignore_missing_imports = true
+
 [tool.basedpyright]
 include = ["src", "tests"]
 typeCheckingMode = "strict"

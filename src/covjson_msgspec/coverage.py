@@ -28,6 +28,7 @@ from covjson_msgspec.range import NdArray, TiledNdArray
 from covjson_msgspec.referencing import ReferenceSystemConnection
 
 if TYPE_CHECKING:
+    import geopandas as gpd
     import pandas as pd
     import xarray as xr
 
@@ -147,6 +148,38 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         from covjson_msgspec.pandas import to_pandas
 
         return to_pandas(self)
+
+    def to_geopandas(self) -> "gpd.GeoDataFrame":
+        """Convert this coverage to a `geopandas.GeoDataFrame`.
+
+        Requires the ``geo`` extra. Thin delegate to
+        `covjson_msgspec.geo.to_geopandas`; see it for the full domain/geometry
+        mapping and the conditions it raises on.
+
+        Returns
+        -------
+        geopandas.GeoDataFrame
+            The coverage as vector features, one per coverage element.
+        """
+        from covjson_msgspec.geo import to_geopandas
+
+        return to_geopandas(self)
+
+    def to_geojson(self) -> dict[str, object]:
+        """Convert this coverage to a GeoJSON ``FeatureCollection`` mapping.
+
+        Requires the ``geo`` extra. Thin delegate to
+        `covjson_msgspec.geo.to_geojson`; see it for the full domain/geometry
+        mapping and the conditions it raises on.
+
+        Returns
+        -------
+        dict
+            A GeoJSON ``FeatureCollection`` as a plain mapping.
+        """
+        from covjson_msgspec.geo import to_geojson
+
+        return to_geojson(self)
 
 
 class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
