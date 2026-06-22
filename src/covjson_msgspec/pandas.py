@@ -96,7 +96,7 @@ def to_pandas(coverage: Coverage) -> "pd.DataFrame":
     constant column, and each range (``v``) becomes a value column:
 
     >>> from covjson_msgspec import decode_coverage
-    >>> cov = decode_coverage(b'''
+    >>> cov = decode_coverage('''
     ... {
     ...   "type": "Coverage",
     ...   "domain": {
@@ -132,18 +132,20 @@ def to_pandas(coverage: Coverage) -> "pd.DataFrame":
         raise ModuleNotFoundError(_INSTALL_HINT) from exc
 
     if not isinstance(domain := coverage.domain, Domain):
-        raise ValueError(
+        msg = (
             "coverage.domain is a URL reference; resolve it to a Domain before "
             "converting to pandas"
         )
+        raise ValueError(msg)
 
     domain_type = domain.domain_type or coverage.domain_type
 
     if domain_type in _POLYGON_DOMAIN_TYPES:
-        raise ValueError(
+        msg = (
             f"{domain_type!r} is a polygon domain (vector geometry); use the "
             "geopandas bridge instead of pandas"
         )
+        raise ValueError(msg)
 
     temporal = _temporal_coordinates(domain)
     layout = _axis_layout(domain, temporal)
@@ -158,11 +160,12 @@ def to_pandas(coverage: Coverage) -> "pd.DataFrame":
 
     for key, range_ in coverage.ranges.items():
         if not isinstance(range_, NdArray):
-            raise ValueError(
+            msg = (
                 f"range {key!r} is not an inline NdArray (got "
                 f"{type(range_).__name__}); resolve URL ranges and assemble "
                 "TiledNdArray tiles before converting to pandas"
             )
+            raise ValueError(msg)
 
         columns[key] = _range_column(range_, layout.dims, layout.sizes)
 
@@ -199,7 +202,8 @@ def _axis_layout(domain: Domain, temporal: set[str]) -> _AxisLayout:
 
     for key, axis in domain.axes.items():
         if axis.data_type == "polygon":
-            raise ValueError("polygon axes are not supported by the pandas bridge")
+            msg = "polygon axes are not supported by the pandas bridge"
+            raise ValueError(msg)
 
         if axis.data_type == "tuple":
             # Composite axis: one index level (the row position) plus one column

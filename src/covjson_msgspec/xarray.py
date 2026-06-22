@@ -112,7 +112,7 @@ def to_xarray(coverage: Coverage) -> "xr.Dataset":
     dimensions, and the domain type is recorded in the attributes:
 
     >>> from covjson_msgspec import decode_coverage
-    >>> cov = decode_coverage(b'''
+    >>> cov = decode_coverage('''
     ... {
     ...   "type": "Coverage",
     ...   "domain": {
@@ -152,18 +152,20 @@ def to_xarray(coverage: Coverage) -> "xr.Dataset":
         raise ModuleNotFoundError(_INSTALL_HINT) from exc
 
     if not isinstance(domain := coverage.domain, Domain):
-        raise ValueError(
+        msg = (
             "coverage.domain is a URL reference; resolve it to a Domain before "
             "converting to xarray"
         )
+        raise ValueError(msg)
 
     domain_type = domain.domain_type or coverage.domain_type
 
     if domain_type in _POLYGON_DOMAIN_TYPES:
-        raise ValueError(
+        msg = (
             f"{domain_type!r} is a polygon domain (vector geometry); use the "
             "geopandas bridge instead of xarray"
         )
+        raise ValueError(msg)
 
     systems = _coordinate_systems(domain)
     geo_roles = _geographic_roles(domain)
@@ -379,7 +381,7 @@ def to_datatree(collection: CoverageCollection) -> "xr.DataTree":
     `to_xarray` produces for it:
 
     >>> from covjson_msgspec import decode_coverage_collection
-    >>> collection = decode_coverage_collection(b'''
+    >>> collection = decode_coverage_collection('''
     ... {
     ...   "type": "CoverageCollection",
     ...   "domainType": "Point",
@@ -559,10 +561,11 @@ def _require_datatree() -> None:
         raise ModuleNotFoundError(_INSTALL_HINT) from exc
 
     if not hasattr(xr, "DataTree"):  # pragma: no cover - version-dependent
-        raise ModuleNotFoundError(
+        msg = (
             "xarray.DataTree is required for collection conversion; "
             "upgrade to xarray>=2024.10"
         )
+        raise ModuleNotFoundError(msg)
 
 
 def _coordinate_systems(domain: Domain) -> dict[str, ReferenceSystem]:
@@ -596,7 +599,8 @@ def _build_coords(
 
     for key, axis in domain.axes.items():
         if axis.data_type == "polygon":
-            raise ValueError("polygon axes are not supported by the xarray bridge")
+            msg = "polygon axes are not supported by the xarray bridge"
+            raise ValueError(msg)
 
         if axis.data_type == "tuple":
             # Composite axis: transpose the tuples into one non-dimension
@@ -726,11 +730,12 @@ def _data_variable(
     parameters: dict[str, Parameter] | None,
 ) -> _Variable:
     if not isinstance(range_, NdArray):
-        raise ValueError(
+        msg = (
             f"range {key!r} is not an inline NdArray (got "
             f"{type(range_).__name__}); resolve URL ranges and assemble "
             "TiledNdArray tiles before converting to xarray"
         )
+        raise ValueError(msg)
 
     parameter = parameters.get(key) if parameters is not None else None
 
