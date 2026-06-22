@@ -585,7 +585,9 @@ def _coordinate_systems(domain: Domain) -> dict[str, ReferenceSystem]:
 
 def _geographic_roles(domain: Domain) -> dict[str, str]:
     # Map the coordinates of each geographic system to longitude/latitude/height
-    # by their CoverageJSON ordering.
+    # by their CoverageJSON ordering. strict=False is deliberate: a 2D system
+    # lists only (x, y) while _GEOGRAPHIC_ROLES carries the optional height, so
+    # the zip stops at the shorter coordinates tuple.
     return {
         coordinate: role
         for connection in domain.referencing
@@ -1146,6 +1148,9 @@ def _parameter_from_variable(name: str, variable: "xr.DataArray") -> Parameter |
     if "flag_values" in attrs and "flag_meanings" in attrs:
         codes = [int(code) for code in np.atleast_1d(attrs["flag_values"]).tolist()]
         meanings = str(attrs["flag_meanings"]).split()
+        # strict=False tolerates CF data in the wild where flag_values and
+        # flag_meanings disagree in length: pair up to the shorter of the two
+        # rather than raising on a malformed source attribute.
         categories = tuple(
             Category(id=str(code), label=i18n(meaning.replace("_", " ")))
             for code, meaning in zip(codes, meanings, strict=False)
