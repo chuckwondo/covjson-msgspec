@@ -41,9 +41,14 @@ numpy = ["numpy>=1.24"]
 # xarray>=2024.10 first ships xarray.DataTree, used by the collection bridge.
 xarray = ["xarray>=2024.10", "numpy>=1.24", "cftime>=1.6"]
 pandas = ["pandas>=2.0", "numpy>=1.24"]
-geo = ["geopandas>=0.14", "shapely>=2.0"]
-fastapi = ["fastapi>=0.110"]
-all = ["covjson-msgspec[numpy,xarray,pandas,geo,fastapi]"]
+# geopandas guarantees pandas + numpy transitively, but the geo bridge imports
+# both directly (it reuses the pandas bridge and builds geometry with numpy), so
+# list them explicitly rather than relying on a transitive dependency.
+geo = ["geopandas>=0.14", "shapely>=2.0", "pandas>=2.0", "numpy>=1.24"]
+# The litestar / fastapi response-helper bridges are planned but not yet shipped,
+# so they carry no extra until there is code behind them (an extra that installs
+# a framework but adds nothing would mislead).
+all = ["covjson-msgspec[numpy,xarray,pandas,geo]"]
 
 # PEP 735 dependency groups (uv-native).
 [dependency-groups]

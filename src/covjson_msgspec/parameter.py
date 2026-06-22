@@ -4,7 +4,7 @@ categories.
 A CoverageJSON *parameter* describes one variable found in a coverage's ranges.
 It comes in two mutually exclusive shapes:
 
-* **continuous**: carries a `Unit`; or
+* **continuous**: may carry a `Unit` (omitted for a dimensionless quantity); or
 * **categorical**: its `ObservedProperty` lists `Category` values and a
   ``category_encoding`` maps each category id to the integer code(s) used in the
   range. A categorical parameter MUST NOT carry a unit.
