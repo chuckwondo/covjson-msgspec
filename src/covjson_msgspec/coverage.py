@@ -333,6 +333,40 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
 
         return to_pandas(self)
 
+    def to_geopandas(self) -> "gpd.GeoDataFrame":
+        """Convert this collection to a single `geopandas.GeoDataFrame`.
+
+        Requires the ``geo`` extra. Thin delegate to
+        `covjson_msgspec.geo.to_geopandas`; the resolved members are concatenated
+        with a leading ``coverage`` column identifying each. See it for the
+        per-member domain/geometry mapping and the conditions it raises on.
+
+        Returns
+        -------
+        geopandas.GeoDataFrame
+            The member coverages stacked into one frame of vector features.
+        """
+        from covjson_msgspec.geo import to_geopandas
+
+        return to_geopandas(self)
+
+    def to_geojson(self) -> dict[str, object]:
+        """Convert this collection to a GeoJSON ``FeatureCollection`` mapping.
+
+        Requires the ``geo`` extra. Thin delegate to
+        `covjson_msgspec.geo.to_geojson`; every member's features carry a
+        ``coverage`` property identifying their source. See it for the per-member
+        domain/geometry mapping and the conditions it raises on.
+
+        Returns
+        -------
+        dict
+            A GeoJSON ``FeatureCollection`` as a plain mapping.
+        """
+        from covjson_msgspec.geo import to_geojson
+
+        return to_geojson(self)
+
 
 # The root of any CoverageJSON document. Domain and the range types are valid
 # standalone documents too (e.g. a domain referenced by a coverage's URL range).

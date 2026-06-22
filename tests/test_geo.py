@@ -7,6 +7,7 @@ import pytest
 from covjson_msgspec import (
     Axis,
     Coverage,
+    CoverageCollection,
     Domain,
     GeographicCRS,
     NdArray,
@@ -236,3 +237,77 @@ def test_non_ndarray_polygon_range_is_rejected() -> None:
 
     with pytest.raises(ValueError, match="inline NdArray"):
         to_geopandas(cov)
+
+
+def _point_member(id_: str | None, x: float, y: float, v: float) -> Coverage:
+    return Coverage(
+        id=id_,
+        domain=Domain.point(x=Axis.listed((x,)), y=Axis.listed((y,))),
+        ranges={"v": NdArray(data_type="float", values=(v,))},
+    )
+
+
+def test_collection_concatenates_members_with_coverage_column() -> None:
+    collection = CoverageCollection(
+        coverages=(
+            _point_member("a", 1.0, 2.0, 10.0),
+            _point_member("b", 3.0, 4.0, 20.0),
+        ),
+    )
+    gdf = to_geopandas(collection)
+
+    assert isinstance(gdf, gpd.GeoDataFrame)
+    assert len(gdf) == 2
+    assert next(iter(gdf.columns)) == "coverage"
+    assert gdf["coverage"].tolist() == ["a", "b"]
+    assert gdf["v"].tolist() == [10.0, 20.0]
+    assert [(g.x, g.y) for g in gdf.geometry] == [(1.0, 2.0), (3.0, 4.0)]
+
+
+def test_collection_methods_delegate() -> None:
+    collection = CoverageCollection(coverages=(_point_member("a", 1.0, 2.0, 10.0),))
+
+    assert collection.to_geopandas()["coverage"].tolist() == ["a"]
+    assert collection.to_geojson()["type"] == "FeatureCollection"
+
+
+def test_collection_keys_unidentified_members_by_position() -> None:
+    collection = CoverageCollection(
+        coverages=(
+            _point_member(None, 1.0, 2.0, 10.0),
+            _point_member(None, 3.0, 4.0, 20.0),
+        ),
+    )
+
+    assert to_geopandas(collection)["coverage"].tolist() == [0, 1]
+
+
+def test_collection_inherits_referencing_for_crs() -> None:
+    # The CRS lives on the collection's referencing; members declare none.
+    collection = CoverageCollection(
+        coverages=(_point_member("a", 1.0, 2.0, 10.0),),
+        referencing=(
+            ReferenceSystemConnection(
+                coordinates=("x", "y"), system=GeographicCRS(id="crs")
+            ),
+        ),
+    )
+
+    assert to_geopandas(collection).crs == "EPSG:4326"
+
+
+def test_collection_features_carry_coverage_property() -> None:
+    collection = CoverageCollection(
+        coverages=(
+            _point_member("a", 1.0, 2.0, 10.0),
+            _point_member("b", 3.0, 4.0, 20.0),
+        ),
+    )
+    gj = to_geojson(collection)
+
+    assert gj["type"] == "FeatureCollection"
+    assert [f["properties"]["coverage"] for f in gj["features"]] == ["a", "b"]
+
+
+def test_empty_collection_is_empty_frame() -> None:
+    assert len(to_geopandas(CoverageCollection(coverages=()))) == 0

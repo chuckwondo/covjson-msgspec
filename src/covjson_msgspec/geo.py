@@ -21,13 +21,18 @@ Mapping
 A multi-dimensional gridded domain (Grid) is degenerately emitted as one point
 feature per cell; the xarray bridge is the better fit for gridded data.
 
+A `CoverageCollection` is converted by concatenating its resolved members into one
+frame, with a leading ``coverage`` column identifying each member (its ``id`` when
+set, otherwise its position). Unlike the pandas bridge's index level, this is a
+plain column so it survives ``to_json`` into each feature's ``properties``.
+
 Spec: [Coverage objects](https://github.com/covjson/specification/blob/master/spec.md#64-coverage-objects).
 """
 
 import json
 from typing import TYPE_CHECKING, Any, cast
 
-from covjson_msgspec.coverage import Coverage
+from covjson_msgspec.coverage import Coverage, CoverageCollection
 from covjson_msgspec.domain import Domain
 from covjson_msgspec.range import NdArray
 from covjson_msgspec.referencing import GeographicCRS
@@ -47,34 +52,36 @@ _POLYGON_DOMAIN_TYPES = frozenset(
 )
 
 
-def to_geopandas(coverage: Coverage) -> "gpd.GeoDataFrame":
-    """Convert a `Coverage` to a `geopandas.GeoDataFrame`.
+def to_geopandas(obj: Coverage | CoverageCollection) -> "gpd.GeoDataFrame":
+    """Convert a `Coverage` or `CoverageCollection` to a `geopandas.GeoDataFrame`.
 
-    Requires the ``geo`` extra. Each coverage element becomes one feature: a
-    point-like domain yields ``Point`` geometry from its ``x`` / ``y`` coordinates
-    and the Polygon family yields ``Polygon`` geometry from its ``composite`` axis
-    (see the module docstring for the full mapping). A coverage taken from a
-    `CoverageCollection` should be obtained via
-    `CoverageCollection.resolved_coverages` first, so its parameters and
-    referencing are populated.
+    Requires the ``geo`` extra. For a `Coverage`, each coverage element becomes
+    one feature: a point-like domain yields ``Point`` geometry from its ``x`` /
+    ``y`` coordinates and the Polygon family yields ``Polygon`` geometry from its
+    ``composite`` axis (see the module docstring for the full mapping). A
+    `CoverageCollection` is its resolved members concatenated, each member's rows
+    tagged with a leading ``coverage`` column (so inherited parameters and
+    referencing are applied automatically).
 
     Parameters
     ----------
-    coverage
-        The coverage to convert. Its ``domain`` must be an inline `Domain` (not a
-        URL reference) and every range an inline `NdArray`.
+    obj
+        The coverage or collection to convert. Each coverage's ``domain`` must be
+        an inline `Domain` (not a URL reference) and every range an inline
+        `NdArray`.
 
     Returns
     -------
     geopandas.GeoDataFrame
-        A frame of the coverage's parameter and coordinate columns with a
-        ``geometry`` column; ``EPSG:4326`` when the domain has a geographic
-        reference system.
+        A frame of the parameter and coordinate columns with a ``geometry``
+        column; ``EPSG:4326`` when the domain has a geographic reference system.
+        For a collection, the member frames concatenated under a leading
+        ``coverage`` column.
 
     Raises
     ------
     ValueError
-        If the domain is a URL reference, a point-like domain lacks ``x`` / ``y``
+        If a domain is a URL reference, a point-like domain lacks ``x`` / ``y``
         coordinates, or a range is not an inline `NdArray`.
     """
     try:
@@ -82,43 +89,26 @@ def to_geopandas(coverage: Coverage) -> "gpd.GeoDataFrame":
     except ModuleNotFoundError as exc:  # pragma: no cover - env-dependent
         raise ModuleNotFoundError(_INSTALL_HINT) from exc
 
-    if not isinstance(domain := coverage.domain, Domain):
-        msg = (
-            "coverage.domain is a URL reference; resolve it to a Domain before "
-            "converting to geopandas"
-        )
-        raise ValueError(msg)
+    if isinstance(obj, CoverageCollection):
+        return _collection_to_geopandas(obj, gpd)
 
-    domain_type = domain.domain_type or coverage.domain_type
-
-    if domain_type in _POLYGON_DOMAIN_TYPES:
-        frame, geometry = _polygon_frame(coverage, domain)
-    else:
-        frame, geometry = _point_frame(coverage, domain)
-
-    gdf = gpd.GeoDataFrame(frame, geometry=geometry, crs=_crs(domain))
-
-    if domain_type is not None:
-        gdf.attrs["domain_type"] = domain_type
-
-    if coverage.id is not None:
-        gdf.attrs["id"] = coverage.id
-
-    return gdf
+    return _coverage_to_geopandas(obj, gpd)
 
 
-def to_geojson(coverage: Coverage) -> dict[str, Any]:
-    """Convert a `Coverage` to a GeoJSON ``FeatureCollection`` mapping.
+def to_geojson(coverage: Coverage | CoverageCollection) -> dict[str, Any]:
+    """Convert a `Coverage` or `CoverageCollection` to a GeoJSON mapping.
 
     Requires the ``geo`` extra. Thin wrapper over `to_geopandas`: each coverage
     element becomes a GeoJSON ``Feature`` whose ``properties`` are the parameter
     and coordinate values and whose ``geometry`` is the element's point or polygon
-    (see the module docstring for the full mapping).
+    (see the module docstring for the full mapping). A `CoverageCollection`'s
+    features carry a ``coverage`` property identifying their source member.
 
     Parameters
     ----------
     coverage
-        The coverage to convert (same requirements as `to_geopandas`).
+        The coverage or collection to convert (same requirements as
+        `to_geopandas`).
 
     Returns
     -------
@@ -148,6 +138,68 @@ def to_geojson(coverage: Coverage) -> dict[str, Any]:
     # geopandas' to_json serializes geometry, columns, datetimes, and (unlike the
     # __geo_interface__ mapping) drops the row index, giving clean JSON output.
     return cast("dict[str, Any]", json.loads(to_geopandas(coverage).to_json()))
+
+
+def _coverage_to_geopandas(coverage: Coverage, gpd: Any) -> "gpd.GeoDataFrame":
+    if not isinstance(domain := coverage.domain, Domain):
+        msg = (
+            "coverage.domain is a URL reference; resolve it to a Domain before "
+            "converting to geopandas"
+        )
+        raise ValueError(msg)
+
+    domain_type = domain.domain_type or coverage.domain_type
+
+    if domain_type in _POLYGON_DOMAIN_TYPES:
+        frame, geometry = _polygon_frame(coverage, domain)
+    else:
+        frame, geometry = _point_frame(coverage, domain)
+
+    gdf = gpd.GeoDataFrame(frame, geometry=geometry, crs=_crs(domain))
+
+    if domain_type is not None:
+        gdf.attrs["domain_type"] = domain_type
+
+    if coverage.id is not None:
+        gdf.attrs["id"] = coverage.id
+
+    return gdf
+
+
+def _collection_to_geopandas(
+    collection: CoverageCollection, gpd: Any
+) -> "gpd.GeoDataFrame":
+    import pandas as pd
+
+    # Resolve first so each member carries the collection's inherited parameters
+    # and referencing (the latter is what tags temporal axes and sets the CRS).
+    resolved = collection.resolved_coverages()
+
+    if not resolved:
+        return gpd.GeoDataFrame()
+
+    frames = []
+
+    for index, coverage in enumerate(resolved):
+        gdf = _coverage_to_geopandas(coverage, gpd)
+        # Key each member by its id when set, falling back to its position. A
+        # leading plain column (not an index level) survives to_json into each
+        # feature's properties.
+        gdf.insert(0, "coverage", coverage.id if coverage.id is not None else index)
+        frames.append(gdf)
+
+    # Concatenate as plain frames, then rebuild geometry with a single explicit
+    # CRS (members of a collection share referencing, so it is uniform).
+    combined = pd.concat(
+        [pd.DataFrame(frame) for frame in frames], ignore_index=True
+    )
+    crs = next((frame.crs for frame in frames if frame.crs is not None), None)
+    result = gpd.GeoDataFrame(combined, geometry="geometry", crs=crs)
+
+    if collection.domain_type is not None:
+        result.attrs["domain_type"] = collection.domain_type
+
+    return result
 
 
 def _point_frame(coverage: Coverage, domain: Domain) -> "tuple[Any, Any]":
