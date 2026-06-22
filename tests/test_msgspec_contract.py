@@ -188,7 +188,8 @@ def test_decode_bypasses_call_guard() -> None:
 
     class GuardedMeta(type(msgspec.Struct)):  # type: ignore[misc]  # dynamic base
         def __call__(cls, *args: object, **kwargs: object) -> object:
-            raise TypeError(f"construct {cls.__name__} via a builder, not directly")
+            msg = f"construct {cls.__name__} via a builder, not directly"
+            raise TypeError(msg)
 
     class Guarded(msgspec.Struct, metaclass=GuardedMeta, frozen=True, tag="Guarded"):
         x: int

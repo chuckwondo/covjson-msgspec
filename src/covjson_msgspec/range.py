@@ -290,6 +290,5 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         # O(number of tilesets), all tiny, so safe to run on every path.
         for tile_set in self.tile_sets:
             if len(tile_set.tile_shape) != len(self.shape):
-                raise ValueError(
-                    "each tileSet's tileShape must have the same length as shape"
-                )
+                msg = "each tileSet's tileShape must have the same length as shape"
+                raise ValueError(msg)

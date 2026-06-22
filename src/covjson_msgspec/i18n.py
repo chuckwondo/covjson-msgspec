@@ -65,6 +65,7 @@ def i18n(text: str | None = None, /, **languages: str) -> I18n:
     result.update(languages)
 
     if not result:
-        raise ValueError("i18n() requires `text` or at least one language")
+        msg = "i18n() requires `text` or at least one language"
+        raise ValueError(msg)
 
     return result

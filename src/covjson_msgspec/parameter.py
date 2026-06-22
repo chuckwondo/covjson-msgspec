@@ -83,7 +83,8 @@ class Unit(CovJSONStruct, frozen=True):
         # O(1) invariant: cheap enough to always run, on construction and on
         # decode, so a Unit can never exist without a label or symbol.
         if self.label is None and self.symbol is None:
-            raise ValueError("Unit requires at least one of `label` or `symbol`")
+            msg = "Unit requires at least one of `label` or `symbol`"
+            raise ValueError(msg)
 
 
 class Category(CovJSONStruct, frozen=True):
@@ -186,12 +187,12 @@ class Parameter(CovJSONStruct, frozen=True, tag="Parameter"):
         categorical = self.observed_property.categories is not None
 
         if categorical and self.unit is not None:
-            raise ValueError("a categorical Parameter must not carry a `unit`")
+            msg = "a categorical Parameter must not carry a `unit`"
+            raise ValueError(msg)
 
         if self.category_encoding is not None and not categorical:
-            raise ValueError(
-                "`category_encoding` requires `observed_property.categories`"
-            )
+            msg = "`category_encoding` requires `observed_property.categories`"
+            raise ValueError(msg)
 
     @classmethod
     def continuous(
@@ -305,4 +306,5 @@ class ParameterGroup(CovJSONStruct, frozen=True, tag="ParameterGroup"):
 
     def __post_init__(self) -> None:
         if self.label is None and self.observed_property is None:
-            raise ValueError("ParameterGroup requires `label` or `observed_property`")
+            msg = "ParameterGroup requires `label` or `observed_property`"
+            raise ValueError(msg)

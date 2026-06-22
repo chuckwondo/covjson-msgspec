@@ -79,15 +79,16 @@ class Axis(CovJSONStruct, frozen=True):
         # Exactly one numeric form: the value list XOR the full regular triple.
         # O(1), so it runs on construction and on decode.
         if has_values == has_regular:
-            raise ValueError(
-                "Axis requires exactly one of `values` or `start`/`stop`/`num`"
-            )
+            msg = "Axis requires exactly one of `values` or `start`/`stop`/`num`"
+            raise ValueError(msg)
 
         if self.num is not None and self.num < 1:
-            raise ValueError("Axis `num` must be a positive integer")
+            msg = "Axis `num` must be a positive integer"
+            raise ValueError(msg)
 
         if self.data_type in ("tuple", "polygon") and self.coordinates is None:
-            raise ValueError(f"a {self.data_type!r} axis requires `coordinates`")
+            msg = f"a {self.data_type!r} axis requires `coordinates`"
+            raise ValueError(msg)
 
     @property
     def coordinate_values(self) -> tuple[AxisValue, ...]:
