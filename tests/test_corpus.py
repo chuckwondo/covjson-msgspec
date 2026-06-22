@@ -8,18 +8,37 @@ CoverageJSON, so validation must report no error-severity issues.
 """
 
 import pathlib
+import tomllib
 
+import msgspec
 import pytest
 
-from covjson_msgspec import decode, encode, validate
+from covjson_msgspec import CoverageJSON, decode, encode, validate
 from covjson_msgspec.validation import Severity
 
 _CORPUS = pathlib.Path(__file__).parent / "corpus"
 _PLAYGROUND = sorted((_CORPUS / "playground").rglob("*.covjson"))
 
+_PYDANTIC = _CORPUS / "covjson-pydantic"
+_PYDANTIC_FILES = sorted(_PYDANTIC.glob("*.json"))
+_MANIFEST = tomllib.loads((_PYDANTIC / "manifest.toml").read_text())
+# Negatives are enumerated in the manifest; every other fixture is positive.
+_STRUCTURAL_REJECT = {entry["file"] for entry in _MANIFEST["structural_reject"]}
+_VALIDATE_REJECT = {
+    entry["file"]: set(entry["codes"]) for entry in _MANIFEST["validate_reject"]
+}
+
 
 def _ids(paths: list[pathlib.Path]) -> list[str]:
     return [str(path.relative_to(_CORPUS)) for path in paths]
+
+
+def _error_codes(obj: CoverageJSON) -> set[str]:
+    return {
+        issue.code
+        for issue in validate(obj, check_values=True)
+        if issue.severity is Severity.ERROR
+    }
 
 
 def test_playground_corpus_is_present() -> None:
@@ -38,7 +57,38 @@ def test_playground_document_round_trips(path: pathlib.Path) -> None:
 
 @pytest.mark.parametrize("path", _PLAYGROUND, ids=_ids(_PLAYGROUND))
 def test_playground_document_validates_clean(path: pathlib.Path) -> None:
-    issues = validate(decode(path.read_bytes()), check_values=True)
-    errors = [issue for issue in issues if issue.severity is Severity.ERROR]
+    assert _error_codes(decode(path.read_bytes())) == set()
 
-    assert errors == []
+
+def test_covjson_pydantic_corpus_is_present() -> None:
+    # The pinned covjson-pydantic snapshot vendors exactly 50 fixtures; the
+    # manifest must reference only files that exist, with no double classification.
+    assert len(_PYDANTIC_FILES) == 50
+
+    classified = _STRUCTURAL_REJECT | set(_VALIDATE_REJECT)
+    names = {path.name for path in _PYDANTIC_FILES}
+
+    assert classified <= names
+    assert _STRUCTURAL_REJECT.isdisjoint(_VALIDATE_REJECT)
+
+
+@pytest.mark.parametrize("path", _PYDANTIC_FILES, ids=_ids(_PYDANTIC_FILES))
+def test_covjson_pydantic_fixture_matches_manifest(path: pathlib.Path) -> None:
+    raw = path.read_bytes()
+
+    if path.name in _STRUCTURAL_REJECT:
+        # Not a root document, or a malformed one: decode must reject it.
+        with pytest.raises((msgspec.ValidationError, ValueError)):
+            decode(raw)
+
+        return
+
+    # Everything else decodes and round-trips (positive and validate-reject alike).
+    obj = decode(raw)
+
+    assert decode(encode(obj)) == obj
+
+    if path.name in _VALIDATE_REJECT:
+        assert _error_codes(obj) == _VALIDATE_REJECT[path.name]
+    else:
+        assert _error_codes(obj) == set()

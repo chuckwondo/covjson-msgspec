@@ -1,0 +1,97 @@
+# Classification of the vendored covjson-pydantic fixtures under THIS library's
+# semantics. covjson-pydantic's fixtures are written for pydantic models, whose
+# validation differs from ours (a thin decode + a separate tiered validate()), so
+# their pass/fail labels do not transfer; each negative is classified here.
+#
+# Any fixture NOT listed below is positive: it decodes, round-trips
+# (decode -> encode -> decode is stable), and validate(check_values=True) reports
+# no error-severity issues. The harness is tests/test_corpus.py.
+
+# decode() raises. Either the fixture is not a root CoverageJSON document (our
+# decode() root union is Coverage | CoverageCollection | Domain | NdArray |
+# TiledNdArray, so a bare sub-model fragment has no recognized type tag), or it
+# is a structurally malformed root document.
+[[structural_reject]]
+file = "categorical-data-parameter.json"
+note = "bare Parameter object; not a root document"
+
+[[structural_reject]]
+file = "continuous-data-parameter.json"
+note = "bare Parameter object; not a root document"
+
+[[structural_reject]]
+file = "spec-parametergroup.json"
+note = "bare ParameterGroup; not a root document"
+
+[[structural_reject]]
+file = "spec-reference-system-identifierrs.json"
+note = "bare IdentifierRS reference system; not a root document"
+
+[[structural_reject]]
+file = "mixed-type-axes.json"
+note = "bare axes fragment; not a root document"
+
+[[structural_reject]]
+file = "mixed-type-axes-2.json"
+note = "bare axes fragment; not a root document"
+
+[[structural_reject]]
+file = "spec-axes.json"
+note = "bare axes fragment; not a root document"
+
+[[structural_reject]]
+file = "str-axes.json"
+note = "bare axes fragment; not a root document"
+
+[[structural_reject]]
+file = "parameters.json"
+note = "bare parameters mapping; not a root document"
+
+[[structural_reject]]
+file = "temporalrs-no-calendar.json"
+note = "bare referencing-connection fragment; not a root document"
+
+[[structural_reject]]
+file = "tiled-ndarray-invalid-tileshape.json"
+note = "TiledNdArray tileShape has a non-integer entry"
+
+[[structural_reject]]
+file = "tiled-ndarray-missing-tilesets.json"
+note = "TiledNdArray missing required tileSets"
+
+[[structural_reject]]
+file = "tiled-ndarray-missing-urltemplate.json"
+note = "TileSet missing required urlTemplate"
+
+# Decodes and round-trips, but validate() reports exactly these error codes.
+[[validate_reject]]
+file = "grid-domain-no-y.json"
+codes = ["domain.missing-axis"]
+
+[[validate_reject]]
+file = "point-series-domain-no-t.json"
+codes = ["domain.missing-axis"]
+
+[[validate_reject]]
+file = "polygon-domain-no-composite.json"
+codes = ["domain.missing-axis"]
+
+[[validate_reject]]
+file = "point-series-domain-more-z.json"
+codes = ["domain.axis-not-single"]
+
+[[validate_reject]]
+file = "polygon-domain-too-many-t.json"
+codes = ["domain.axis-not-single"]
+
+[[validate_reject]]
+file = "mixed-type-ndarray-1.json"
+codes = ["ndarray.shape-rank"]
+
+[[validate_reject]]
+file = "mixed-type-ndarray-2.json"
+codes = ["ndarray.shape-rank"]
+
+[[validate_reject]]
+file = "mixed-type-ndarray-3.json"
+codes = ["ndarray.shape-rank"]
