@@ -68,6 +68,18 @@ def test_to_numpy_reshapes_to_shape() -> None:
     assert arr.to_numpy().shape == (2, 3)
 
 
+def test_to_numpy_value_count_mismatch_raises_clear_error() -> None:
+    # Decoding is permissive, so a value count inconsistent with shape only
+    # surfaces at to_numpy; it should report a clear message, not numpy's
+    # cryptic "cannot reshape array of size ...".
+    arr = NdArray(
+        data_type="float", values=(1.0, 2.0, 3.0), shape=(2, 2), axis_names=("y", "x")
+    )
+
+    with pytest.raises(ValueError, match=r"3 value\(s\) but shape \(2, 2\) needs 4"):
+        arr.to_numpy()
+
+
 def test_to_numpy_zero_dimensional() -> None:
     arr = NdArray(data_type="float", values=(42.0,))
     out = arr.to_numpy()

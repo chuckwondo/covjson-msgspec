@@ -158,6 +158,19 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
             floats = [math.nan if v is None else float(v) for v in self.values]
             array = np.array(floats, dtype=np.float64)
 
+        # Fail with a clear message rather than numpy's cryptic "cannot reshape
+        # array of size N into shape (...)": decoding is permissive, so a value
+        # count inconsistent with shape only surfaces here. validate() reports
+        # the same mismatch as an ndarray.value-count issue.
+        expected = math.prod(self.shape)
+
+        if array.size != expected:
+            msg = (
+                f"NdArray has {array.size} value(s) but shape {tuple(self.shape)} "
+                f"needs {expected}; run validate() to locate the mismatch"
+            )
+            raise ValueError(msg)
+
         return array.reshape(self.shape)
 
     @classmethod
