@@ -28,6 +28,14 @@ _VALIDATE_REJECT = {
     entry["file"]: set(entry["codes"]) for entry in _MANIFEST["validate_reject"]
 }
 
+_NEGATIVE = _CORPUS / "negative"
+_NEGATIVE_FILES = sorted(_NEGATIVE.glob("*.json"))
+# Hand-authored docs, each targeting one validate() (code, severity) pair.
+_NEGATIVE_ISSUES = {
+    entry["file"]: {(issue["code"], issue["severity"]) for issue in entry["issues"]}
+    for entry in tomllib.loads((_NEGATIVE / "manifest.toml").read_text())["case"]
+}
+
 
 def _ids(paths: list[pathlib.Path]) -> list[str]:
     return [str(path.relative_to(_CORPUS)) for path in paths]
@@ -38,6 +46,12 @@ def _error_codes(obj: CoverageJSON) -> set[str]:
         issue.code
         for issue in validate(obj, check_values=True)
         if issue.severity is Severity.ERROR
+    }
+
+
+def _issues(obj: CoverageJSON) -> set[tuple[str, str]]:
+    return {
+        (issue.code, issue.severity.value) for issue in validate(obj, check_values=True)
     }
 
 
@@ -92,3 +106,19 @@ def test_covjson_pydantic_fixture_matches_manifest(path: pathlib.Path) -> None:
         assert _error_codes(obj) == _VALIDATE_REJECT[path.name]
     else:
         assert _error_codes(obj) == set()
+
+
+def test_negative_corpus_is_present() -> None:
+    # Every hand-authored document is classified, and vice versa.
+    assert _NEGATIVE_FILES
+    assert {path.name for path in _NEGATIVE_FILES} == set(_NEGATIVE_ISSUES)
+
+
+@pytest.mark.parametrize("path", _NEGATIVE_FILES, ids=_ids(_NEGATIVE_FILES))
+def test_negative_document_flags_expected_issues(path: pathlib.Path) -> None:
+    obj = decode(path.read_bytes())
+
+    # The docs are valid CoverageJSON (they decode and round-trip); what makes
+    # them negative is the validate() issues they carry.
+    assert decode(encode(obj)) == obj
+    assert _issues(obj) == _NEGATIVE_ISSUES[path.name]

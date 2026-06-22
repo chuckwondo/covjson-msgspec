@@ -1,0 +1,45 @@
+{
+  "type": "Coverage",
+  "domain": {
+    "type": "Domain",
+    "axes": {
+      "x": {
+        "values": [
+          1.0
+        ]
+      },
+      "y": {
+        "values": [
+          2.0
+        ]
+      }
+    },
+    "domainType": "Point"
+  },
+  "ranges": {},
+  "parameters": {
+    "a": {
+      "type": "Parameter",
+      "observedProperty": {
+        "label": {
+          "en": "A"
+        }
+      },
+      "unit": {
+        "symbol": "1"
+      }
+    }
+  },
+  "parameterGroups": [
+    {
+      "type": "ParameterGroup",
+      "members": [
+        "a",
+        "b"
+      ],
+      "label": {
+        "en": "grp"
+      }
+    }
+  ]
+}

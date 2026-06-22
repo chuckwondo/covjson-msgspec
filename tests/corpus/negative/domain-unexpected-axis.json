@@ -1,0 +1,21 @@
+{
+  "type": "Domain",
+  "axes": {
+    "x": {
+      "values": [
+        1.0
+      ]
+    },
+    "y": {
+      "values": [
+        2.0
+      ]
+    },
+    "q": {
+      "values": [
+        9.0
+      ]
+    }
+  },
+  "domainType": "Point"
+}

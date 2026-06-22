@@ -1,0 +1,64 @@
+{
+  "type": "Coverage",
+  "domain": {
+    "type": "Domain",
+    "axes": {
+      "x": {
+        "values": [
+          0.0,
+          1.0
+        ]
+      },
+      "y": {
+        "values": [
+          0.0
+        ]
+      }
+    },
+    "domainType": "Grid"
+  },
+  "ranges": {
+    "lc": {
+      "type": "NdArray",
+      "dataType": "integer",
+      "values": [
+        1,
+        7
+      ],
+      "shape": [
+        2
+      ],
+      "axisNames": [
+        "x"
+      ]
+    }
+  },
+  "parameters": {
+    "lc": {
+      "type": "Parameter",
+      "observedProperty": {
+        "label": {
+          "en": "Land cover"
+        },
+        "categories": [
+          {
+            "id": "1",
+            "label": {
+              "en": "Water"
+            }
+          },
+          {
+            "id": "2",
+            "label": {
+              "en": "Land"
+            }
+          }
+        ]
+      },
+      "categoryEncoding": {
+        "1": 1,
+        "2": 2
+      }
+    }
+  }
+}

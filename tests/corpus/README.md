@@ -19,6 +19,7 @@ The harness (`tests/test_corpus.py`) runs two passes per document:
 |-----------|----------|-----------|---------|----------|
 | `playground/` | [covjson/playground](https://github.com/covjson/playground) `public/coverages/` | `5fe9190274372e34b3b55a5b253e3ccdc2b773f8` | BSD-style (The University of Reading); see `playground/LICENSE` | 2026-06-22 |
 | `covjson-pydantic/` | [KNMI/covjson-pydantic](https://github.com/KNMI/covjson-pydantic) `tests/test_data/` | `b928a3c206fdffa3c1415a5e7a1bbf2718204209` | Apache-2.0; see `covjson-pydantic/LICENSE` | 2026-06-22 |
+| `negative/` | hand-authored (this project) | — | same as this project (MIT) | 2026-06-22 |
 
 `playground/` holds 28 end-to-end documents covering every root-union type:
 `Coverage` (grid, categorical grid, tiled grid, polygon, polygon series,
@@ -35,6 +36,14 @@ semantics. Files absent from the manifest are positive; the listed ones are
 either `structural_reject` (our `decode()` raises, because the fixture is a bare
 sub-model fragment rather than a root document, or is a malformed root document)
 or `validate_reject` (decodes, but `validate()` reports the recorded error codes).
+
+`negative/` holds small documents authored by this project, each decoding cleanly
+but carrying exactly one `validate()` issue, to cover the issue codes the vendored
+corpora do not exercise (e.g. `ndarray.value-count`, `coverage.range-shape-mismatch`,
+`domain.composite-data-type`, `parameter-group.unknown-member`,
+`range.invalid-category-code`, and the two warning codes). Its `manifest.toml`
+records the expected `(code, severity)` pair per file; together with the
+`covjson-pydantic` negatives these cover every code `validation.py` emits.
 
 ### Updating a source
 

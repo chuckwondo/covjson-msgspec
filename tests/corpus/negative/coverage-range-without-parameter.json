@@ -1,0 +1,29 @@
+{
+  "type": "Coverage",
+  "domain": {
+    "type": "Domain",
+    "axes": {
+      "x": {
+        "values": [
+          1.0
+        ]
+      },
+      "y": {
+        "values": [
+          2.0
+        ]
+      }
+    },
+    "domainType": "Point"
+  },
+  "ranges": {
+    "v": {
+      "type": "NdArray",
+      "dataType": "float",
+      "values": [
+        1.0
+      ]
+    }
+  },
+  "parameters": {}
+}

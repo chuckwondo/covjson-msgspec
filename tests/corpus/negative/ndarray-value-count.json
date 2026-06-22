@@ -1,0 +1,14 @@
+{
+  "type": "NdArray",
+  "dataType": "float",
+  "values": [
+    1.0,
+    2.0
+  ],
+  "shape": [
+    3
+  ],
+  "axisNames": [
+    "x"
+  ]
+}

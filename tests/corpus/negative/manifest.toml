@@ -1,0 +1,38 @@
+# Hand-authored negative corpus (authored by this project; no upstream license).
+# Each document is minimal and decodes cleanly, but targets one validate() issue
+# code that the vendored upstream corpora do not exercise. The harness
+# (tests/test_corpus.py) asserts that validate(check_values=True) reports exactly
+# the listed (code, severity) issues. Together with the covjson-pydantic
+# validate_reject fixtures these cover every code validation.py emits.
+
+[[case]]
+file = "ndarray-value-count.json"
+issues = [{ code = "ndarray.value-count", severity = "error" }]
+
+[[case]]
+file = "range-axis-not-in-domain.json"
+issues = [{ code = "coverage.range-axis-not-in-domain", severity = "error" }]
+
+[[case]]
+file = "range-shape-mismatch.json"
+issues = [{ code = "coverage.range-shape-mismatch", severity = "error" }]
+
+[[case]]
+file = "composite-data-type.json"
+issues = [{ code = "domain.composite-data-type", severity = "error" }]
+
+[[case]]
+file = "parameter-group-unknown-member.json"
+issues = [{ code = "parameter-group.unknown-member", severity = "error" }]
+
+[[case]]
+file = "range-invalid-category-code.json"
+issues = [{ code = "range.invalid-category-code", severity = "error" }]
+
+[[case]]
+file = "domain-unexpected-axis.json"
+issues = [{ code = "domain.unexpected-axis", severity = "warning" }]
+
+[[case]]
+file = "coverage-range-without-parameter.json"
+issues = [{ code = "coverage.range-without-parameter", severity = "warning" }]

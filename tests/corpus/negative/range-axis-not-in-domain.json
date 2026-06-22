@@ -1,0 +1,35 @@
+{
+  "type": "Coverage",
+  "domain": {
+    "type": "Domain",
+    "axes": {
+      "x": {
+        "values": [
+          1.0,
+          2.0
+        ]
+      },
+      "y": {
+        "values": [
+          3.0
+        ]
+      }
+    },
+    "domainType": "Grid"
+  },
+  "ranges": {
+    "v": {
+      "type": "NdArray",
+      "dataType": "float",
+      "values": [
+        5.0
+      ],
+      "shape": [
+        1
+      ],
+      "axisNames": [
+        "z"
+      ]
+    }
+  }
+}
