@@ -225,6 +225,16 @@ def validate(
     CovJSONValidationError
         If ``mode="raise"`` and at least one error-severity issue is found.
 
+    Notes
+    -----
+    Validation is partial when a coverage's ``domain`` is a URL reference rather
+    than an inline `Domain`: the domain itself and the range-vs-domain checks
+    (axis names, shapes) cannot run on data that has not been fetched, so they are
+    skipped silently. Such a document can return no issues while a chunk of
+    validation never ran; resolve the reference to an inline `Domain` first for
+    full coverage. (URL references are spec-valid and common in large collections,
+    so this is not reported as an issue.)
+
     Examples
     --------
     >>> from covjson_msgspec import Axis, Domain
@@ -450,6 +460,10 @@ def _validate_coverage(
 ) -> None:
     domain = coverage.domain
 
+    # A URL-reference domain is validated only where it is inline: the domain and
+    # the range-vs-domain checks below are skipped (you cannot check unfetched
+    # data) without an issue, since a URL reference is spec-valid. See validate()'s
+    # Notes on this partial validation.
     if isinstance(domain, Domain):
         _validate_domain(
             domain, coverage.effective_domain_type, _ptr(path, "domain"), issues
