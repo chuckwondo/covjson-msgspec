@@ -21,9 +21,10 @@ Mapping
   dimension (a ``POINT Z``) and also kept as a column. For a polygon it reaches
   the geometry (a ``POLYGON Z``) only when ``z`` is one of the ``composite`` ring
   coordinates; a standalone ``z`` axis on a polygon stays a column only.
-- A geographic reference system tags the result as ``EPSG:4326`` (CoverageJSON's
-  default geographic CRS is longitude/latitude on WGS84); a projected reference
-  system tags it with that system's ``id`` (an EPSG / OGC CRS URI).
+- A geographic reference system tags the result with its ``id`` when pyproj can
+  resolve it, else with CoverageJSON's default geographic CRS, ``OGC:CRS84``
+  (WGS84 longitude/latitude); a projected reference system tags it with that
+  system's ``id`` (an EPSG / OGC CRS URI).
 
 A multi-dimensional gridded domain (Grid) is degenerately emitted as one point
 feature per cell (with a `UserWarning`, since the xarray bridge is the better fit
@@ -61,6 +62,11 @@ _INSTALL_HINT = (
     "geopandas and shapely are required for this conversion; "
     "install covjson-msgspec[geo]"
 )
+
+# CoverageJSON's default geographic CRS: WGS84 longitude/latitude (OGC CRS84).
+# CRS84 is lon/lat, matching how the bridge builds x / y geometry; EPSG:4326
+# names the same datum but in lat/lon authority order, so CRS84 is the right tag.
+_DEFAULT_GEOGRAPHIC_CRS = "OGC:CRS84"
 
 # How a Trajectory's vertices map to geometry: one ``Point`` feature per vertex
 # (keeping each vertex's measurements), or a single ``LineString`` for the path.
@@ -107,9 +113,10 @@ def to_geopandas(
     -------
     geopandas.GeoDataFrame
         A frame of the parameter and coordinate columns with a ``geometry``
-        column; its CRS is ``EPSG:4326`` for a geographic reference system, or
-        the projected system's ``id`` for a projected one. For a collection, the
-        member frames concatenated under a leading ``coverage`` column.
+        column; its CRS is the geographic system's resolvable ``id`` (else
+        ``OGC:CRS84``, the WGS84 lon/lat default), or the projected system's
+        ``id`` for a projected one. For a collection, the member frames
+        concatenated under a leading ``coverage`` column.
 
     Raises
     ------
@@ -431,17 +438,38 @@ def _shapely_polygon(
 
 def _crs(domain: Domain) -> str | None:
     # A horizontal reference system supplies the result CRS. A geographic system
-    # maps to EPSG:4326 (CoverageJSON's default geographic CRS is
-    # longitude/latitude on WGS84). A projected system is identified by its `id`
-    # (an EPSG / OGC CRS URI that pyproj resolves); pass it through, falling back
-    # to unset when it carries none. Any other system leaves the CRS unset.
+    # honors a resolvable `id` and otherwise falls back to the lon/lat default
+    # (see `_geographic_crs`). A projected system is identified by its `id` (an
+    # EPSG / OGC CRS URI that pyproj resolves); pass it through, falling back to
+    # unset when it carries none. Any other system leaves the CRS unset.
     for connection in domain.referencing:
         system = connection.system
 
         if isinstance(system, GeographicCRS):
-            return "EPSG:4326"
+            return _geographic_crs(system.id)
 
         if isinstance(system, ProjectedCRS) and system.id is not None:
             return system.id
 
     return None
+
+
+def _geographic_crs(crs_id: str | None) -> str:
+    # CoverageJSON's default geographic CRS is WGS84 longitude/latitude (OGC
+    # CRS84), which is the lon/lat axis order the bridge builds x / y geometry
+    # in. Honor an `id` that pyproj can resolve (mirroring the ProjectedCRS
+    # branch); otherwise (no id, or an unresolvable placeholder like "crs") fall
+    # back to that default rather than failing. Unlike EPSG:4326, whose authority
+    # axis order is lat/lon, CRS84 matches the data, so it is the right fallback.
+    if crs_id is not None:
+        from pyproj import CRS
+        from pyproj.exceptions import CRSError
+
+        try:
+            CRS.from_user_input(crs_id)
+        except CRSError:
+            pass
+        else:
+            return crs_id
+
+    return _DEFAULT_GEOGRAPHIC_CRS

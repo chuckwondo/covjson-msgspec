@@ -69,8 +69,9 @@ def test_point_series_is_one_feature_per_time() -> None:
     gdf = to_geopandas(cov)
 
     assert len(gdf) == 2
-    # The geographic reference system sets the CRS; the temporal one parses t.
-    assert gdf.crs == "EPSG:4326"
+    # "crs" is not a resolvable id, so the geographic system falls back to the
+    # WGS84 lon/lat default (OGC:CRS84); the temporal one parses t.
+    assert gdf.crs == "OGC:CRS84"
     assert gdf["t"].tolist() == [
         pd.Timestamp("2020-01-01"),
         pd.Timestamp("2020-01-02"),
@@ -85,6 +86,45 @@ def test_no_geographic_referencing_leaves_crs_unset() -> None:
     )
 
     assert to_geopandas(cov).crs is None
+
+
+def _geographic_point(crs_id: str | None) -> Coverage:
+    return Coverage(
+        domain=Domain.point(
+            x=Axis.listed((1.0,)),
+            y=Axis.listed((2.0,)),
+            referencing=(
+                ReferenceSystemConnection(
+                    coordinates=("x", "y"), system=GeographicCRS(id=crs_id)
+                ),
+            ),
+        ),
+        ranges={},
+    )
+
+
+def test_geographic_referencing_without_id_defaults_to_crs84() -> None:
+    # No id: fall back to CoverageJSON's WGS84 lon/lat default (OGC:CRS84), whose
+    # axis order matches the bridge's x / y geometry.
+    crs = to_geopandas(_geographic_point(None)).crs
+
+    assert crs == "OGC:CRS84"
+    assert crs.to_authority() == ("OGC", "CRS84")
+
+
+def test_geographic_referencing_with_unresolvable_id_falls_back() -> None:
+    # A nominal / relative id that pyproj cannot resolve must not crash; it falls
+    # back to the lon/lat default rather than being passed through.
+    assert to_geopandas(_geographic_point("crs")).crs == "OGC:CRS84"
+
+
+def test_geographic_referencing_passes_a_resolvable_id_through() -> None:
+    # A resolvable geographic id is honored (mirroring the ProjectedCRS branch)
+    # rather than flattened to the default: this EPSG geographic CRS resolves to
+    # 4326 instead of collapsing to CRS84.
+    cov = _geographic_point("http://www.opengis.net/def/crs/EPSG/0/4326")
+
+    assert to_geopandas(cov).crs.to_epsg() == 4326
 
 
 def test_projected_referencing_passes_its_id_through() -> None:
@@ -392,7 +432,7 @@ def test_collection_inherits_referencing_for_crs() -> None:
         ),
     )
 
-    assert to_geopandas(collection).crs == "EPSG:4326"
+    assert to_geopandas(collection).crs == "OGC:CRS84"
 
 
 def test_collection_features_carry_coverage_property() -> None:
