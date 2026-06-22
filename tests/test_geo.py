@@ -217,6 +217,10 @@ def test_multipoint_is_one_point_per_member() -> None:
     assert [g.geom_type for g in gdf.geometry] == ["Point", "Point", "Point"]
     assert [(g.x, g.y) for g in gdf.geometry] == [(1.0, 10.0), (2.0, 20.0), (3.0, 30.0)]
     assert gdf["v"].tolist() == [5.0, 6.0, 7.0]
+    # The composite axis is the geometry's source; its bare positional index
+    # (0, 1, 2) must not leak into the feature columns / GeoJSON properties.
+    assert "composite" not in gdf.columns
+    assert "composite" not in to_geojson(cov)["features"][0]["properties"]
 
 
 def test_grid_is_one_point_per_cell() -> None:

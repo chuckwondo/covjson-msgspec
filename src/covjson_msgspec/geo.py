@@ -308,6 +308,18 @@ def _point_frame(coverage: Coverage, domain: Domain) -> "tuple[Any, Any]":
         else frame.reset_index()
     )
 
+    # A composite ("tuple") axis becomes a bare positional index level (0, 1,
+    # 2 ...) in the tidy frame; its x / y / z components already ride as their
+    # own columns, so drop the position level rather than leak it into each
+    # feature's properties.
+    leaked = [
+        key
+        for key, axis in domain.axes.items()
+        if axis.data_type == "tuple" and key in frame.columns
+    ]
+    if leaked:
+        frame = frame.drop(columns=leaked)
+
     if "x" not in frame.columns or "y" not in frame.columns:
         msg = (
             "a point-like domain needs x and y coordinates to build geometry; "
