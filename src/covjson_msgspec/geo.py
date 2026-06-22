@@ -86,15 +86,17 @@ def to_geopandas(obj: Coverage | CoverageCollection) -> "gpd.GeoDataFrame":
         If a domain is a URL reference, a point-like domain lacks ``x`` / ``y``
         coordinates, or a range is not an inline `NdArray`.
     """
+    # Surface the friendly install hint here; the helpers re-import geopandas
+    # locally (a cached lookup) so they keep a precise gpd type for the checker.
     try:
-        import geopandas as gpd
+        import geopandas  # noqa: F401
     except ModuleNotFoundError as exc:  # pragma: no cover - env-dependent
         raise ModuleNotFoundError(_INSTALL_HINT) from exc
 
     if isinstance(obj, CoverageCollection):
-        return _collection_to_geopandas(obj, gpd)
+        return _collection_to_geopandas(obj)
 
-    return _coverage_to_geopandas(obj, gpd)
+    return _coverage_to_geopandas(obj)
 
 
 def to_geojson(coverage: Coverage | CoverageCollection) -> dict[str, Any]:
@@ -142,7 +144,9 @@ def to_geojson(coverage: Coverage | CoverageCollection) -> dict[str, Any]:
     return cast("dict[str, Any]", json.loads(to_geopandas(coverage).to_json()))
 
 
-def _coverage_to_geopandas(coverage: Coverage, gpd: Any) -> "gpd.GeoDataFrame":
+def _coverage_to_geopandas(coverage: Coverage) -> "gpd.GeoDataFrame":
+    import geopandas as gpd
+
     if not isinstance(domain := coverage.domain, Domain):
         msg = (
             "coverage.domain is a URL reference; resolve it to a Domain before "
@@ -168,9 +172,8 @@ def _coverage_to_geopandas(coverage: Coverage, gpd: Any) -> "gpd.GeoDataFrame":
     return gdf
 
 
-def _collection_to_geopandas(
-    collection: CoverageCollection, gpd: Any
-) -> "gpd.GeoDataFrame":
+def _collection_to_geopandas(collection: CoverageCollection) -> "gpd.GeoDataFrame":
+    import geopandas as gpd
     import pandas as pd
 
     # Resolve first so each member carries the collection's inherited parameters
@@ -183,7 +186,7 @@ def _collection_to_geopandas(
     frames = []
 
     for index, coverage in enumerate(resolved):
-        gdf = _coverage_to_geopandas(coverage, gpd)
+        gdf = _coverage_to_geopandas(coverage)
         # Key each member by its id when set, falling back to its position. A
         # leading plain column (not an index level) survives to_json into each
         # feature's properties.
