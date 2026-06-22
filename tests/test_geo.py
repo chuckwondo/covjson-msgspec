@@ -375,3 +375,94 @@ def test_polygon_carries_z_into_geometry() -> None:
 
     assert polygon.has_z
     assert list(polygon.exterior.coords) == exterior
+
+
+def _trajectory(
+    *coordinates: str, values: tuple[tuple[object, ...], ...]
+) -> Coverage:
+    composite = Axis(data_type="tuple", coordinates=coordinates, values=values)
+    return Coverage(
+        domain=Domain.trajectory(composite),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=tuple(float(i) for i in range(len(values))),
+                shape=(len(values),),
+                axis_names=("composite",),
+            )
+        },
+    )
+
+
+def test_trajectory_as_linestring_is_one_feature() -> None:
+    cov = _trajectory(
+        "t",
+        "x",
+        "y",
+        values=(("2020-01-01", 1.0, 10.0), ("2020-01-02", 2.0, 20.0)),
+    )
+    gdf = to_geopandas(cov, trajectory_as="linestring")
+
+    assert len(gdf) == 1
+    line = gdf.geometry.iloc[0]
+    assert line.geom_type == "LineString"
+    assert list(line.coords) == [(1.0, 10.0), (2.0, 20.0)]
+    # The path is geometry only: per-vertex measurements are dropped.
+    assert "v" not in gdf.columns
+
+
+def test_trajectory_linestring_carries_z() -> None:
+    cov = _trajectory(
+        "t",
+        "x",
+        "y",
+        "z",
+        values=(("2020-01-01", 1.0, 10.0, 5.0), ("2020-01-02", 2.0, 20.0, 6.0)),
+    )
+    line = to_geopandas(cov, trajectory_as="linestring").geometry.iloc[0]
+
+    assert line.has_z
+    assert list(line.coords) == [(1.0, 10.0, 5.0), (2.0, 20.0, 6.0)]
+
+
+def test_trajectory_as_points_is_the_default() -> None:
+    cov = _trajectory(
+        "t",
+        "x",
+        "y",
+        values=(("2020-01-01", 1.0, 10.0), ("2020-01-02", 2.0, 20.0)),
+    )
+
+    assert [g.geom_type for g in to_geopandas(cov).geometry] == ["Point", "Point"]
+
+
+def test_invalid_trajectory_as_is_rejected() -> None:
+    cov = _trajectory("t", "x", "y", values=(("2020-01-01", 1.0, 10.0),))
+
+    with pytest.raises(ValueError, match="trajectory_as must be"):
+        to_geopandas(cov, trajectory_as="line")  # type: ignore[arg-type]
+
+
+def test_single_vertex_trajectory_linestring_is_rejected() -> None:
+    cov = _trajectory("t", "x", "y", values=(("2020-01-01", 1.0, 10.0),))
+
+    with pytest.raises(ValueError, match="at least two vertices"):
+        to_geopandas(cov, trajectory_as="linestring")
+
+
+def test_collection_of_trajectories_as_linestrings() -> None:
+    a = _trajectory("x", "y", values=((1.0, 10.0), (2.0, 20.0)))
+    b = _trajectory("x", "y", values=((3.0, 30.0), (4.0, 40.0)))
+    collection = CoverageCollection(coverages=(a, b))
+    gdf = to_geopandas(collection, trajectory_as="linestring")
+
+    assert len(gdf) == 2
+    assert [g.geom_type for g in gdf.geometry] == ["LineString", "LineString"]
+    assert gdf["coverage"].tolist() == [0, 1]
+
+
+def test_to_geojson_trajectory_as_linestring() -> None:
+    cov = _trajectory("x", "y", values=((1.0, 10.0), (2.0, 20.0)))
+    gj = to_geojson(cov, trajectory_as="linestring")
+
+    assert gj["features"][0]["geometry"]["type"] == "LineString"

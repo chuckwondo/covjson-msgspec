@@ -11,7 +11,9 @@ Mapping
 - A point-like domain reuses the tidy `to_pandas` frame (where ``x`` / ``y`` are
   always columns) and attaches a ``Point`` geometry built from them; each row
   becomes one feature. A trajectory is therefore emitted as one point feature per
-  vertex (preserving each vertex's measurements), not a single ``LineString``.
+  vertex (preserving each vertex's measurements) by default; pass
+  ``trajectory_as="linestring"`` to emit a single ``LineString`` for the path
+  instead (geometry only, dropping the per-vertex measurements).
 - A Polygon / PolygonSeries domain becomes one feature (repeated over ``t`` for a
   series); a MultiPolygon / MultiPolygonSeries domain becomes one feature per
   polygon. The ``composite`` axis supplies the ``Polygon`` geometry.
@@ -32,7 +34,7 @@ Spec: [Coverage objects](https://github.com/covjson/specification/blob/master/sp
 """
 
 import json
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from covjson_msgspec.coverage import Coverage, CoverageCollection
 from covjson_msgspec.domain import Domain
@@ -53,8 +55,17 @@ _POLYGON_DOMAIN_TYPES = frozenset(
     {"Polygon", "PolygonSeries", "MultiPolygon", "MultiPolygonSeries"}
 )
 
+# How a Trajectory's vertices map to geometry: one ``Point`` feature per vertex
+# (keeping each vertex's measurements), or a single ``LineString`` for the path.
+TrajectoryAs = Literal["points", "linestring"]
+_TRAJECTORY_AS = frozenset({"points", "linestring"})
 
-def to_geopandas(obj: Coverage | CoverageCollection) -> "gpd.GeoDataFrame":
+
+def to_geopandas(
+    obj: Coverage | CoverageCollection,
+    *,
+    trajectory_as: TrajectoryAs = "points",
+) -> "gpd.GeoDataFrame":
     """Convert a `Coverage` or `CoverageCollection` to a `geopandas.GeoDataFrame`.
 
     Requires the ``geo`` extra. For a `Coverage`, each coverage element becomes
@@ -71,6 +82,12 @@ def to_geopandas(obj: Coverage | CoverageCollection) -> "gpd.GeoDataFrame":
         The coverage or collection to convert. Each coverage's ``domain`` must be
         an inline `Domain` (not a URL reference) and every range an inline
         `NdArray`.
+    trajectory_as
+        How a Trajectory domain maps to geometry. ``"points"`` (the default)
+        emits one ``Point`` feature per vertex, preserving each vertex's
+        measurements; ``"linestring"`` emits a single ``LineString`` feature for
+        the whole path (geometry only, since per-vertex measurements do not
+        reduce to one row). Other domain types ignore this option.
 
     Returns
     -------
@@ -84,8 +101,16 @@ def to_geopandas(obj: Coverage | CoverageCollection) -> "gpd.GeoDataFrame":
     ------
     ValueError
         If a domain is a URL reference, a point-like domain lacks ``x`` / ``y``
-        coordinates, or a range is not an inline `NdArray`.
+        coordinates, a range is not an inline `NdArray`, or ``trajectory_as`` is
+        not ``"points"`` or ``"linestring"``.
     """
+    if trajectory_as not in _TRAJECTORY_AS:
+        msg = (
+            "trajectory_as must be 'points' or 'linestring'; "
+            f"got {trajectory_as!r}"
+        )
+        raise ValueError(msg)
+
     # Surface the friendly install hint here; the helpers re-import geopandas
     # locally (a cached lookup) so they keep a precise gpd type for the checker.
     try:
@@ -94,12 +119,16 @@ def to_geopandas(obj: Coverage | CoverageCollection) -> "gpd.GeoDataFrame":
         raise ModuleNotFoundError(_INSTALL_HINT) from exc
 
     if isinstance(obj, CoverageCollection):
-        return _collection_to_geopandas(obj)
+        return _collection_to_geopandas(obj, trajectory_as)
 
-    return _coverage_to_geopandas(obj)
+    return _coverage_to_geopandas(obj, trajectory_as)
 
 
-def to_geojson(coverage: Coverage | CoverageCollection) -> dict[str, Any]:
+def to_geojson(
+    coverage: Coverage | CoverageCollection,
+    *,
+    trajectory_as: TrajectoryAs = "points",
+) -> dict[str, Any]:
     """Convert a `Coverage` or `CoverageCollection` to a GeoJSON mapping.
 
     Requires the ``geo`` extra. Thin wrapper over `to_geopandas`: each coverage
@@ -113,6 +142,8 @@ def to_geojson(coverage: Coverage | CoverageCollection) -> dict[str, Any]:
     coverage
         The coverage or collection to convert (same requirements as
         `to_geopandas`).
+    trajectory_as
+        How a Trajectory domain maps to geometry; see `to_geopandas`.
 
     Returns
     -------
@@ -122,8 +153,8 @@ def to_geojson(coverage: Coverage | CoverageCollection) -> dict[str, Any]:
     Raises
     ------
     ValueError
-        Propagated from `to_geopandas` (URL domain, missing ``x`` / ``y``, or a
-        non-inline range).
+        Propagated from `to_geopandas` (URL domain, missing ``x`` / ``y``, a
+        non-inline range, or an invalid ``trajectory_as``).
 
     Examples
     --------
@@ -141,10 +172,13 @@ def to_geojson(coverage: Coverage | CoverageCollection) -> dict[str, Any]:
     """
     # geopandas' to_json serializes geometry, columns, datetimes, and (unlike the
     # __geo_interface__ mapping) drops the row index, giving clean JSON output.
-    return cast("dict[str, Any]", json.loads(to_geopandas(coverage).to_json()))
+    gdf = to_geopandas(coverage, trajectory_as=trajectory_as)
+    return cast("dict[str, Any]", json.loads(gdf.to_json()))
 
 
-def _coverage_to_geopandas(coverage: Coverage) -> "gpd.GeoDataFrame":
+def _coverage_to_geopandas(
+    coverage: Coverage, trajectory_as: TrajectoryAs
+) -> "gpd.GeoDataFrame":
     import geopandas as gpd
 
     if not isinstance(domain := coverage.domain, Domain):
@@ -158,6 +192,8 @@ def _coverage_to_geopandas(coverage: Coverage) -> "gpd.GeoDataFrame":
 
     if domain_type in _POLYGON_DOMAIN_TYPES:
         frame, geometry = _polygon_frame(coverage, domain)
+    elif domain_type == "Trajectory" and trajectory_as == "linestring":
+        frame, geometry = _trajectory_linestring_frame(coverage, domain)
     else:
         frame, geometry = _point_frame(coverage, domain)
 
@@ -172,7 +208,9 @@ def _coverage_to_geopandas(coverage: Coverage) -> "gpd.GeoDataFrame":
     return gdf
 
 
-def _collection_to_geopandas(collection: CoverageCollection) -> "gpd.GeoDataFrame":
+def _collection_to_geopandas(
+    collection: CoverageCollection, trajectory_as: TrajectoryAs
+) -> "gpd.GeoDataFrame":
     import geopandas as gpd
     import pandas as pd
 
@@ -186,7 +224,7 @@ def _collection_to_geopandas(collection: CoverageCollection) -> "gpd.GeoDataFram
     frames = []
 
     for index, coverage in enumerate(resolved):
-        gdf = _coverage_to_geopandas(coverage)
+        gdf = _coverage_to_geopandas(coverage, trajectory_as)
         # Key each member by its id when set, falling back to its position. A
         # leading plain column (not an index level) survives to_json into each
         # feature's properties.
@@ -240,6 +278,47 @@ def _point_frame(coverage: Coverage, domain: Domain) -> "tuple[Any, Any]":
         geometry = shapely.points(frame["x"].to_numpy(), frame["y"].to_numpy())
 
     return frame, geometry
+
+
+def _trajectory_linestring_frame(
+    coverage: Coverage, domain: Domain
+) -> "tuple[Any, Any]":
+    import pandas as pd
+    import shapely
+
+    composite = domain.axes["composite"]
+    coords = composite.coordinates or ()
+
+    if "x" not in coords or "y" not in coords:
+        msg = (
+            "a Trajectory needs x and y coordinates to build a LineString; "
+            f"got composite coordinates {list(coords)}"
+        )
+        raise ValueError(msg)
+
+    x_index = coords.index("x")
+    y_index = coords.index("y")
+    # A vertical component makes the path 3D (LINESTRING Z).
+    z_index = coords.index("z") if "z" in coords else None
+    positions: tuple[Any, ...] = composite.values or ()
+
+    if len(positions) < 2:
+        msg = (
+            "a Trajectory needs at least two vertices to build a LineString "
+            f"(got {len(positions)}); use the default points geometry instead"
+        )
+        raise ValueError(msg)
+
+    def vertex(position: Any) -> tuple[float, ...]:
+        if z_index is None:
+            return (position[x_index], position[y_index])
+        return (position[x_index], position[y_index], position[z_index])
+
+    line = [vertex(position) for position in positions]
+
+    # One feature for the whole path. Per-vertex measurements do not reduce to a
+    # single row, so linestring mode keeps the geometry only (no range columns).
+    return pd.DataFrame(index=[0]), [shapely.LineString(line)]
 
 
 def _polygon_frame(coverage: Coverage, domain: Domain) -> "tuple[Any, Any]":

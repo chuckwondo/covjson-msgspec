@@ -17,7 +17,7 @@ Spec: [Coverage][spec-coverage] and [CoverageCollection][spec-collection] object
 [spec-collection]: https://github.com/covjson/specification/blob/master/spec.md#65-coverage-collection-objects
 """
 
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Final, Literal
 
 import msgspec
 
@@ -149,12 +149,14 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
 
         return to_pandas(self)
 
-    def to_geopandas(self) -> "gpd.GeoDataFrame":
+    def to_geopandas(
+        self, *, trajectory_as: Literal["points", "linestring"] = "points"
+    ) -> "gpd.GeoDataFrame":
         """Convert this coverage to a `geopandas.GeoDataFrame`.
 
         Requires the ``geo`` extra. Thin delegate to
         `covjson_msgspec.geo.to_geopandas`; see it for the full domain/geometry
-        mapping and the conditions it raises on.
+        mapping, the ``trajectory_as`` option, and the conditions it raises on.
 
         Returns
         -------
@@ -163,14 +165,16 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         """
         from covjson_msgspec.geo import to_geopandas
 
-        return to_geopandas(self)
+        return to_geopandas(self, trajectory_as=trajectory_as)
 
-    def to_geojson(self) -> dict[str, object]:
+    def to_geojson(
+        self, *, trajectory_as: Literal["points", "linestring"] = "points"
+    ) -> dict[str, object]:
         """Convert this coverage to a GeoJSON ``FeatureCollection`` mapping.
 
         Requires the ``geo`` extra. Thin delegate to
         `covjson_msgspec.geo.to_geojson`; see it for the full domain/geometry
-        mapping and the conditions it raises on.
+        mapping, the ``trajectory_as`` option, and the conditions it raises on.
 
         Returns
         -------
@@ -179,7 +183,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         """
         from covjson_msgspec.geo import to_geojson
 
-        return to_geojson(self)
+        return to_geojson(self, trajectory_as=trajectory_as)
 
 
 class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
@@ -333,13 +337,16 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
 
         return to_pandas(self)
 
-    def to_geopandas(self) -> "gpd.GeoDataFrame":
+    def to_geopandas(
+        self, *, trajectory_as: Literal["points", "linestring"] = "points"
+    ) -> "gpd.GeoDataFrame":
         """Convert this collection to a single `geopandas.GeoDataFrame`.
 
         Requires the ``geo`` extra. Thin delegate to
         `covjson_msgspec.geo.to_geopandas`; the resolved members are concatenated
         with a leading ``coverage`` column identifying each. See it for the
-        per-member domain/geometry mapping and the conditions it raises on.
+        per-member domain/geometry mapping, the ``trajectory_as`` option, and the
+        conditions it raises on.
 
         Returns
         -------
@@ -348,15 +355,18 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
         """
         from covjson_msgspec.geo import to_geopandas
 
-        return to_geopandas(self)
+        return to_geopandas(self, trajectory_as=trajectory_as)
 
-    def to_geojson(self) -> dict[str, object]:
+    def to_geojson(
+        self, *, trajectory_as: Literal["points", "linestring"] = "points"
+    ) -> dict[str, object]:
         """Convert this collection to a GeoJSON ``FeatureCollection`` mapping.
 
         Requires the ``geo`` extra. Thin delegate to
         `covjson_msgspec.geo.to_geojson`; every member's features carry a
         ``coverage`` property identifying their source. See it for the per-member
-        domain/geometry mapping and the conditions it raises on.
+        domain/geometry mapping, the ``trajectory_as`` option, and the conditions
+        it raises on.
 
         Returns
         -------
@@ -365,7 +375,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
         """
         from covjson_msgspec.geo import to_geojson
 
-        return to_geojson(self)
+        return to_geojson(self, trajectory_as=trajectory_as)
 
 
 # The root of any CoverageJSON document. Domain and the range types are valid
