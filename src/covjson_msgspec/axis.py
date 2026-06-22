@@ -36,6 +36,13 @@ from covjson_msgspec._base import CovJSONStruct
 # Any for the rare nested polygon interior.
 AxisValue = float | int | str | tuple[Any, ...]
 
+# Nested-sequence shapes accepted by the composite-axis builders. A position is a
+# sequence of coordinate values (e.g. x, y); a ring is a sequence of positions
+# (closed: first position repeated last); a polygon is a sequence of rings (the
+# exterior ring first, then any holes).
+RingCoords = Iterable[Iterable[float]]
+PolygonCoords = Iterable[RingCoords]
+
 
 # Modeled as one permissive struct rather than a tagged union: the axis shapes
 # share no "type" discriminator and msgspec disallows untagged unions of
@@ -187,4 +194,50 @@ class Axis(CovJSONStruct, frozen=True):
             values=tuple(values),
             coordinates=None if coordinates is None else tuple(coordinates),
             bounds=None if bounds is None else tuple(bounds),
+        )
+
+    @classmethod
+    def polygon(
+        cls,
+        polygons: Iterable[PolygonCoords],
+        *,
+        coordinates: Iterable[str] = ("x", "y"),
+    ) -> Self:
+        """Build a composite polygon axis from one or more polygons.
+
+        Used by the Polygon family of domains (see `Domain.polygon` /
+        `Domain.multipolygon`). The nested positions are materialized as tuples.
+
+        Parameters
+        ----------
+        polygons
+            The polygons. Each polygon is a sequence of linear rings (the
+            exterior ring first, then any holes); each ring is a sequence of
+            positions; each position is a sequence of coordinate values ordered
+            to match ``coordinates``. Rings should be closed (first position
+            repeated last).
+        coordinates
+            The coordinate identifiers each position provides (default
+            ``x`` / ``y``).
+
+        Returns
+        -------
+        Axis
+            A composite axis with ``dataType`` ``"polygon"``.
+
+        Examples
+        --------
+        >>> ax = Axis.polygon([[[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 0.0)]]])
+        >>> ax.data_type
+        'polygon'
+        >>> ax.values
+        ((((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 0.0)),),)
+        """
+        return cls(
+            data_type="polygon",
+            coordinates=tuple(coordinates),
+            values=tuple(
+                tuple(tuple(tuple(position) for position in ring) for ring in polygon)
+                for polygon in polygons
+            ),
         )

@@ -58,6 +58,56 @@ def test_trajectory_uses_composite_axis() -> None:
     assert "composite" in dom.axes
 
 
+def test_polygon_builder_holds_one_polygon() -> None:
+    exterior = [(0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 0.0)]
+    dom = Domain.polygon(exterior)
+
+    assert dom.domain_type == "Polygon"
+    composite = dom.axes["composite"]
+    assert composite.data_type == "polygon"
+    assert composite.coordinates == ("x", "y")
+    # A single polygon: one value, one (exterior) ring.
+    assert composite.values is not None
+    assert len(composite.values) == 1
+    polygon = composite.values[0]
+    assert polygon == (((0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 0.0)),)
+
+
+def test_polygon_builder_keeps_holes_and_extra_axes() -> None:
+    exterior = [(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 0.0)]
+    hole = [(1.0, 1.0), (2.0, 1.0), (2.0, 2.0), (1.0, 1.0)]
+    dom = Domain.polygon(exterior, holes=[hole], t=Axis.listed(("2020-01-01",)))
+
+    composite = dom.axes["composite"]
+    assert composite.values is not None
+    polygon = composite.values[0]
+    assert isinstance(polygon, tuple)
+    # Exterior ring first, then the hole.
+    assert len(polygon) == 2
+    assert dom.t is not None
+
+
+def test_multipolygon_builder_holds_many_polygons() -> None:
+    square = [[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 0.0)]]
+    triangle = [[(2.0, 2.0), (3.0, 2.0), (2.5, 3.0), (2.0, 2.0)]]
+    dom = Domain.multipolygon([square, triangle])
+
+    assert dom.domain_type == "MultiPolygon"
+    composite = dom.axes["composite"]
+    assert composite.values is not None
+    assert len(composite.values) == 2
+
+
+def test_polygon_domain_roundtrips_on_the_wire() -> None:
+    # The nested polygon interior decodes as lists (it is typed Any), so a decoded
+    # Domain is not object-equal to the constructed one; the wire form is stable.
+    dom = Domain.polygon([(0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 0.0)])
+    blob = msgspec.json.encode(dom)
+    back = msgspec.json.decode(blob, type=Domain)
+
+    assert msgspec.json.encode(back) == blob
+
+
 def test_domain_decodes_axes() -> None:
     blob = (
         b'{"type": "Domain", "domainType": "Point",'

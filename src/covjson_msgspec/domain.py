@@ -20,7 +20,7 @@ from collections.abc import Iterable
 from typing import Self
 
 from covjson_msgspec._base import CovJSONStruct
-from covjson_msgspec.axis import Axis
+from covjson_msgspec.axis import Axis, PolygonCoords, RingCoords
 from covjson_msgspec.referencing import ReferenceSystemConnection
 
 
@@ -227,6 +227,84 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         return cls(
             axes={"composite": composite},
             domain_type="Trajectory",
+            referencing=_referencing(referencing),
+        )
+
+    @classmethod
+    def polygon(
+        cls,
+        exterior: RingCoords,
+        *,
+        holes: Iterable[RingCoords] = (),
+        z: Axis | None = None,
+        t: Axis | None = None,
+        coordinates: Iterable[str] = ("x", "y"),
+        referencing: Iterable[ReferenceSystemConnection] | None = None,
+    ) -> Self:
+        """Build a Polygon domain from a single polygon.
+
+        Parameters
+        ----------
+        exterior
+            The exterior linear ring: a sequence of positions, each a sequence of
+            coordinate values ordered to match ``coordinates``. Should be closed
+            (first position repeated last).
+        holes
+            Interior rings (holes), in the same form as ``exterior``.
+        z, t
+            Optional single-valued vertical and time axes for the polygon.
+        coordinates
+            The coordinate identifiers each position provides (default
+            ``x`` / ``y``).
+        referencing
+            Reference-system connections for the domain's coordinates.
+
+        Returns
+        -------
+        Domain
+            A Polygon domain whose ``composite`` axis holds the one polygon.
+        """
+        composite = Axis.polygon([(exterior, *holes)], coordinates=coordinates)
+        return cls(
+            axes=_axes(composite=composite, z=z, t=t),
+            domain_type="Polygon",
+            referencing=_referencing(referencing),
+        )
+
+    @classmethod
+    def multipolygon(
+        cls,
+        polygons: Iterable[PolygonCoords],
+        *,
+        z: Axis | None = None,
+        t: Axis | None = None,
+        coordinates: Iterable[str] = ("x", "y"),
+        referencing: Iterable[ReferenceSystemConnection] | None = None,
+    ) -> Self:
+        """Build a MultiPolygon domain from several polygons.
+
+        Parameters
+        ----------
+        polygons
+            The polygons; each is a sequence of linear rings (the exterior ring
+            first, then any holes), in the form `Axis.polygon` accepts.
+        z, t
+            Optional single-valued vertical and time axes shared by the polygons.
+        coordinates
+            The coordinate identifiers each position provides (default
+            ``x`` / ``y``).
+        referencing
+            Reference-system connections for the domain's coordinates.
+
+        Returns
+        -------
+        Domain
+            A MultiPolygon domain whose ``composite`` axis holds the polygons.
+        """
+        composite = Axis.polygon(polygons, coordinates=coordinates)
+        return cls(
+            axes=_axes(composite=composite, z=z, t=t),
+            domain_type="MultiPolygon",
             referencing=_referencing(referencing),
         )
 
