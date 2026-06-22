@@ -283,6 +283,23 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
             compact_regular=compact_regular,
         )
 
+    def to_pandas(self) -> "pd.DataFrame":
+        """Convert this collection to a single tidy `pandas.DataFrame`.
+
+        Requires the ``pandas`` extra. Thin delegate to
+        `covjson_msgspec.pandas.to_pandas`; the resolved members are concatenated
+        under a leading ``coverage`` index level. See it for the per-member
+        domain/range mapping and the conditions it raises on.
+
+        Returns
+        -------
+        pandas.DataFrame
+            The member coverages stacked into one frame, keyed by coverage.
+        """
+        from covjson_msgspec.pandas import to_pandas
+
+        return to_pandas(self)
+
 
 # The root of any CoverageJSON document. Domain and the range types are valid
 # standalone documents too (e.g. a domain referenced by a coverage's URL range).

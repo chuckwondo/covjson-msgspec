@@ -8,6 +8,7 @@ from covjson_msgspec import (
     Axis,
     Category,
     Coverage,
+    CoverageCollection,
     Domain,
     NdArray,
     ObservedProperty,
@@ -20,6 +21,24 @@ from covjson_msgspec import (
     i18n,
     to_pandas,
 )
+
+
+def _point_series_member(
+    coverage_id: str | None, x: float, values: tuple[float, ...]
+) -> Coverage:
+    return Coverage(
+        id=coverage_id,
+        domain=Domain.point_series(
+            x=Axis.listed((x,)),
+            y=Axis.listed((2.0,)),
+            t=Axis.listed(("a", "b")),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float", values=values, shape=(2,), axis_names=("t",)
+            )
+        },
+    )
 
 
 def test_point_is_single_row_with_scalar_columns() -> None:
@@ -355,3 +374,76 @@ def test_string_parameter_values_preserved() -> None:
     df = to_pandas(cov)
 
     assert df["label"].tolist() == ["low", "high"]
+
+
+def test_collection_concatenates_members_under_coverage_level() -> None:
+    collection = CoverageCollection(
+        coverages=(
+            _point_series_member("a", 1.0, (1.0, 2.0)),
+            _point_series_member("b", 3.0, (3.0, 4.0)),
+        ),
+        domain_type="PointSeries",
+    )
+    df = to_pandas(collection)
+
+    assert df.index.names == ["coverage", "t"]
+    assert df.loc[("a", "a"), "v"] == 1.0
+    assert df.loc[("b", "b"), "v"] == 4.0
+    # Inherited per-member columns survive the concat.
+    assert df.loc[("a", "b"), "x"] == 1.0
+    assert df.loc[("b", "a"), "x"] == 3.0
+
+
+def test_collection_method_delegates() -> None:
+    collection = CoverageCollection(
+        coverages=(_point_series_member("a", 1.0, (1.0, 2.0)),),
+    )
+
+    assert collection.to_pandas().loc[("a", "b"), "v"] == 2.0
+
+
+def test_collection_keys_fall_back_to_position_without_id() -> None:
+    collection = CoverageCollection(
+        coverages=(
+            _point_series_member(None, 1.0, (1.0, 2.0)),
+            _point_series_member(None, 3.0, (3.0, 4.0)),
+        ),
+    )
+    df = to_pandas(collection)
+
+    assert df.index.get_level_values("coverage").unique().tolist() == [0, 1]
+
+
+def test_collection_inherits_parameters_and_referencing() -> None:
+    member = Coverage(
+        domain=Domain.point_series(
+            x=Axis.listed((1.0,)),
+            y=Axis.listed((2.0,)),
+            t=Axis.listed(("2020-01-01T00:00:00Z", "2020-01-02T00:00:00Z")),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float", values=(1.0, 2.0), shape=(2,), axis_names=("t",)
+            )
+        },
+    )
+    collection = CoverageCollection(
+        coverages=(member,),
+        domain_type="PointSeries",
+        referencing=(
+            ReferenceSystemConnection(
+                coordinates=("t",), system=TemporalRS(calendar="Gregorian")
+            ),
+        ),
+    )
+    df = to_pandas(collection)
+
+    # The collection's referencing tags t as temporal, so it parses to datetimes.
+    times = df.index.get_level_values("t")
+    assert isinstance(times, pd.DatetimeIndex)
+    assert times[0] == pd.Timestamp("2020-01-01T00:00:00")
+    assert df.attrs["domain_type"] == "PointSeries"
+
+
+def test_empty_collection_is_empty_frame() -> None:
+    assert to_pandas(CoverageCollection(coverages=())).empty

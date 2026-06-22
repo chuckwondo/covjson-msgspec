@@ -30,12 +30,16 @@ A multi-dimensional domain (e.g. Grid) is flattened to long form with a
 better fit. Polygon domains carry vector geometry, so they belong in the
 geopandas bridge; `to_pandas` rejects them.
 
+A `CoverageCollection` is converted by concatenating its resolved members into
+one frame, prefixing each member's index with a leading ``coverage`` level that
+identifies it (its ``id`` when set, otherwise its position).
+
 Spec: [Coverage objects](https://github.com/covjson/specification/blob/master/spec.md#64-coverage-objects).
 """
 
 from typing import TYPE_CHECKING, Any, cast
 
-from covjson_msgspec.coverage import Coverage
+from covjson_msgspec.coverage import Coverage, CoverageCollection
 from covjson_msgspec.domain import Domain
 from covjson_msgspec.range import NdArray
 from covjson_msgspec.referencing import TemporalRS
@@ -60,32 +64,35 @@ _POLYGON_DOMAIN_TYPES = frozenset(
 _STANDARD_CALENDARS = frozenset({"gregorian", "standard", "proleptic_gregorian"})
 
 
-def to_pandas(coverage: Coverage) -> "pd.DataFrame":
-    """Convert a `Coverage` to a tidy `pandas.DataFrame`.
+def to_pandas(obj: Coverage | CoverageCollection) -> "pd.DataFrame":
+    """Convert a `Coverage` or `CoverageCollection` to a tidy `pandas.DataFrame`.
 
-    Requires the ``pandas`` extra. Each parameter range becomes a column and the
-    domain's axes become the index and coordinate columns (see the module
-    docstring for the full mapping). A coverage taken from a `CoverageCollection`
-    should be obtained via `CoverageCollection.resolved_coverages` first, so its
-    parameters and referencing are populated.
+    Requires the ``pandas`` extra. For a `Coverage`, each parameter range becomes
+    a column and the domain's axes become the index and coordinate columns (see
+    the module docstring for the full mapping). A `CoverageCollection` is its
+    resolved members concatenated, each member's index prefixed with a leading
+    ``coverage`` level (so inherited parameters and referencing are applied
+    automatically).
 
     Parameters
     ----------
-    coverage
-        The coverage to convert. Its ``domain`` must be an inline `Domain` (not a
-        URL reference) and every range an inline `NdArray`.
+    obj
+        The coverage or collection to convert. Each coverage's ``domain`` must be
+        an inline `Domain` (not a URL reference) and every range an inline
+        `NdArray`.
 
     Returns
     -------
     pandas.DataFrame
-        A frame whose columns are the coverage's parameters (plus a column for
-        each single-valued axis and each composite component) and whose index is
-        the multi-valued axes.
+        For a coverage, a frame whose columns are its parameters (plus a column
+        for each single-valued axis and each composite component) and whose index
+        is the multi-valued axes. For a collection, those frames concatenated
+        under a leading ``coverage`` index level.
 
     Raises
     ------
     ValueError
-        If the domain is a URL reference, the domain type is a polygon type
+        If a domain is a URL reference, a domain type is a polygon type
         (use the geopandas bridge), or a range is not an inline `NdArray`.
 
     Examples
@@ -125,11 +132,56 @@ def to_pandas(coverage: Coverage) -> "pd.DataFrame":
     2020-01-01  1.0  2.0  280.0
     2020-01-02  1.0  2.0  281.0
     2020-01-03  1.0  2.0  282.0
+
+    A collection stacks its members under a leading ``coverage`` index level,
+    keyed by each member's ``id``:
+
+    >>> from covjson_msgspec import decode_coverage_collection
+    >>> coll = decode_coverage_collection('''
+    ... {
+    ...   "type": "CoverageCollection",
+    ...   "domainType": "PointSeries",
+    ...   "coverages": [
+    ...     {
+    ...       "type": "Coverage", "id": "a",
+    ...       "domain": {"type": "Domain", "axes": {
+    ...         "x": {"values": [1.0]}, "y": {"values": [2.0]},
+    ...         "t": {"values": ["2020-01-01", "2020-01-02"]}}},
+    ...       "ranges": {"v": {"type": "NdArray", "dataType": "float",
+    ...         "axisNames": ["t"], "shape": [2], "values": [280.0, 281.0]}}
+    ...     },
+    ...     {
+    ...       "type": "Coverage", "id": "b",
+    ...       "domain": {"type": "Domain", "axes": {
+    ...         "x": {"values": [3.0]}, "y": {"values": [4.0]},
+    ...         "t": {"values": ["2020-01-01", "2020-01-02"]}}},
+    ...       "ranges": {"v": {"type": "NdArray", "dataType": "float",
+    ...         "axisNames": ["t"], "shape": [2], "values": [290.0, 291.0]}}
+    ...     }
+    ...   ]
+    ... }
+    ... ''')
+    >>> coll.to_pandas()
+                           x    y      v
+    coverage t
+    a        2020-01-01  1.0  2.0  280.0
+             2020-01-02  1.0  2.0  281.0
+    b        2020-01-01  3.0  4.0  290.0
+             2020-01-02  3.0  4.0  291.0
     """
     try:
-        import pandas as pd
+        import pandas  # noqa: F401
     except ModuleNotFoundError as exc:  # pragma: no cover - env-dependent
         raise ModuleNotFoundError(_INSTALL_HINT) from exc
+
+    if isinstance(obj, CoverageCollection):
+        return _collection_to_pandas(obj)
+
+    return _coverage_to_pandas(obj)
+
+
+def _coverage_to_pandas(coverage: Coverage) -> "pd.DataFrame":
+    import pandas as pd
 
     if not isinstance(domain := coverage.domain, Domain):
         msg = (
@@ -176,6 +228,34 @@ def to_pandas(coverage: Coverage) -> "pd.DataFrame":
 
     if coverage.id is not None:
         frame.attrs["id"] = coverage.id
+
+    return frame
+
+
+def _collection_to_pandas(collection: "CoverageCollection") -> "pd.DataFrame":
+    import pandas as pd
+
+    # Resolve first so each member carries the collection's inherited parameters
+    # and referencing (the latter is what tags temporal axes for datetime parsing).
+    resolved = collection.resolved_coverages()
+
+    if not resolved:
+        return pd.DataFrame()
+
+    # Key each member by its id when set, falling back to its position so the
+    # leading level is always total.
+    keys = [
+        coverage.id if coverage.id is not None else index
+        for index, coverage in enumerate(resolved)
+    ]
+    frame = pd.concat(
+        [_coverage_to_pandas(coverage) for coverage in resolved],
+        keys=keys,
+        names=["coverage"],
+    )
+
+    if collection.domain_type is not None:
+        frame.attrs["domain_type"] = collection.domain_type
 
     return frame
 
