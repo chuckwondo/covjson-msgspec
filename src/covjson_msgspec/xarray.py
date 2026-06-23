@@ -308,7 +308,7 @@ def from_xarray(
     }
     """
     try:
-        import xarray  # noqa: F401
+        import xarray  # noqa: F401  # pyright: ignore[reportUnusedImport]
     except ModuleNotFoundError as exc:  # pragma: no cover - env-dependent
         raise ModuleNotFoundError(_INSTALL_HINT) from exc
 
@@ -660,6 +660,9 @@ def _coordinate(
                 attrs.update(standard_name="height", positive="up")
             case _ if isinstance(system, VerticalCRS):
                 attrs.update(_vertical_attrs(system))
+            case _:
+                # No CF attributes for an unrecognized role / non-vertical system.
+                pass
 
         data = np.asarray(column)
 

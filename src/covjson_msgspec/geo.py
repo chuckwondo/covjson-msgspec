@@ -159,7 +159,7 @@ def to_geopandas(
     # Surface the friendly install hint here; the helpers re-import geopandas
     # locally (a cached lookup) so they keep a precise gpd type for the checker.
     try:
-        import geopandas  # noqa: F401
+        import geopandas  # noqa: F401  # pyright: ignore[reportUnusedImport]
     except ModuleNotFoundError as exc:  # pragma: no cover - env-dependent
         raise ModuleNotFoundError(_INSTALL_HINT) from exc
 
@@ -479,6 +479,10 @@ def _crs(domain: Domain) -> str | None:
                 return _geographic_crs(crs_id)
             case ProjectedCRS(id=crs_id) if crs_id is not None:
                 return crs_id
+            case _:
+                # A vertical / temporal / identifier system (or a projected one
+                # with no id) does not supply the horizontal CRS; keep looking.
+                pass
 
     return None
 

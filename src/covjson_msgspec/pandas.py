@@ -165,7 +165,7 @@ def to_pandas(obj: Coverage | CoverageCollection) -> "pd.DataFrame":
              2020-01-02  3.0  4.0  291.0
     """
     try:
-        import pandas  # noqa: F401
+        import pandas  # noqa: F401  # pyright: ignore[reportUnusedImport]
     except ModuleNotFoundError as exc:  # pragma: no cover - env-dependent
         raise ModuleNotFoundError(_INSTALL_HINT) from exc
 
