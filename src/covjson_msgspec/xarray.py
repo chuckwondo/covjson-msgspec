@@ -649,14 +649,15 @@ def _coordinate(
     if isinstance(system, TemporalRS):
         data = _parse_times(column, system.calendar)
     else:
-        if role == "longitude":
-            attrs.update(standard_name="longitude", units="degrees_east")
-        elif role == "latitude":
-            attrs.update(standard_name="latitude", units="degrees_north")
-        elif role == "height":
-            attrs.update(standard_name="height", positive="up")
-        elif isinstance(system, VerticalCRS):
-            attrs.update(_vertical_attrs(system))
+        match role:
+            case "longitude":
+                attrs.update(standard_name="longitude", units="degrees_east")
+            case "latitude":
+                attrs.update(standard_name="latitude", units="degrees_north")
+            case "height":
+                attrs.update(standard_name="height", positive="up")
+            case _ if isinstance(system, VerticalCRS):
+                attrs.update(_vertical_attrs(system))
 
         data = np.asarray(column)
 
@@ -803,9 +804,7 @@ def _flags(
     meanings: list[str] = []
 
     for category in categories:
-        code = encoding.get(category.id)
-
-        if code is None:
+        if (code := encoding.get(category.id)) is None:
             continue
 
         # CF flag_values are 1:1 with meanings; a multi-code category keeps its

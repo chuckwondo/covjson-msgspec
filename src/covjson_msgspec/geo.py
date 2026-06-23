@@ -312,12 +312,11 @@ def _point_frame(coverage: Coverage, domain: Domain) -> "tuple[Any, Any]":
     # 2 ...) in the tidy frame; its x / y / z components already ride as their
     # own columns, so drop the position level rather than leak it into each
     # feature's properties.
-    leaked = [
+    if leaked := [
         key
         for key, axis in domain.axes.items()
         if axis.data_type == "tuple" and key in frame.columns
-    ]
-    if leaked:
+    ]:
         frame = frame.drop(columns=leaked)
 
     if "x" not in frame.columns or "y" not in frame.columns:
@@ -422,9 +421,7 @@ def _polygon_frame(coverage: Coverage, domain: Domain) -> "tuple[Any, Any]":
         column = broadcast(np.asarray(times, dtype=object), present, dims, sizes)
         columns["t"] = maybe_datetime(list(column), "t" in temporal)
 
-    z_axis = domain.axes.get("z")
-
-    if z_axis is not None:
+    if (z_axis := domain.axes.get("z")) is not None:
         z_values = list(z_axis.coordinate_values)
         columns["z"] = broadcast(np.asarray(z_values, dtype=object), (), dims, sizes)
 
@@ -456,13 +453,11 @@ def _crs(domain: Domain) -> str | None:
     # EPSG / OGC CRS URI that pyproj resolves); pass it through, falling back to
     # unset when it carries none. Any other system leaves the CRS unset.
     for connection in domain.referencing:
-        system = connection.system
-
-        if isinstance(system, GeographicCRS):
-            return _geographic_crs(system.id)
-
-        if isinstance(system, ProjectedCRS) and system.id is not None:
-            return system.id
+        match connection.system:
+            case GeographicCRS(id=crs_id):
+                return _geographic_crs(crs_id)
+            case ProjectedCRS(id=crs_id) if crs_id is not None:
+                return crs_id
 
     return None
 
