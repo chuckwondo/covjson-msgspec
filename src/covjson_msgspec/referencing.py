@@ -82,6 +82,25 @@ class IdentifierRS(CovJSONStruct, frozen=True, tag="IdentifierRS"):
 
     ``target_concept`` (wire ``targetConcept``) is required; ``identifiers``
     maps each identifier string used in the range to the `Concept` it denotes.
+
+    Examples
+    --------
+    >>> import msgspec
+    >>> blob = '''
+    ... {
+    ...   "type": "IdentifierRS",
+    ...   "targetConcept": {"label": {"en": "Land cover"}},
+    ...   "identifiers": {
+    ...     "1": {"label": {"en": "Water"}},
+    ...     "2": {"label": {"en": "Forest"}}
+    ...   }
+    ... }
+    ... '''
+    >>> rs = msgspec.json.decode(blob, type=IdentifierRS)
+    >>> rs.target_concept.label
+    {'en': 'Land cover'}
+    >>> rs.identifiers["1"].label
+    {'en': 'Water'}
     """
 
     target_concept: Concept

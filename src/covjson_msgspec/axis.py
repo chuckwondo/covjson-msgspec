@@ -65,6 +65,17 @@ class Axis(CovJSONStruct, frozen=True):
     >>> ax = msgspec.json.decode(b'{"start": 0, "stop": 10, "num": 3}', type=Axis)
     >>> ax.coordinate_values
     (0.0, 5.0, 10.0)
+
+    The third form is composite: each value is a tuple of named coordinates (here
+    a trajectory's ``(t, x, y)`` positions):
+
+    >>> traj = Axis.tuple(
+    ...     [("2020-01-01T00:00:00Z", 1.0, 2.0)], coordinates=("t", "x", "y")
+    ... )
+    >>> traj.data_type
+    'tuple'
+    >>> traj.coordinate_values
+    (('2020-01-01T00:00:00Z', 1.0, 2.0),)
     """
 
     values: tuple[AxisValue, ...] | None = None

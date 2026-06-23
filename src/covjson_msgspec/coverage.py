@@ -103,6 +103,27 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         -------
         str or None
             The domain type, e.g. ``"Grid"`` or ``"Trajectory"``.
+
+        Examples
+        --------
+        An inline domain's own ``domainType`` is used:
+
+        >>> from covjson_msgspec import Axis, Domain
+        >>> cov = Coverage(
+        ...     domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ...     ranges={},
+        ... )
+        >>> cov.effective_domain_type
+        'Point'
+
+        For a URL-reference domain (which carries no type of its own), the
+        coverage-level ``domain_type`` is the fallback:
+
+        >>> ref = Coverage(
+        ...     domain="https://example.org/domain.json", ranges={}, domain_type="Grid"
+        ... )
+        >>> ref.effective_domain_type
+        'Grid'
         """
         domain = self.domain
         declared = domain.domain_type if isinstance(domain, Domain) else None
