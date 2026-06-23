@@ -744,7 +744,7 @@ def _crs_coordinate(domain: Domain) -> _Variable | None:
 
 def _data_variable(
     key: str,
-    range_: Any,
+    range_: Range,
     parameters: dict[str, Parameter] | None,
 ) -> _Variable:
     array = require_inline_ndarray(key, range_, "xarray")

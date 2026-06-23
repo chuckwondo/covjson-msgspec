@@ -17,7 +17,7 @@ Spec: [Coverage][spec-coverage] and [CoverageCollection][spec-collection] object
 [spec-collection]: https://github.com/covjson/specification/blob/master/spec.md#65-coverage-collection-objects
 """
 
-from typing import TYPE_CHECKING, Final, Literal
+from typing import TYPE_CHECKING, Any, Final, Literal
 
 import msgspec
 
@@ -192,7 +192,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
 
     def to_geojson(
         self, *, trajectory_as: Literal["points", "linestring"] = "points"
-    ) -> dict[str, object]:
+    ) -> dict[str, Any]:
         """Convert this coverage to a GeoJSON ``FeatureCollection`` mapping.
 
         Requires the ``geo`` extra. Thin delegate to
@@ -382,7 +382,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
 
     def to_geojson(
         self, *, trajectory_as: Literal["points", "linestring"] = "points"
-    ) -> dict[str, object]:
+    ) -> dict[str, Any]:
         """Convert this collection to a GeoJSON ``FeatureCollection`` mapping.
 
         Requires the ``geo`` extra. Thin delegate to

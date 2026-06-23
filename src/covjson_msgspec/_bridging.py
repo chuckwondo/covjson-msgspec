@@ -10,6 +10,7 @@ optional dependency.
 
 from typing import TYPE_CHECKING, Any
 
+from covjson_msgspec.coverage import Range
 from covjson_msgspec.domain import Domain
 from covjson_msgspec.range import NdArray
 from covjson_msgspec.referencing import TemporalRS
@@ -28,7 +29,7 @@ POLYGON_DOMAIN_TYPES = frozenset(
 STANDARD_CALENDARS = frozenset({"gregorian", "standard", "proleptic_gregorian"})
 
 
-def require_inline_ndarray(key: str, range_: Any, target: str) -> NdArray:
+def require_inline_ndarray(key: str, range_: Range, target: str) -> NdArray:
     """Return ``range_`` narrowed to `NdArray`, or raise a uniform `ValueError`.
 
     The bridges can only read inline values, so a URL-reference or

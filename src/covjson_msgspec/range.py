@@ -300,6 +300,9 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
     tile_sets: tuple[TileSet, ...]
 
     def __post_init__(self) -> None:
+        # Checked at construction (unlike NdArray, which defers its shape/value
+        # consistency to validate()): a tileShape that does not rank-match shape
+        # cannot be interpreted as a tiling at all, so it is a structural error.
         # O(number of tilesets), all tiny, so safe to run on every path.
         for tile_set in self.tile_sets:
             if len(tile_set.tile_shape) != len(self.shape):
