@@ -23,9 +23,16 @@ repos:
       - id: check-yaml
       - id: debug-statements
       - id: detect-private-key
+      # The vendored conformance corpora are kept byte-for-byte as upstream
+      # shipped them (provenance is pinned in tests/corpus/README.md), so the
+      # whitespace-mutating hooks must not touch them. Our own corpus files
+      # (negative/, READMEs, manifests) are not excluded.
       - id: end-of-file-fixer
+        exclude: ^tests/corpus/(playground|covjson-pydantic)/
       - id: mixed-line-ending
+        exclude: ^tests/corpus/(playground|covjson-pydantic)/
       - id: trailing-whitespace
+        exclude: ^tests/corpus/(playground|covjson-pydantic)/
 
   # Python lint + format -- ruff (auto-fixes locally)
   - repo: https://github.com/astral-sh/ruff-pre-commit
