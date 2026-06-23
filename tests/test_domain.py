@@ -7,6 +7,7 @@ from covjson_msgspec import (
     Domain,
     GeographicCRS,
     ReferenceSystemConnection,
+    validate,
 )
 
 
@@ -56,6 +57,36 @@ def test_trajectory_uses_composite_axis() -> None:
     dom = Domain.trajectory(composite)
     assert dom.domain_type == "Trajectory"
     assert "composite" in dom.axes
+
+
+def test_multipoint_builder_validates_clean() -> None:
+    composite = Axis.tuple([(1.0, 2.0), (3.0, 4.0)], coordinates=("x", "y"))
+    dom = Domain.multipoint(composite, t=Axis.listed(("2020-01-01",)))
+
+    assert dom.domain_type == "MultiPoint"
+    assert set(dom.axes) == {"composite", "t"}
+    assert validate(dom) == []
+    assert msgspec.json.decode(msgspec.json.encode(dom), type=Domain) == dom
+
+
+def test_multipoint_series_builder_validates_clean() -> None:
+    composite = Axis.tuple([(1.0, 2.0)], coordinates=("x", "y"))
+    dom = Domain.multipoint_series(composite, Axis.listed(("2020-01-01", "2020-01-02")))
+
+    assert dom.domain_type == "MultiPointSeries"
+    assert set(dom.axes) == {"composite", "t"}
+    assert validate(dom) == []
+
+
+def test_section_builder_validates_clean() -> None:
+    composite = Axis.tuple(
+        [("2020-01-01T00:00:00Z", 1.0, 2.0)], coordinates=("t", "x", "y")
+    )
+    dom = Domain.section(composite, Axis.listed((10.0, 20.0)))
+
+    assert dom.domain_type == "Section"
+    assert set(dom.axes) == {"composite", "z"}
+    assert validate(dom) == []
 
 
 def test_polygon_builder_holds_one_polygon() -> None:

@@ -9,9 +9,8 @@ An axis describes the coordinate values along one domain dimension. A single
 * **composite**: ``dataType`` ``"tuple"`` or ``"polygon"`` with named
   ``coordinates`` (used by trajectory and polygon domains).
 
-Builders cover the two common numeric forms (`Axis.regular`, `Axis.listed`);
-composite axes still *decode* fully (their builders arrive with the
-composite-domain support).
+Builders cover the numeric forms (`Axis.regular`, `Axis.listed`) and the two
+composite forms (`Axis.tuple`, `Axis.polygon`).
 
 Spec: [Axis objects](https://github.com/covjson/specification/blob/master/spec.md#611-axis-objects).
 """
@@ -197,6 +196,49 @@ class Axis(CovJSONStruct, frozen=True):
             values=tuple(values),
             coordinates=None if coordinates is None else tuple(coordinates),
             bounds=None if bounds is None else tuple(bounds),
+        )
+
+    @classmethod
+    def tuple(
+        cls,
+        values: Iterable[Iterable[float | int | str]],
+        *,
+        coordinates: Iterable[str],
+    ) -> Self:
+        """Build a composite tuple axis from positions of coordinate values.
+
+        Used by the Trajectory, MultiPoint, and Section domains, where each axis
+        value is a tuple of primitive coordinates (e.g. ``(t, x, y)``) in the
+        order given by ``coordinates``. The positions are materialized as tuples.
+
+        Parameters
+        ----------
+        values
+            The positions; each is a sequence of primitive coordinate values
+            ordered to match ``coordinates``.
+        coordinates
+            The coordinate identifiers each position provides (e.g.
+            ``("t", "x", "y")``).
+
+        Returns
+        -------
+        Axis
+            A composite axis with ``dataType`` ``"tuple"``.
+
+        Examples
+        --------
+        >>> ax = Axis.tuple(
+        ...     [("2020-01-01T00:00:00Z", 1.0, 2.0)], coordinates=("t", "x", "y")
+        ... )
+        >>> ax.data_type
+        'tuple'
+        >>> ax.values
+        (('2020-01-01T00:00:00Z', 1.0, 2.0),)
+        """
+        return cls(
+            data_type="tuple",
+            coordinates=tuple(coordinates),
+            values=tuple(tuple(position) for position in values),
         )
 
     @classmethod

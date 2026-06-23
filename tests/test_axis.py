@@ -48,6 +48,20 @@ def test_composite_tuple_axis_decodes() -> None:
     assert ax.values == (("2020-01-01T00:00:00Z", 1, 2),)
 
 
+def test_tuple_builder_materializes_positions() -> None:
+    ax = Axis.tuple(
+        [("2020-01-01T00:00:00Z", 1.0, 2.0), ("2020-01-02T00:00:00Z", 3.0, 4.0)],
+        coordinates=("t", "x", "y"),
+    )
+
+    assert ax.data_type == "tuple"
+    assert ax.coordinates == ("t", "x", "y")
+    assert ax.values == (
+        ("2020-01-01T00:00:00Z", 1.0, 2.0),
+        ("2020-01-02T00:00:00Z", 3.0, 4.0),
+    )
+
+
 def test_custom_data_type_decodes() -> None:
     # The spec (6.1.1) allows custom extension dataType values; the model accepts
     # any string and treats an unrecognized one as primitive-like (no composite

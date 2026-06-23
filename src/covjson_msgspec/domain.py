@@ -231,6 +231,99 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         )
 
     @classmethod
+    def multipoint(
+        cls,
+        composite: Axis,
+        *,
+        t: Axis | None = None,
+        referencing: Iterable[ReferenceSystemConnection] | None = None,
+    ) -> Self:
+        """Build a MultiPoint domain from a composite axis of positions.
+
+        Parameters
+        ----------
+        composite
+            The composite (``dataType="tuple"``) axis whose coordinates are the
+            points' x/y(/z) tuples; stored under the ``"composite"`` key.
+        t
+            Optional single-valued time axis shared by the points.
+        referencing
+            Reference-system connections for the domain's coordinates.
+
+        Returns
+        -------
+        Domain
+            A MultiPoint domain.
+        """
+        return cls(
+            axes=_axes(composite=composite, t=t),
+            domain_type="MultiPoint",
+            referencing=_referencing(referencing),
+        )
+
+    @classmethod
+    def multipoint_series(
+        cls,
+        composite: Axis,
+        t: Axis,
+        *,
+        referencing: Iterable[ReferenceSystemConnection] | None = None,
+    ) -> Self:
+        """Build a MultiPointSeries domain (the points sampled over time).
+
+        Parameters
+        ----------
+        composite
+            The composite (``dataType="tuple"``) axis whose coordinates are the
+            points' x/y(/z) tuples; stored under the ``"composite"`` key.
+        t
+            The time axis the series varies over.
+        referencing
+            Reference-system connections for the domain's coordinates.
+
+        Returns
+        -------
+        Domain
+            A MultiPointSeries domain.
+        """
+        return cls(
+            axes={"composite": composite, "t": t},
+            domain_type="MultiPointSeries",
+            referencing=_referencing(referencing),
+        )
+
+    @classmethod
+    def section(
+        cls,
+        composite: Axis,
+        z: Axis,
+        *,
+        referencing: Iterable[ReferenceSystemConnection] | None = None,
+    ) -> Self:
+        """Build a Section domain (a vertical slice along a trajectory).
+
+        Parameters
+        ----------
+        composite
+            The composite (``dataType="tuple"``) axis whose coordinates are the
+            trajectory's t/x/y tuples; stored under the ``"composite"`` key.
+        z
+            The vertical axis the section varies over.
+        referencing
+            Reference-system connections for the domain's coordinates.
+
+        Returns
+        -------
+        Domain
+            A Section domain.
+        """
+        return cls(
+            axes={"composite": composite, "z": z},
+            domain_type="Section",
+            referencing=_referencing(referencing),
+        )
+
+    @classmethod
     def polygon(
         cls,
         exterior: RingCoords,
