@@ -100,8 +100,7 @@ jobs:
         run: uv sync --locked --group typecheck --quiet
       - name: Type-check (mypy)
         run: uv run --quiet mypy
-      - name: Type-check (basedpyright, strict, informational)
-        continue-on-error: true
+      - name: Type-check (basedpyright, strict)
         run: uv run --quiet basedpyright
       - name: Type-check (pyrefly, informational)
         continue-on-error: true
