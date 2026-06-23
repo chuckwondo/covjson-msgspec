@@ -67,7 +67,9 @@ def test_tagged_union_dispatch() -> None:
         type=range_t,
     )
     assert isinstance(obj, NdArray)
-    assert obj.values == (1.0, 2.0, None)
+    # Decoded into the bare NdArray | TiledNdArray union, so the test-local
+    # Generic[T] struct's values is tuple[Unknown | None, ...]; not public API.
+    assert obj.values == (1.0, 2.0, None)  # pyright: ignore[reportUnknownMemberType]
 
 
 def test_str_mixed_into_tagged_union() -> None:

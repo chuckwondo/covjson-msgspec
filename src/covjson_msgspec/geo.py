@@ -38,6 +38,13 @@ plain column so it survives ``to_json`` into each feature's ``properties``.
 Spec: [Coverage objects](https://github.com/covjson/specification/blob/master/spec.md#64-coverage-objects).
 """
 
+# This bridge is internal glue over dynamically-typed third-party libraries
+# (geopandas / shapely / pandas) whose stubs leave many call results partly
+# unknown, so basedpyright's reportUnknown* rules are relaxed here. The public
+# functions stay safe: their signatures are explicitly typed and mypy strict
+# guards them, so those rules never fire on the user-facing surface.
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false
+
 import json
 import warnings
 from typing import TYPE_CHECKING, Any, Literal, cast

@@ -37,6 +37,13 @@ identifies it (its ``id`` when set, otherwise its position).
 Spec: [Coverage objects](https://github.com/covjson/specification/blob/master/spec.md#64-coverage-objects).
 """
 
+# This bridge is internal glue over the dynamically-typed pandas library, whose
+# stubs leave many call results partly unknown, so basedpyright's reportUnknown*
+# rules are relaxed here. The public functions stay safe: their signatures are
+# explicitly typed and mypy strict guards them, so those rules never fire on the
+# user-facing surface.
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false
+
 from typing import TYPE_CHECKING, Any, cast
 
 from covjson_msgspec._bridging import (
@@ -313,7 +320,11 @@ def _index(layout: _AxisLayout) -> "pd.Index[Any]":
         name = layout.dims[0]
         # The label data is heterogeneous (dict[str, Any]), so pandas-stubs
         # widens the constructed index to Any; narrow it back to the return type.
-        return cast("pd.Index[Any]", pd.Index(layout.values[name], name=name))
+        # mypy requires this cast (it widens pd.Index to Any here); basedpyright
+        # disagrees and calls it redundant, so silence its lone complaint.
+        return cast(  # pyright: ignore[reportUnnecessaryCast]
+            "pd.Index[Any]", pd.Index(layout.values[name], name=name)
+        )
 
     return cast(
         "pd.Index[Any]",

@@ -134,7 +134,7 @@ def test_temporal_axis_parsed_to_datetime64() -> None:
 
 
 def test_temporal_non_standard_calendar_uses_cftime() -> None:
-    import cftime
+    import cftime  # pyright: ignore[reportMissingTypeStubs]
 
     cov = Coverage(
         domain=Domain.point_series(
@@ -155,8 +155,11 @@ def test_temporal_non_standard_calendar_uses_cftime() -> None:
     )
     ds = to_xarray(cov)
 
-    assert isinstance(ds["t"].values[0], cftime.datetime)
-    assert ds["t"].values[0].calendar == "360_day"
+    # cftime ships no type stubs, so its datetime member types as Unknown (the
+    # ignore is scoped to that one access); the value itself is Any from xarray.
+    t0 = ds["t"].values[0]
+    assert isinstance(t0, cftime.datetime)  # pyright: ignore[reportUnknownMemberType]
+    assert t0.calendar == "360_day"
 
 
 def test_geographic_referencing_sets_cf_attrs_and_grid_mapping() -> None:

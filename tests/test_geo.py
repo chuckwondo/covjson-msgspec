@@ -5,7 +5,7 @@ from typing import Any
 import geopandas as gpd
 import pandas as pd
 import pytest
-from shapely import Point, Polygon
+from shapely import LineString, Point, Polygon
 
 from covjson_msgspec import (
     Axis,
@@ -34,6 +34,11 @@ def _point(geom: Any) -> Point:
 
 def _polygon(geom: Any) -> Polygon:
     assert isinstance(geom, Polygon)
+    return geom
+
+
+def _linestring(geom: Any) -> LineString:
+    assert isinstance(geom, LineString)
     return geom
 
 
@@ -518,7 +523,7 @@ def test_point_without_z_stays_2d() -> None:
         ranges={},
     )
 
-    assert not to_geopandas(cov).geometry.iloc[0].has_z
+    assert not _point(to_geopandas(cov).geometry.iloc[0]).has_z
 
 
 def test_to_geojson_emits_3d_coordinates() -> None:
@@ -577,7 +582,7 @@ def test_trajectory_as_linestring_is_one_feature() -> None:
     gdf = to_geopandas(cov, trajectory_as="linestring")
 
     assert len(gdf) == 1
-    line = gdf.geometry.iloc[0]
+    line = _linestring(gdf.geometry.iloc[0])
     assert line.geom_type == "LineString"
     assert list(line.coords) == [(1.0, 10.0), (2.0, 20.0)]
     # The path is geometry only: per-vertex measurements are dropped.
@@ -592,7 +597,7 @@ def test_trajectory_linestring_carries_z() -> None:
         "z",
         values=(("2020-01-01", 1.0, 10.0, 5.0), ("2020-01-02", 2.0, 20.0, 6.0)),
     )
-    line = to_geopandas(cov, trajectory_as="linestring").geometry.iloc[0]
+    line = _linestring(to_geopandas(cov, trajectory_as="linestring").geometry.iloc[0])
 
     assert line.has_z
     assert list(line.coords) == [(1.0, 10.0, 5.0), (2.0, 20.0, 6.0)]

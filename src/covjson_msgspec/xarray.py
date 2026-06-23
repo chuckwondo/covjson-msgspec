@@ -28,6 +28,14 @@ geopandas bridge; `to_xarray` rejects them.
 Spec: [Coverage objects](https://github.com/covjson/specification/blob/master/spec.md#64-coverage-objects).
 """
 
+# This bridge is internal glue over dynamically-typed third-party libraries
+# (xarray / numpy / cftime) whose stubs are incomplete (cftime has none), so
+# basedpyright's reportUnknown* and reportMissingTypeStubs rules are relaxed
+# here. The public functions stay safe: their signatures are explicitly typed
+# and mypy strict guards them, so those rules never fire on the user-facing
+# surface.
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportMissingTypeStubs=false
+
 import math
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, NoReturn, cast
