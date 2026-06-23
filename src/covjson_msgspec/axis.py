@@ -170,6 +170,11 @@ class Axis(CovJSONStruct, frozen=True):
         -------
         Axis
             A regular axis.
+
+        Examples
+        --------
+        >>> Axis.regular(0.0, 100.0, 5).coordinate_values
+        (0.0, 25.0, 50.0, 75.0, 100.0)
         """
         return cls(
             start=start,
@@ -202,6 +207,14 @@ class Axis(CovJSONStruct, frozen=True):
         -------
         Axis
             A value-listing axis.
+
+        Examples
+        --------
+        >>> ax = Axis.listed((10.0, 20.0), bounds=(5.0, 15.0, 15.0, 25.0))
+        >>> ax.coordinate_values
+        (10.0, 20.0)
+        >>> ax.bounds
+        (5.0, 15.0, 15.0, 25.0)
         """
         return cls(
             values=tuple(values),

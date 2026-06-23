@@ -34,14 +34,33 @@ class GeographicCRS(CovJSONStruct, frozen=True, tag="GeographicCRS"):
 
 
 class ProjectedCRS(CovJSONStruct, frozen=True, tag="ProjectedCRS"):
-    """A projected coordinate reference system (e.g. a map projection)."""
+    """A projected coordinate reference system (e.g. a map projection).
+
+    Examples
+    --------
+    >>> import msgspec
+    >>> crs = ProjectedCRS(id="http://www.opengis.net/def/crs/EPSG/0/27700")
+    >>> msgspec.json.encode(crs)
+    b'{"type":"ProjectedCRS","id":"http://www.opengis.net/def/crs/EPSG/0/27700"}'
+    """
 
     id: str | None = None
     description: I18n | None = None
 
 
 class VerticalCRS(CovJSONStruct, frozen=True, tag="VerticalCRS"):
-    """A vertical coordinate reference system (e.g. height or depth)."""
+    """A vertical coordinate reference system (e.g. height or depth).
+
+    Examples
+    --------
+    >>> import msgspec
+    >>> crs = msgspec.json.decode(
+    ...     b'{"type": "VerticalCRS", "id": "http://example.org/crs/depth"}',
+    ...     type=VerticalCRS,
+    ... )
+    >>> crs.id
+    'http://example.org/crs/depth'
+    """
 
     id: str | None = None
     description: I18n | None = None
@@ -71,6 +90,14 @@ class Concept(CovJSONStruct, frozen=True):
 
     Used for `IdentifierRS.target_concept` and for the values of
     `IdentifierRS.identifiers`.
+
+    Examples
+    --------
+    >>> concept = Concept(
+    ...     label={"en": "Water"}, description={"en": "Open water surface"}
+    ... )
+    >>> concept.label
+    {'en': 'Water'}
     """
 
     label: I18n

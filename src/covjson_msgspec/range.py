@@ -130,6 +130,18 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
         ... )
         >>> arr.to_numpy().tolist()
         [1.5, nan]
+
+        An ``"integer"`` range with missing data returns a masked array, since NaN
+        cannot live in an integer array (pass ``as_float=True`` for NaN instead):
+
+        >>> ints = NdArray(
+        ...     data_type="integer", values=(1, None, 3), shape=(3,), axis_names=("x",)
+        ... )
+        >>> masked = ints.to_numpy()
+        >>> masked.tolist()
+        [1, None, 3]
+        >>> ints.to_numpy(as_float=True).tolist()
+        [1.0, nan, 3.0]
         """
         try:
             import numpy as np
@@ -258,6 +270,15 @@ class TileSet(CovJSONStruct, frozen=True):
     Each ``tile_shape`` entry is the tile's size along the corresponding axis, or
     ``None`` where the axis is not subdivided. ``url_template`` is an RFC 6570
     URI template whose variables are the names of the subdivided axes.
+
+    Examples
+    --------
+    Subdivide only the ``t`` axis (one time step per tile), leaving ``y`` / ``x``
+    whole (``None``):
+
+    >>> tile = TileSet(tile_shape=(1, None, None), url_template="tiles/{t}.covjson")
+    >>> tile.tile_shape
+    (1, None, None)
     """
 
     tile_shape: tuple[int | None, ...]

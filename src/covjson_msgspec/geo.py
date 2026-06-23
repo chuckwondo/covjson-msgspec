@@ -132,6 +132,24 @@ def to_geopandas(
     UserWarning
         If a domain is a Grid, which is degenerately emitted as one point feature
         per cell (the xarray bridge is the better fit for gridded data).
+
+    Examples
+    --------
+    A point-like domain yields one ``Point`` feature, with the single-valued
+    ``x`` / ``y`` coordinates kept as columns alongside the parameter values:
+
+    >>> from covjson_msgspec import Axis, Coverage, Domain, NdArray
+    >>> cov = Coverage(
+    ...     domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+    ...     ranges={"v": NdArray(data_type="float", values=(280.0,))},
+    ... )
+    >>> gdf = to_geopandas(cov)
+    >>> list(gdf.columns)
+    ['x', 'y', 'v', 'geometry']
+    >>> gdf.geometry.iloc[0]
+    <POINT (1 2)>
+    >>> gdf["v"].tolist()
+    [280.0]
     """
     if trajectory_as not in _TRAJECTORY_AS:
         msg = f"trajectory_as must be 'points' or 'linestring'; got {trajectory_as!r}"

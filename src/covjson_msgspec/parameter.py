@@ -231,6 +231,16 @@ class Parameter(CovJSONStruct, frozen=True, tag="Parameter"):
         ValueError
             If ``observed_property`` declares ``categories`` (a categorical
             property cannot be paired with a unit).
+
+        Examples
+        --------
+        >>> param = Parameter.continuous(
+        ...     ObservedProperty(label={"en": "Air temperature"}), Unit(symbol="K")
+        ... )
+        >>> param.unit.symbol
+        'K'
+        >>> param.observed_property.label
+        {'en': 'Air temperature'}
         """
         return cls(
             observed_property=observed_property,
@@ -274,6 +284,21 @@ class Parameter(CovJSONStruct, frozen=True, tag="Parameter"):
         ------
         ValueError
             If ``observed_property`` does not declare ``categories``.
+
+        Examples
+        --------
+        >>> land_cover = ObservedProperty(
+        ...     label={"en": "Land cover"},
+        ...     categories=(
+        ...         Category(id="1", label={"en": "Water"}),
+        ...         Category(id="2", label={"en": "Forest"}),
+        ...     ),
+        ... )
+        >>> param = Parameter.categorical(land_cover, {"1": 1, "2": 2})
+        >>> param.category_encoding
+        {'1': 1, '2': 2}
+        >>> param.unit is None
+        True
         """
         return cls(
             observed_property=observed_property,

@@ -107,6 +107,16 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         -------
         Domain
             A Grid domain.
+
+        Examples
+        --------
+        >>> dom = Domain.grid(x=Axis.regular(0.0, 10.0, 3), y=Axis.listed((0.0, 1.0)))
+        >>> dom.domain_type
+        'Grid'
+        >>> dom.x.coordinate_values
+        (0.0, 5.0, 10.0)
+        >>> sorted(dom.axes)
+        ['x', 'y']
         """
         return cls(
             axes=_axes(x=x, y=y, z=z, t=t),
@@ -130,6 +140,14 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         -------
         Domain
             A Point domain.
+
+        Examples
+        --------
+        >>> dom = Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,)))
+        >>> dom.domain_type
+        'Point'
+        >>> (dom.x.coordinate_values, dom.y.coordinate_values)
+        ((1.0,), (2.0,))
         """
         return cls(
             axes=_axes(x=x, y=y, z=z, t=t),
@@ -164,6 +182,18 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         -------
         Domain
             A PointSeries domain.
+
+        Examples
+        --------
+        >>> dom = Domain.point_series(
+        ...     x=Axis.listed((1.0,)),
+        ...     y=Axis.listed((2.0,)),
+        ...     t=Axis.listed(("2020-01-01", "2020-01-02", "2020-01-03")),
+        ... )
+        >>> dom.domain_type
+        'PointSeries'
+        >>> dom.t.coordinate_values
+        ('2020-01-01', '2020-01-02', '2020-01-03')
         """
         return cls(
             axes=_axes(x=x, y=y, t=t, z=z),
@@ -198,6 +228,18 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         -------
         Domain
             A VerticalProfile domain.
+
+        Examples
+        --------
+        >>> dom = Domain.vertical_profile(
+        ...     x=Axis.listed((1.0,)),
+        ...     y=Axis.listed((2.0,)),
+        ...     z=Axis.listed((10.0, 20.0, 30.0)),
+        ... )
+        >>> dom.domain_type
+        'VerticalProfile'
+        >>> dom.z.coordinate_values
+        (10.0, 20.0, 30.0)
         """
         return cls(
             axes=_axes(x=x, y=y, z=z, t=t),
@@ -226,6 +268,17 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         -------
         Domain
             A Trajectory domain.
+
+        Examples
+        --------
+        >>> composite = Axis.tuple(
+        ...     [("2020-01-01T00:00:00Z", 1.0, 10.0)], coordinates=("t", "x", "y")
+        ... )
+        >>> dom = Domain.trajectory(composite)
+        >>> dom.domain_type
+        'Trajectory'
+        >>> dom.axes["composite"].coordinates
+        ('t', 'x', 'y')
         """
         return cls(
             axes={"composite": composite},
@@ -257,6 +310,15 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         -------
         Domain
             A MultiPoint domain.
+
+        Examples
+        --------
+        >>> composite = Axis.tuple([(1.0, 10.0), (2.0, 20.0)], coordinates=("x", "y"))
+        >>> dom = Domain.multipoint(composite)
+        >>> dom.domain_type
+        'MultiPoint'
+        >>> dom.axes["composite"].values
+        ((1.0, 10.0), (2.0, 20.0))
         """
         return cls(
             axes=_axes(composite=composite, t=t),
@@ -288,6 +350,17 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         -------
         Domain
             A MultiPointSeries domain.
+
+        Examples
+        --------
+        >>> composite = Axis.tuple([(1.0, 10.0), (2.0, 20.0)], coordinates=("x", "y"))
+        >>> dom = Domain.multipoint_series(
+        ...     composite, Axis.listed(("2020-01-01", "2020-01-02"))
+        ... )
+        >>> dom.domain_type
+        'MultiPointSeries'
+        >>> sorted(dom.axes)
+        ['composite', 't']
         """
         return cls(
             axes={"composite": composite, "t": t},
@@ -319,6 +392,17 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         -------
         Domain
             A Section domain.
+
+        Examples
+        --------
+        >>> composite = Axis.tuple(
+        ...     [("2020-01-01T00:00:00Z", 1.0, 10.0)], coordinates=("t", "x", "y")
+        ... )
+        >>> dom = Domain.section(composite, Axis.listed((10.0, 20.0)))
+        >>> dom.domain_type
+        'Section'
+        >>> dom.z.coordinate_values
+        (10.0, 20.0)
         """
         return cls(
             axes={"composite": composite, "z": z},
@@ -359,6 +443,14 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         -------
         Domain
             A Polygon domain whose ``composite`` axis holds the one polygon.
+
+        Examples
+        --------
+        >>> dom = Domain.polygon([(0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 0.0)])
+        >>> dom.domain_type
+        'Polygon'
+        >>> dom.axes["composite"].data_type
+        'polygon'
         """
         composite = Axis.polygon([(exterior, *holes)], coordinates=coordinates)
         return cls(
@@ -396,6 +488,16 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         -------
         Domain
             A MultiPolygon domain whose ``composite`` axis holds the polygons.
+
+        Examples
+        --------
+        >>> square = [[(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 0.0)]]
+        >>> other = [[(2.0, 2.0), (3.0, 2.0), (3.0, 3.0), (2.0, 2.0)]]
+        >>> dom = Domain.multipolygon([square, other])
+        >>> dom.domain_type
+        'MultiPolygon'
+        >>> len(dom.axes["composite"].values)
+        2
         """
         composite = Axis.polygon(polygons, coordinates=coordinates)
         return cls(

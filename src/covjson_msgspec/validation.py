@@ -257,6 +257,19 @@ def validate(
     Traceback (most recent call last):
         ...
     covjson_msgspec.validation.CovJSONValidationError: Grid domain requires a 'y' axis
+
+    Not every issue is an error. Here a range has no matching parameter, which is
+    a warning; ``"collect"`` mode returns it and ``"raise"`` mode would not raise:
+
+    >>> from covjson_msgspec import Coverage, NdArray
+    >>> cov = Coverage(
+    ...     domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+    ...     ranges={"v": NdArray(data_type="float", values=(280.0,))},
+    ...     parameters={},
+    ... )
+    >>> issue = validate(cov)[0]
+    >>> (issue.code, issue.severity.value)
+    ('coverage.range-without-parameter', 'warning')
     """
     issues: list[Issue] = []
 
