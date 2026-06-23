@@ -402,7 +402,6 @@ def _trajectory_linestring_frame(domain: Domain) -> "tuple[Any, Any]":
 def _polygon_frame(coverage: Coverage, domain: Domain) -> "tuple[Any, Any]":
     import numpy as np
     import pandas as pd
-    import shapely
 
     composite = domain.axes["composite"]
     coords = composite.coordinates or ("x", "y")
@@ -411,7 +410,7 @@ def _polygon_frame(coverage: Coverage, domain: Domain) -> "tuple[Any, Any]":
     # A vertical component in the ring positions becomes a 3D polygon (POLYGON Z).
     z_index = coords.index("z") if "z" in coords else None
     polygons = [
-        _shapely_polygon(polygon, x_index, y_index, z_index, shapely)
+        _shapely_polygon(polygon, x_index, y_index, z_index)
         for polygon in (composite.values or ())
     ]
 
@@ -450,8 +449,10 @@ def _polygon_frame(coverage: Coverage, domain: Domain) -> "tuple[Any, Any]":
 
 
 def _shapely_polygon(
-    polygon: Any, x_index: int, y_index: int, z_index: int | None, shapely: Any
+    polygon: Any, x_index: int, y_index: int, z_index: int | None
 ) -> Any:
+    import shapely
+
     # A polygon is a sequence of rings; ring 0 is the exterior, the rest holes.
     # Include the vertical component per position when the axis carries one.
     def position_coords(position: Any) -> tuple[float, ...]:
