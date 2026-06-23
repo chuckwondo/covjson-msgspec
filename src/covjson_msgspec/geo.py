@@ -243,7 +243,7 @@ def _coverage_to_geopandas(
     if domain_type in POLYGON_DOMAIN_TYPES:
         frame, geometry = _polygon_frame(coverage, domain)
     elif domain_type == "Trajectory" and trajectory_as == "linestring":
-        frame, geometry = _trajectory_linestring_frame(coverage, domain)
+        frame, geometry = _trajectory_linestring_frame(domain)
     else:
         frame, geometry = _point_frame(coverage, domain)
 
@@ -340,9 +340,10 @@ def _point_frame(coverage: Coverage, domain: Domain) -> "tuple[Any, Any]":
     return frame, geometry
 
 
-def _trajectory_linestring_frame(
-    coverage: Coverage, domain: Domain
-) -> "tuple[Any, Any]":
+def _trajectory_linestring_frame(domain: Domain) -> "tuple[Any, Any]":
+    # Linestring mode reads only the composite axis; unlike _point_frame and
+    # _polygon_frame it needs nothing from the coverage (the per-vertex range
+    # values are dropped when collapsing the path to one geometry).
     import pandas as pd
     import shapely
 
