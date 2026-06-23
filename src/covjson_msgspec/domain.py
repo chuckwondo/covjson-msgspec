@@ -271,7 +271,7 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
 
         Examples
         --------
-        >>> composite = Axis.tuple(
+        >>> composite = Axis.tuple_(
         ...     [("2020-01-01T00:00:00Z", 1.0, 10.0)], coordinates=("t", "x", "y")
         ... )
         >>> dom = Domain.trajectory(composite)
@@ -313,7 +313,7 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
 
         Examples
         --------
-        >>> composite = Axis.tuple([(1.0, 10.0), (2.0, 20.0)], coordinates=("x", "y"))
+        >>> composite = Axis.tuple_([(1.0, 10.0), (2.0, 20.0)], coordinates=("x", "y"))
         >>> dom = Domain.multipoint(composite)
         >>> dom.domain_type
         'MultiPoint'
@@ -353,7 +353,7 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
 
         Examples
         --------
-        >>> composite = Axis.tuple([(1.0, 10.0), (2.0, 20.0)], coordinates=("x", "y"))
+        >>> composite = Axis.tuple_([(1.0, 10.0), (2.0, 20.0)], coordinates=("x", "y"))
         >>> dom = Domain.multipoint_series(
         ...     composite, Axis.listed(("2020-01-01", "2020-01-02"))
         ... )
@@ -395,7 +395,7 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
 
         Examples
         --------
-        >>> composite = Axis.tuple(
+        >>> composite = Axis.tuple_(
         ...     [("2020-01-01T00:00:00Z", 1.0, 10.0)], coordinates=("t", "x", "y")
         ... )
         >>> dom = Domain.section(composite, Axis.listed((10.0, 20.0)))

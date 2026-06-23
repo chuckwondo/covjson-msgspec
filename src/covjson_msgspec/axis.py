@@ -10,7 +10,7 @@ An axis describes the coordinate values along one domain dimension. A single
   ``coordinates`` (used by trajectory and polygon domains).
 
 Builders cover the numeric forms (`Axis.regular`, `Axis.listed`) and the two
-composite forms (`Axis.tuple`, `Axis.polygon`).
+composite forms (`Axis.tuple_`, `Axis.polygon`).
 
 Spec: [Axis objects](https://github.com/covjson/specification/blob/master/spec.md#611-axis-objects).
 """
@@ -69,7 +69,7 @@ class Axis(CovJSONStruct, frozen=True):
     The third form is composite: each value is a tuple of named coordinates (here
     a trajectory's ``(t, x, y)`` positions):
 
-    >>> traj = Axis.tuple(
+    >>> traj = Axis.tuple_(
     ...     [("2020-01-01T00:00:00Z", 1.0, 2.0)], coordinates=("t", "x", "y")
     ... )
     >>> traj.data_type
@@ -222,8 +222,12 @@ class Axis(CovJSONStruct, frozen=True):
             bounds=None if bounds is None else tuple(bounds),
         )
 
+    # Trailing underscore (PEP 8) avoids shadowing the builtin `tuple`: a class
+    # member named `tuple` would resolve ahead of the builtin when msgspec
+    # evaluates the `values: tuple[AxisValue, ...]` field annotation in the class
+    # namespace, which breaks under Python 3.14's deferred annotations.
     @classmethod
-    def tuple(
+    def tuple_(
         cls,
         values: Iterable[Iterable[float | int | str]],
         *,
@@ -251,7 +255,7 @@ class Axis(CovJSONStruct, frozen=True):
 
         Examples
         --------
-        >>> ax = Axis.tuple(
+        >>> ax = Axis.tuple_(
         ...     [("2020-01-01T00:00:00Z", 1.0, 2.0)], coordinates=("t", "x", "y")
         ... )
         >>> ax.data_type

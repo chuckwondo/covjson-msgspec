@@ -49,7 +49,7 @@ def test_composite_tuple_axis_decodes() -> None:
 
 
 def test_tuple_builder_materializes_positions() -> None:
-    ax = Axis.tuple(
+    ax = Axis.tuple_(
         [("2020-01-01T00:00:00Z", 1.0, 2.0), ("2020-01-02T00:00:00Z", 3.0, 4.0)],
         coordinates=("t", "x", "y"),
     )
