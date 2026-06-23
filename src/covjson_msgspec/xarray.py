@@ -71,8 +71,10 @@ _INSTALL_HINT = (
 # The CoverageJSON ordering of a geographic system's coordinates.
 _GEOGRAPHIC_ROLES = ("longitude", "latitude", "height")
 
-# A coordinate/data-variable spec in xarray's ``(dims, data, attrs)`` form.
-_Variable = tuple[Any, Any, dict[str, Any]]
+# A coordinate/data-variable spec in xarray's ``(dims, data, attrs)`` form: the
+# dimension name(s) (a scalar coord uses the empty tuple), the array/scalar data
+# (heterogeneous, hence Any), and the CF attributes.
+_Variable = tuple[str | tuple[str, ...], Any, dict[str, Any]]
 
 
 def to_xarray(coverage: Coverage) -> "xr.Dataset":

@@ -56,6 +56,7 @@ from covjson_msgspec.referencing import GeographicCRS, ProjectedCRS
 
 if TYPE_CHECKING:
     import geopandas as gpd
+    import pandas as pd
 
 # Raised (as the message) when the bridge is used without its dependencies.
 _INSTALL_HINT = (
@@ -311,7 +312,7 @@ def _collection_to_geopandas(
     return result
 
 
-def _point_frame(coverage: Coverage, domain: Domain) -> "tuple[Any, Any]":
+def _point_frame(coverage: Coverage, domain: Domain) -> "tuple[pd.DataFrame, Any]":
     import pandas as pd
     import shapely
 
@@ -357,7 +358,7 @@ def _point_frame(coverage: Coverage, domain: Domain) -> "tuple[Any, Any]":
     return frame, geometry
 
 
-def _trajectory_linestring_frame(domain: Domain) -> "tuple[Any, Any]":
+def _trajectory_linestring_frame(domain: Domain) -> "tuple[pd.DataFrame, Any]":
     # Linestring mode reads only the composite axis; unlike _point_frame and
     # _polygon_frame it needs nothing from the coverage (the per-vertex range
     # values are dropped when collapsing the path to one geometry).
@@ -378,7 +379,8 @@ def _trajectory_linestring_frame(domain: Domain) -> "tuple[Any, Any]":
     y_index = coords.index("y")
     # A vertical component makes the path 3D (LINESTRING Z).
     z_index = coords.index("z") if "z" in coords else None
-    positions: tuple[Any, ...] = composite.values or ()
+    # A "tuple" composite holds one tuple (position) per vertex by construction.
+    positions = cast("tuple[tuple[Any, ...], ...]", composite.values or ())
 
     if len(positions) < 2:
         msg = (
@@ -387,7 +389,7 @@ def _trajectory_linestring_frame(domain: Domain) -> "tuple[Any, Any]":
         )
         raise ValueError(msg)
 
-    def vertex(position: Any) -> tuple[float, ...]:
+    def vertex(position: tuple[Any, ...]) -> tuple[float, ...]:
         if z_index is None:
             return (position[x_index], position[y_index])
         return (position[x_index], position[y_index], position[z_index])
@@ -399,7 +401,7 @@ def _trajectory_linestring_frame(domain: Domain) -> "tuple[Any, Any]":
     return pd.DataFrame(index=[0]), [shapely.LineString(line)]
 
 
-def _polygon_frame(coverage: Coverage, domain: Domain) -> "tuple[Any, Any]":
+def _polygon_frame(coverage: Coverage, domain: Domain) -> "tuple[pd.DataFrame, Any]":
     import numpy as np
     import pandas as pd
 
