@@ -1,8 +1,11 @@
 """Behavioral tests for the geo bridge (to_geopandas / to_geojson)."""
 
+from typing import Any
+
 import geopandas as gpd
 import pandas as pd
 import pytest
+from shapely import Point, Polygon
 
 from covjson_msgspec import (
     Axis,
@@ -21,6 +24,19 @@ from covjson_msgspec import (
 )
 
 
+def _point(geom: Any) -> Point:
+    # geopandas types a geometry as the abstract BaseGeometry; assert the concrete
+    # type so the Point coordinate accessors (x / y / z) type-check (and to guard
+    # the test's assumption at runtime).
+    assert isinstance(geom, Point)
+    return geom
+
+
+def _polygon(geom: Any) -> Polygon:
+    assert isinstance(geom, Polygon)
+    return geom
+
+
 def test_point_is_single_point_feature() -> None:
     cov = Coverage(
         domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
@@ -30,7 +46,7 @@ def test_point_is_single_point_feature() -> None:
 
     assert isinstance(gdf, gpd.GeoDataFrame)
     assert len(gdf) == 1
-    point = gdf.geometry.iloc[0]
+    point = _point(gdf.geometry.iloc[0])
     assert (point.x, point.y) == (1.0, 2.0)
     assert gdf["v"].tolist() == [280.0]
 
@@ -41,7 +57,7 @@ def test_coverage_methods_delegate() -> None:
         ranges={"v": NdArray(data_type="float", values=(280.0,))},
     )
 
-    assert cov.to_geopandas().geometry.iloc[0].x == 1.0
+    assert _point(cov.to_geopandas().geometry.iloc[0]).x == 1.0
     assert cov.to_geojson()["type"] == "FeatureCollection"
 
 
@@ -76,7 +92,7 @@ def test_point_series_is_one_feature_per_time() -> None:
         pd.Timestamp("2020-01-01"),
         pd.Timestamp("2020-01-02"),
     ]
-    assert {(g.x, g.y) for g in gdf.geometry} == {(1.0, 2.0)}
+    assert {(p.x, p.y) for p in map(_point, gdf.geometry)} == {(1.0, 2.0)}
 
 
 def test_no_geographic_referencing_leaves_crs_unset() -> None:
@@ -124,7 +140,9 @@ def test_geographic_referencing_passes_a_resolvable_id_through() -> None:
     # 4326 instead of collapsing to CRS84.
     cov = _geographic_point("http://www.opengis.net/def/crs/EPSG/0/4326")
 
-    assert to_geopandas(cov).crs.to_epsg() == 4326
+    crs = to_geopandas(cov).crs
+    assert crs is not None
+    assert crs.to_epsg() == 4326
 
 
 def test_projected_referencing_passes_its_id_through() -> None:
@@ -146,7 +164,9 @@ def test_projected_referencing_passes_its_id_through() -> None:
         ranges={},
     )
 
-    assert to_geopandas(cov).crs.to_epsg() == 27700
+    crs = to_geopandas(cov).crs
+    assert crs is not None
+    assert crs.to_epsg() == 27700
 
 
 def test_projected_referencing_without_id_leaves_crs_unset() -> None:
@@ -189,7 +209,7 @@ def test_trajectory_is_one_point_per_vertex() -> None:
     gdf = to_geopandas(cov)
 
     assert [g.geom_type for g in gdf.geometry] == ["Point", "Point"]
-    assert [(g.x, g.y) for g in gdf.geometry] == [(1.0, 10.0), (2.0, 20.0)]
+    assert [(p.x, p.y) for p in map(_point, gdf.geometry)] == [(1.0, 10.0), (2.0, 20.0)]
     assert gdf["v"].tolist() == [5.0, 6.0]
 
 
@@ -215,7 +235,11 @@ def test_multipoint_is_one_point_per_member() -> None:
     gdf = to_geopandas(cov)
 
     assert [g.geom_type for g in gdf.geometry] == ["Point", "Point", "Point"]
-    assert [(g.x, g.y) for g in gdf.geometry] == [(1.0, 10.0), (2.0, 20.0), (3.0, 30.0)]
+    assert [(p.x, p.y) for p in map(_point, gdf.geometry)] == [
+        (1.0, 10.0),
+        (2.0, 20.0),
+        (3.0, 30.0),
+    ]
     assert gdf["v"].tolist() == [5.0, 6.0, 7.0]
     # The composite axis is the geometry's source; its bare positional index
     # (0, 1, 2) must not leak into the feature columns / GeoJSON properties.
@@ -241,7 +265,7 @@ def test_grid_is_one_point_per_cell() -> None:
 
     # One feature per cell of the 2x2 grid, range values aligned by (y, x).
     assert len(gdf) == 4
-    assert {(g.x, g.y) for g in gdf.geometry} == {
+    assert {(p.x, p.y) for p in map(_point, gdf.geometry)} == {
         (0.0, 10.0),
         (1.0, 10.0),
         (0.0, 20.0),
@@ -268,7 +292,7 @@ def test_polygon_is_single_polygon_feature() -> None:
     gdf = to_geopandas(cov)
 
     assert len(gdf) == 1
-    polygon = gdf.geometry.iloc[0]
+    polygon = _polygon(gdf.geometry.iloc[0])
     assert polygon.geom_type == "Polygon"
     assert list(polygon.exterior.coords) == [
         (0.0, 0.0),
@@ -286,7 +310,7 @@ def test_polygon_keeps_holes() -> None:
         domain=Domain.polygon(exterior, holes=[hole]),
         ranges={},
     )
-    polygon = to_geopandas(cov).geometry.iloc[0]
+    polygon = _polygon(to_geopandas(cov).geometry.iloc[0])
 
     assert len(polygon.interiors) == 1
 
@@ -404,7 +428,7 @@ def test_collection_concatenates_members_with_coverage_column() -> None:
     assert next(iter(gdf.columns)) == "coverage"
     assert gdf["coverage"].tolist() == ["a", "b"]
     assert gdf["v"].tolist() == [10.0, 20.0]
-    assert [(g.x, g.y) for g in gdf.geometry] == [(1.0, 2.0), (3.0, 4.0)]
+    assert [(p.x, p.y) for p in map(_point, gdf.geometry)] == [(1.0, 2.0), (3.0, 4.0)]
 
 
 def test_collection_methods_delegate() -> None:
@@ -480,7 +504,7 @@ def test_vertical_profile_carries_z_into_point_geometry() -> None:
     gdf = to_geopandas(cov)
 
     assert all(g.has_z for g in gdf.geometry)
-    assert [(g.x, g.y, g.z) for g in gdf.geometry] == [
+    assert [(p.x, p.y, p.z) for p in map(_point, gdf.geometry)] == [
         (1.0, 2.0, 10.0),
         (1.0, 2.0, 20.0),
     ]
@@ -522,7 +546,7 @@ def test_polygon_carries_z_into_geometry() -> None:
         domain=Domain.polygon(exterior, coordinates=("x", "y", "z")),
         ranges={},
     )
-    polygon = to_geopandas(cov).geometry.iloc[0]
+    polygon = _polygon(to_geopandas(cov).geometry.iloc[0])
 
     assert polygon.has_z
     assert list(polygon.exterior.coords) == exterior

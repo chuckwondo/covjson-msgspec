@@ -59,6 +59,11 @@ dev = [
     "covjson-msgspec[all]",
     "ruff>=0.15",
     "mypy>=1.13",
+    # Type stubs so mypy checks the bridges against the real APIs (these libraries
+    # ship no py.typed marker). cftime has no stub package, so it stays untyped.
+    "pandas-stubs",
+    "types-geopandas",
+    "types-shapely",
     "pytest>=8.0",
     "pytest-cov>=5.0",
     "coverage>=7.5",
@@ -115,21 +120,11 @@ warn_unreachable = true
 enable_error_code = ["redundant-expr", "truthy-bool", "ignore-without-code"]
 
 [[tool.mypy.overrides]]
-# cftime ships no type stubs or py.typed marker; the xarray bridge uses it only
-# for the non-standard-calendar time path.
+# cftime ships no py.typed marker and has no stub package (no types-cftime on
+# PyPI), so it stays untyped; the xarray bridge uses it only for the
+# non-standard-calendar time path. pandas / geopandas / shapely are now typed via
+# the pandas-stubs / types-geopandas / types-shapely packages in the dev group.
 module = ["cftime"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-# pandas ships no py.typed marker (its types live in the separate pandas-stubs
-# package); the pandas bridge treats it as untyped.
-module = ["pandas"]
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-# geopandas and shapely type coverage is partial; the geo bridge treats them as
-# untyped (it lazy-imports them only inside its functions).
-module = ["geopandas", "shapely"]
 ignore_missing_imports = true
 
 [tool.basedpyright]

@@ -14,34 +14,12 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "annotated-doc"
-version = "0.0.4"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/57/ba/046ceea27344560984e26a590f90bc7f4a75b06701f653222458922b558c/annotated_doc-0.0.4.tar.gz", hash = "sha256:fbcda96e87e9c92ad167c2e53839e57503ecfda18804ea28102353485033faa4", size = 7288, upload-time = "2025-11-10T22:07:42.062Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/1e/d3/26bf1008eb3d2daa8ef4cacc7f3bfdc11818d111f7e2d0201bc6e3b49d45/annotated_doc-0.0.4-py3-none-any.whl", hash = "sha256:571ac1dc6991c450b25a9c2d84a3705e2ae7a53467b5d111c24fa8baabbed320", size = 5303, upload-time = "2025-11-10T22:07:40.673Z" },
-]
-
-[[package]]
 name = "annotated-types"
 version = "0.7.0"
 source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ee/67/531ea369ba64dcff5ec9c3402f9f51bf748cec26dde048a2f973a4eea7f5/annotated_types-0.7.0.tar.gz", hash = "sha256:aff07c09a53a08bc8cfccb9c85b05f1aa9a2a6f23728d790723543408344ce89", size = 16081, upload-time = "2024-05-20T21:33:25.928Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/78/b6/6307fbef88d9b5ee7421e68d78a9f162e0da4900bc5f5793f6d3d0e34fb8/annotated_types-0.7.0-py3-none-any.whl", hash = "sha256:1f02e8b43a8fbbc3f3e0d4f0f4bfc8131bcb4eebe8849b8e5c773f3a1c582a53", size = 13643, upload-time = "2024-05-20T21:33:24.1Z" },
-]
-
-[[package]]
-name = "anyio"
-version = "4.14.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "idna" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/1c/b5/001890774a9552aff22502b8da382593109ce0c95314abaebbb116567545/anyio-4.14.0.tar.gz", hash = "sha256:b47c1f9ccf73e67021df785332508f99379c68fa7d0684e8e3492cb1d4b23f89", size = 253586, upload-time = "2026-06-15T22:00:49.021Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ba/16/9826f089383c593cdfc4a6e5aca94d9e91ae1692c57af82c3b2aa5e810f7/anyio-4.14.0-py3-none-any.whl", hash = "sha256:dd9b7a2a9799ed6552fde617b2c5df02b7fdd7d88392fc48101e51bae46164d9", size = 123506, upload-time = "2026-06-15T22:00:47.595Z" },
 ]
 
 [[package]]
@@ -260,18 +238,16 @@ dependencies = [
 [package.optional-dependencies]
 all = [
     { name = "cftime" },
-    { name = "fastapi" },
     { name = "geopandas" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "shapely" },
     { name = "xarray" },
 ]
-fastapi = [
-    { name = "fastapi" },
-]
 geo = [
     { name = "geopandas" },
+    { name = "numpy" },
+    { name = "pandas" },
     { name = "shapely" },
 ]
 numpy = [
@@ -297,10 +273,13 @@ dev = [
     { name = "coverage" },
     { name = "covjson-msgspec", extra = ["all"] },
     { name = "mypy" },
+    { name = "pandas-stubs" },
     { name = "prek" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
+    { name = "types-geopandas" },
+    { name = "types-shapely" },
 ]
 typecheck = [
     { name = "basedpyright" },
@@ -309,19 +288,20 @@ typecheck = [
 [package.metadata]
 requires-dist = [
     { name = "cftime", marker = "extra == 'xarray'", specifier = ">=1.6" },
-    { name = "covjson-msgspec", extras = ["numpy", "xarray", "pandas", "geo", "fastapi"], marker = "extra == 'all'" },
-    { name = "fastapi", marker = "extra == 'fastapi'", specifier = ">=0.110" },
+    { name = "covjson-msgspec", extras = ["numpy", "xarray", "pandas", "geo"], marker = "extra == 'all'" },
     { name = "geopandas", marker = "extra == 'geo'", specifier = ">=0.14" },
     { name = "msgspec", specifier = ">=0.18" },
+    { name = "numpy", marker = "extra == 'geo'", specifier = ">=1.24" },
     { name = "numpy", marker = "extra == 'numpy'", specifier = ">=1.24" },
     { name = "numpy", marker = "extra == 'pandas'", specifier = ">=1.24" },
     { name = "numpy", marker = "extra == 'xarray'", specifier = ">=1.24" },
+    { name = "pandas", marker = "extra == 'geo'", specifier = ">=2.0" },
     { name = "pandas", marker = "extra == 'pandas'", specifier = ">=2.0" },
     { name = "shapely", marker = "extra == 'geo'", specifier = ">=2.0" },
     { name = "typing-extensions", marker = "python_full_version < '3.13'", specifier = ">=4.12" },
     { name = "xarray", marker = "extra == 'xarray'", specifier = ">=2024.10" },
 ]
-provides-extras = ["numpy", "xarray", "pandas", "geo", "fastapi", "all"]
+provides-extras = ["numpy", "xarray", "pandas", "geo", "all"]
 
 [package.metadata.requires-dev]
 bench = [
@@ -333,10 +313,13 @@ dev = [
     { name = "coverage", specifier = ">=7.5" },
     { name = "covjson-msgspec", extras = ["all"] },
     { name = "mypy", specifier = ">=1.13" },
+    { name = "pandas-stubs" },
     { name = "prek", specifier = ">=0.0.1" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-cov", specifier = ">=5.0" },
     { name = "ruff", specifier = ">=0.15" },
+    { name = "types-geopandas" },
+    { name = "types-shapely" },
 ]
 typecheck = [{ name = "basedpyright", specifier = ">=1.21" }]
 
@@ -350,22 +333,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/4b/2b/130ad9c7b5318974c1aa5da0d73c3c948f695002793253b99ffc896f2dc6/covjson_pydantic-0.8.0.tar.gz", hash = "sha256:66fb12da6634b22ff3c401b3b1e3e42a1abe8dc7830283a0655ca3ec9fc9ade0", size = 22114, upload-time = "2026-06-16T14:36:30.655Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/db/91/318355d3a76ee3d52cddf1e4e3c63eb942e80fe917d853722cdeecb09832/covjson_pydantic-0.8.0-py3-none-any.whl", hash = "sha256:c38ce951d2991403a252a28919eb2912cb0c34bf76ddca2fb8d4d1aac31a27bc", size = 14152, upload-time = "2026-06-16T14:36:29.692Z" },
-]
-
-[[package]]
-name = "fastapi"
-version = "0.138.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "annotated-doc" },
-    { name = "pydantic" },
-    { name = "starlette" },
-    { name = "typing-extensions" },
-    { name = "typing-inspection" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/5b/58/ff455d9fe47c60abadb34b9e05a304b1f05f5ab8000ac01565156b6f5e43/fastapi-0.138.0.tar.gz", hash = "sha256:d445a4877636ad191e7053e08c9bf98cb921a6756776848400bb773d1740c061", size = 419240, upload-time = "2026-06-20T01:18:05.259Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/6c/ff/8496d9847a5fedae775eb49460722d3efaa80487854273e9647ae876218c/fastapi-0.138.0-py3-none-any.whl", hash = "sha256:b6f54fd1bd72c80b0f899f172c61a600f6f7af9b43d4d772a018f35624048cb0", size = 126779, upload-time = "2026-06-20T01:18:03.483Z" },
 ]
 
 [[package]]
@@ -383,15 +350,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/85/ba/8e6b2091878e99e86a36a814dcaeff652ed48bdb03d53e78e15aaa63a914/geopandas-1.1.3.tar.gz", hash = "sha256:91a31989b6f566012838d21d5f8033f37dce882079ccb7cfdc40d5ccce7f284f", size = 336718, upload-time = "2026-03-09T21:49:09.545Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3c/78/6a04792ace63a93e162f1305392d500ae8ddcb620e7eb88a22fd622b35bb/geopandas-1.1.3-py3-none-any.whl", hash = "sha256:90d62a64f95eaa3be2ccc115c5f3d6e24208bb11983b390fdc0621a3eccd0230", size = 342514, upload-time = "2026-03-09T21:49:07.973Z" },
-]
-
-[[package]]
-name = "idna"
-version = "3.18"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/cd/63/9496c57188a2ee585e0f1db071d75089a11e98aa86eb99d9d7618fc1edce/idna-3.18.tar.gz", hash = "sha256:ffb385a7e039654cef1ab9ef32c6fafe283c0c0467bba1d9029738ce4a14a848", size = 196711, upload-time = "2026-06-02T14:34:07.794Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/1e/5e/d4e9f1a599fb8e573b7b87160658329fbf28d19eac2718f51fc3def3aa5a/idna-3.18-py3-none-any.whl", hash = "sha256:7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2", size = 65455, upload-time = "2026-06-02T14:34:06.319Z" },
 ]
 
 [[package]]
@@ -746,6 +704,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/31/89/8fc1c268969fac43688d65fd92e67df24bd128d53cb4d2eee534cd307399/pandas-3.0.3-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:9c39be2d709d01fa972a0cabc522389fceca4f3969332ba25a7d6c5802cf976a", size = 11828897, upload-time = "2026-05-11T18:54:17.146Z" },
     { url = "https://files.pythonhosted.org/packages/56/3b/e7d20dea247a3e6dc0bd8a6953854afbedc03951def4e7371e05e7263e25/pandas-3.0.3-cp314-cp314t-win_amd64.whl", hash = "sha256:4db8c527972a821cf5286b40ccc57642a39bc62e62022b42f99f8a67fca8c3a1", size = 10900855, upload-time = "2026-05-11T18:54:19.72Z" },
     { url = "https://files.pythonhosted.org/packages/0f/54/68a0978d1ef8502b8492099beaa6e7a0c1b32e3b5d4f677f5810cb08711c/pandas-3.0.3-cp314-cp314t-win_arm64.whl", hash = "sha256:b2c95f8bfc1ee412bf482605d7bfd30c12d1d26bd59fdd91efeef1d4718decb1", size = 9466464, upload-time = "2026-05-11T18:54:22.754Z" },
+]
+
+[[package]]
+name = "pandas-stubs"
+version = "3.0.3.260530"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3d/aa/c41a8a0ff86fd85dbb3ec0c1f3fa488ca64a8b5f82654ae1b07d84acefe5/pandas_stubs-3.0.3.260530.tar.gz", hash = "sha256:d1efe47b2e5a312c047d7feabec5cb7a55365747983420077e9fcbe9ab74f714", size = 113183, upload-time = "2026-05-30T17:47:40.34Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0b/e0/99ec5b02203c4e9ce878bc63d8caa06ac1f891e4d63bded9a5ced70fcb4f/pandas_stubs-3.0.3.260530-py3-none-any.whl", hash = "sha256:a6277eb1c8cebf48d9b2413fcd2e9a6b4ff479c934a223c29eacbc3058c4cb55", size = 173780, upload-time = "2026-05-30T17:47:39.13Z" },
 ]
 
 [[package]]
@@ -1188,19 +1158,6 @@ wheels = [
 ]
 
 [[package]]
-name = "starlette"
-version = "1.3.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "anyio" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/eb/e3/7c1dc7381d9f8ab7d854328ebfa884e62cb3f3d8549ddfd37c7814f42afa/starlette-1.3.1.tar.gz", hash = "sha256:05d0213193f2fbaae60e2ecb593b4add4262ad4e46536b54abe36f11a71724e0", size = 2703240, upload-time = "2026-06-12T09:23:11.602Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ec/bb/2799cc2ede3ed41131f8975621e7213dfc7ef4acbbaadfa440f32500c370/starlette-1.3.1-py3-none-any.whl", hash = "sha256:c7372aae11c3c3f26a42df7bd626cec2f47d03483d261d369516a615a53714c6", size = 73632, upload-time = "2026-06-12T09:23:10.017Z" },
-]
-
-[[package]]
 name = "tomli"
 version = "2.4.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1252,6 +1209,33 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/12/64/da524626d3b9cc40c168a13da8335fe1c51be12c0a63685cc6db7308daae/tomli-2.4.1-cp314-cp314t-win_amd64.whl", hash = "sha256:2c1c351919aca02858f740c6d33adea0c5deea37f9ecca1cc1ef9e884a619d26", size = 121196, upload-time = "2026-03-25T20:22:01.169Z" },
     { url = "https://files.pythonhosted.org/packages/5a/cd/e80b62269fc78fc36c9af5a6b89c835baa8af28ff5ad28c7028d60860320/tomli-2.4.1-cp314-cp314t-win_arm64.whl", hash = "sha256:eab21f45c7f66c13f2a9e0e1535309cee140182a9cdae1e041d02e47291e8396", size = 100393, upload-time = "2026-03-25T20:22:02.137Z" },
     { url = "https://files.pythonhosted.org/packages/7b/61/cceae43728b7de99d9b847560c262873a1f6c98202171fd5ed62640b494b/tomli-2.4.1-py3-none-any.whl", hash = "sha256:0d85819802132122da43cb86656f8d1f8c6587d54ae7dcaf30e90533028b49fe", size = 14583, upload-time = "2026-03-25T20:22:03.012Z" },
+]
+
+[[package]]
+name = "types-geopandas"
+version = "1.1.3.20260518"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "pandas-stubs" },
+    { name = "pyproj" },
+    { name = "types-shapely" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/09/77/cad393d5276892acebb7276ae839f4dd74bc6aae7794dd9d774c3f1d594d/types_geopandas-1.1.3.20260518.tar.gz", hash = "sha256:ba519db699a484aea32ebb8e6536ced1f6d1caa3c8fdf80f92f8cbb2ddb31d05", size = 23813, upload-time = "2026-05-18T06:07:45.247Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2b/4a/e71a0f84baec24a4868f7472031bef5250a32d9338ec8285de1fa2b9214e/types_geopandas-1.1.3.20260518-py3-none-any.whl", hash = "sha256:5b55a4e8aa898f33eb0f464fd78dd332f7773ec89c9e4254510fe988757c3b10", size = 31797, upload-time = "2026-05-18T06:07:44.394Z" },
+]
+
+[[package]]
+name = "types-shapely"
+version = "2.1.0.20260603"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/13/8d/b1ee75d100855ce214788b2e05b3648db50d6f0ff110fa986328a25e1fa1/types_shapely-2.1.0.20260603.tar.gz", hash = "sha256:0373ef71caa8c17aff0b810b8155f744ceaeee802f6f1438d09dd1c919612180", size = 27246, upload-time = "2026-06-03T06:42:05.798Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/10/e8/dfb9d2f832260d64d3b0b603ac6382ccc9b1a332535e434e9d5f97f7aed3/types_shapely-2.1.0.20260603-py3-none-any.whl", hash = "sha256:bc9ea51658b05db3b92e453cc74614af1d70eb391e4c36e15d80567fea6a61a8", size = 38338, upload-time = "2026-06-03T06:42:04.732Z" },
 ]
 
 [[package]]

@@ -311,8 +311,13 @@ def _index(layout: _AxisLayout) -> "pd.Index[Any]":
 
     if len(layout.dims) == 1:
         name = layout.dims[0]
-        return pd.Index(layout.values[name], name=name)
+        # The label data is heterogeneous (dict[str, Any]), so pandas-stubs
+        # widens the constructed index to Any; narrow it back to the return type.
+        return cast("pd.Index[Any]", pd.Index(layout.values[name], name=name))
 
-    return pd.MultiIndex.from_product(
-        [layout.values[dim] for dim in layout.dims], names=layout.dims
+    return cast(
+        "pd.Index[Any]",
+        pd.MultiIndex.from_product(
+            [layout.values[dim] for dim in layout.dims], names=layout.dims
+        ),
     )
