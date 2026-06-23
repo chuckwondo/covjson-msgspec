@@ -30,7 +30,7 @@ Spec: [Coverage objects](https://github.com/covjson/specification/blob/master/sp
 
 import math
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, NoReturn, cast
 
 from covjson_msgspec._bridging import (
     POLYGON_DOMAIN_TYPES,
@@ -1034,27 +1034,39 @@ def _scalar(coord: "xr.DataArray") -> Any:
     return _time_to_iso(coord)[0] if _is_time(coord) else coord.values.item()
 
 
-def _time_to_iso(coord: "xr.DataArray") -> list[Any]:
+def _time_to_iso(coord: "xr.DataArray") -> list[str]:
     import numpy as np
 
-    result: list[Any] = []
+    result: list[str] = []
 
     for value in np.atleast_1d(coord.values):
         if isinstance(value, np.datetime64):
             if np.isnat(value):
-                result.append(None)
-            else:
-                # datetime64[ns] exceeds datetime's microsecond resolution, so
-                # narrow before converting to a Python datetime.
-                moment = value.astype("datetime64[us]").astype(datetime)
-                result.append(moment.isoformat() + "Z")
+                _raise_missing_time(coord)
+
+            # datetime64[ns] exceeds datetime's microsecond resolution, so narrow
+            # before converting to a Python datetime.
+            moment = value.astype("datetime64[us]").astype(datetime)
+            result.append(moment.isoformat() + "Z")
+        elif value is None:
+            _raise_missing_time(coord)
         elif hasattr(value, "isoformat"):
             # A cftime datetime (non-standard calendar).
             result.append(value.isoformat())
         else:
-            result.append(None if value is None else str(value))
+            result.append(str(value))
 
     return result
+
+
+def _raise_missing_time(coord: "xr.DataArray") -> NoReturn:
+    # A CoverageJSON axis lists coordinate positions, which cannot be null, so a
+    # NaT / None in a time coordinate has no faithful representation.
+    msg = (
+        f"time coordinate {str(coord.name)!r} has a missing value (NaT); a "
+        "CoverageJSON axis cannot hold a null coordinate"
+    )
+    raise ValueError(msg)
 
 
 def _calendar(coord: "xr.DataArray") -> str:

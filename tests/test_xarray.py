@@ -596,6 +596,19 @@ def test_roundtrip_recovers_coverage_id() -> None:
     assert back.id == "urn:cov:42"
 
 
+def test_from_xarray_rejects_missing_time_coordinate() -> None:
+    # A NaT in a time coordinate has no CoverageJSON axis representation (a
+    # coordinate position cannot be null), so conversion fails loudly rather than
+    # emitting a null axis value.
+    ds = xr.Dataset(
+        {"v": ("t", [1.0, 2.0])},
+        coords={"t": np.array(["2020-01-01", "NaT"], dtype="datetime64[ns]")},
+    )
+
+    with pytest.raises(ValueError, match="missing value"):
+        from_xarray(ds)
+
+
 def _collection() -> CoverageCollection:
     members = (
         Coverage(
