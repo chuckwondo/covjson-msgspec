@@ -161,11 +161,13 @@ class Parameter(CovJSONStruct, frozen=True, tag="Parameter"):
     omitted optional field falls back to its default:
 
     >>> import msgspec
-    >>> blob = (
-    ...     b'{"type": "Parameter",'
-    ...     b' "observedProperty": {"label": {"en": "Air temperature"}},'
-    ...     b' "unit": {"symbol": "K"}}'
-    ... )
+    >>> blob = '''
+    ... {
+    ...   "type": "Parameter",
+    ...   "observedProperty": {"label": {"en": "Air temperature"}},
+    ...   "unit": {"symbol": "K"}
+    ... }
+    ... '''
     >>> param = msgspec.json.decode(blob, type=Parameter)
     >>> param.observed_property.label
     {'en': 'Air temperature'}

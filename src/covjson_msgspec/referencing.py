@@ -104,11 +104,13 @@ class ReferenceSystemConnection(CovJSONStruct, frozen=True):
     Examples
     --------
     >>> import msgspec
-    >>> rsc = msgspec.json.decode(
-    ...     b'{"coordinates": ["t"],'
-    ...     b' "system": {"type": "TemporalRS", "calendar": "Gregorian"}}',
-    ...     type=ReferenceSystemConnection,
-    ... )
+    >>> blob = '''
+    ... {
+    ...   "coordinates": ["t"],
+    ...   "system": {"type": "TemporalRS", "calendar": "Gregorian"}
+    ... }
+    ... '''
+    >>> rsc = msgspec.json.decode(blob, type=ReferenceSystemConnection)
     >>> rsc.coordinates
     ('t',)
     >>> rsc.system  # decoded to the matching reference-system type

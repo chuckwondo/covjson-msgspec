@@ -59,13 +59,19 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
     snake_case attributes):
 
     >>> import msgspec
-    >>> blob = (
-    ...     b'{"type": "Coverage",'
-    ...     b' "domain": {"type": "Domain", "domainType": "Point",'
-    ...     b' "axes": {"x": {"values": [1.0]}, "y": {"values": [2.0]}}},'
-    ...     b' "ranges": {"t": {"type": "NdArray", "dataType": "float",'
-    ...     b' "values": [280.0]}}}'
-    ... )
+    >>> blob = '''
+    ... {
+    ...   "type": "Coverage",
+    ...   "domain": {
+    ...     "type": "Domain",
+    ...     "domainType": "Point",
+    ...     "axes": {"x": {"values": [1.0]}, "y": {"values": [2.0]}}
+    ...   },
+    ...   "ranges": {
+    ...     "t": {"type": "NdArray", "dataType": "float", "values": [280.0]}
+    ...   }
+    ... }
+    ... '''
     >>> back = msgspec.json.decode(blob, type=Coverage)
     >>> back.domain.domain_type
     'Point'
@@ -433,12 +439,17 @@ def decode(data: bytes | str) -> CoverageJSON:
 
     Examples
     --------
-    >>> doc = decode(
-    ...     b'{"type": "Coverage",'
-    ...     b' "domain": {"type": "Domain", "domainType": "Point",'
-    ...     b' "axes": {"x": {"values": [1.0]}, "y": {"values": [2.0]}}},'
-    ...     b' "ranges": {}}'
-    ... )
+    >>> doc = decode('''
+    ... {
+    ...   "type": "Coverage",
+    ...   "domain": {
+    ...     "type": "Domain",
+    ...     "domainType": "Point",
+    ...     "axes": {"x": {"values": [1.0]}, "y": {"values": [2.0]}}
+    ...   },
+    ...   "ranges": {}
+    ... }
+    ... ''')
     >>> type(doc).__name__
     'Coverage'
     """

@@ -44,11 +44,14 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
     A domain decodes its axes (camelCase wire names map to snake_case):
 
     >>> import msgspec
-    >>> dom = msgspec.json.decode(
-    ...     b'{"type": "Domain", "domainType": "Point",'
-    ...     b' "axes": {"x": {"values": [1.0]}, "y": {"values": [2.0]}}}',
-    ...     type=Domain,
-    ... )
+    >>> blob = '''
+    ... {
+    ...   "type": "Domain",
+    ...   "domainType": "Point",
+    ...   "axes": {"x": {"values": [1.0]}, "y": {"values": [2.0]}}
+    ... }
+    ... '''
+    >>> dom = msgspec.json.decode(blob, type=Domain)
     >>> dom.domain_type
     'Point'
     >>> dom.x.coordinate_values

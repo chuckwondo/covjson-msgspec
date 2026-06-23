@@ -67,11 +67,16 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
     Examples
     --------
     >>> import msgspec
-    >>> arr = msgspec.json.decode(
-    ...     b'{"type": "NdArray", "dataType": "float",'
-    ...     b' "axisNames": ["y", "x"], "shape": [1, 2], "values": [1.5, null]}',
-    ...     type=NdArray,
-    ... )
+    >>> blob = '''
+    ... {
+    ...   "type": "NdArray",
+    ...   "dataType": "float",
+    ...   "axisNames": ["y", "x"],
+    ...   "shape": [1, 2],
+    ...   "values": [1.5, null]
+    ... }
+    ... '''
+    >>> arr = msgspec.json.decode(blob, type=NdArray)
     >>> arr.values
     (1.5, None)
     >>> arr.axis_names
@@ -79,10 +84,8 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
 
     A caller who knows the element type can decode it precisely:
 
-    >>> floats = msgspec.json.decode(
-    ...     b'{"type": "NdArray", "dataType": "float", "values": [1.0, 2.0]}',
-    ...     type=NdArray[float],
-    ... )
+    >>> blob = '{"type": "NdArray", "dataType": "float", "values": [1.0, 2.0]}'
+    >>> floats = msgspec.json.decode(blob, type=NdArray[float])
     >>> floats.values
     (1.0, 2.0)
     """
@@ -271,13 +274,18 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
     Examples
     --------
     >>> import msgspec
-    >>> tiled = msgspec.json.decode(
-    ...     b'{"type": "TiledNdArray", "dataType": "float",'
-    ...     b' "axisNames": ["t", "y", "x"], "shape": [4, 100, 100],'
-    ...     b' "tileSets": [{"tileShape": [1, 100, 100],'
-    ...     b' "urlTemplate": "http://ex/{t}.covjson"}]}',
-    ...     type=TiledNdArray,
-    ... )
+    >>> blob = '''
+    ... {
+    ...   "type": "TiledNdArray",
+    ...   "dataType": "float",
+    ...   "axisNames": ["t", "y", "x"],
+    ...   "shape": [4, 100, 100],
+    ...   "tileSets": [
+    ...     {"tileShape": [1, 100, 100], "urlTemplate": "http://ex/{t}.covjson"}
+    ...   ]
+    ... }
+    ... '''
+    >>> tiled = msgspec.json.decode(blob, type=TiledNdArray)
     >>> tiled.tile_sets[0].url_template
     'http://ex/{t}.covjson'
 
