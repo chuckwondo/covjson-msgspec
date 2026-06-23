@@ -71,10 +71,13 @@ jobs:
       - name: Run pre-commit hooks (prek)
         run: uv run --quiet prek run --all-files --show-diff-on-failure
 
-  # Type-checking across the supported Python versions and across checkers.
-  # basedpyright (strict) and mypy are blocking; pyrefly and ty are pre-1.0 and
-  # run via `uvx` as informational-only (continue-on-error) so a checker's own
-  # bug cannot red-CI us -- while still surfacing real divergences.
+  # Type-checking across the supported Python versions and across checkers. Only
+  # mypy (strict) is blocking. basedpyright (strict), pyrefly, and ty run as
+  # informational-only (continue-on-error): they are stricter than mypy about the
+  # inherently dynamic msgspec / numpy / pandas surfaces (and basedpyright wants
+  # stubs for cftime, which has none), so they surface real divergences in the
+  # logs without red-CI'ing the build on findings the project does not treat as
+  # errors.
   typecheck:
     needs: config
     runs-on: ubuntu-latest
@@ -97,7 +100,8 @@ jobs:
         run: uv sync --locked --group typecheck --quiet
       - name: Type-check (mypy)
         run: uv run --quiet mypy
-      - name: Type-check (basedpyright, strict)
+      - name: Type-check (basedpyright, strict, informational)
+        continue-on-error: true
         run: uv run --quiet basedpyright
       - name: Type-check (pyrefly, informational)
         continue-on-error: true
