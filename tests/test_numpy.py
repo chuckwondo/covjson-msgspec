@@ -35,7 +35,10 @@ def test_to_numpy_integer_fill_value() -> None:
 
     assert isinstance(out, np.ma.MaskedArray)
     assert out.fill_value == -9999
-    assert out.filled().tolist() == [1, -9999]
+    # ty's MaskedArray stubs misread the isinstance-narrowed type; mypy and
+    # basedpyright are fine, so these are ty-only suppressions.
+    filled = out.filled()  # ty: ignore[invalid-argument-type]
+    assert filled.tolist() == [1, -9999]  # ty: ignore[no-matching-overload]
 
 
 def test_to_numpy_integer_as_float() -> None:

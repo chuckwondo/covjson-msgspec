@@ -132,6 +132,18 @@ include = ["src", "tests"]
 typeCheckingMode = "strict"
 pythonVersion = "3.11"
 
+# ty is an informational (non-blocking) checker. Two negative tests deliberately
+# pass a wrong-typed argument to a public function, guarded by mypy's precise
+# `# type: ignore[arg-type]` (whose warn_unused_ignores still trips if the public
+# signature ever weakens). ty does not honor mypy's error code, and a second
+# inline `# ty: ignore[...]` would overflow the 88-char limit, so relax just that
+# one rule for just those two files. mypy + basedpyright stay fully strict here,
+# so this cannot mask a real public-API type weakness. (The numpy bridge test
+# uses inline `# ty: ignore[...]` where it fits.)
+[[tool.ty.overrides]]
+include = ["tests/test_geo.py", "tests/test_xarray.py"]
+rules = { invalid-argument-type = "ignore" }
+
 [tool.pytest.ini_options]
 # Run doctests in the package modules alongside the test suite. `importlib`
 # import mode avoids src-layout duplicate-module issues with --doctest-modules.
