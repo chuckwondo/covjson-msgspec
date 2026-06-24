@@ -67,7 +67,7 @@ from covjson_msgspec.referencing import (
 )
 
 if TYPE_CHECKING:
-    import numpy as np
+    import numpy.typing as npt
     import xarray as xr
 
 # Raised (as the message) when the bridge is used without its dependencies.
@@ -681,7 +681,7 @@ def _coordinate(
     return (dim, data, attrs)
 
 
-def _parse_times(column: list[Any], calendar: str) -> "np.ndarray[Any, np.dtype[Any]]":
+def _parse_times(column: list[Any], calendar: str) -> "npt.NDArray[Any]":
     import numpy as np
 
     normalized = calendar.rsplit("/", 1)[-1].lower()

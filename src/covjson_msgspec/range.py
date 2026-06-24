@@ -31,7 +31,7 @@ else:
     from typing_extensions import TypeVar
 
 if TYPE_CHECKING:
-    import numpy as np
+    import numpy.typing as npt
 
 # Raised (as the message) when a numpy bridge method is called without numpy.
 _NUMPY_HINT = "NumPy is required for this conversion; install covjson-msgspec[numpy]"
@@ -100,7 +100,7 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
         *,
         fill_value: int | None = None,
         as_float: bool = False,
-    ) -> "np.ndarray[Any, np.dtype[Any]]":
+    ) -> "npt.NDArray[Any]":
         """Convert to a NumPy array of this range's ``shape``.
 
         Requires the ``numpy`` extra. Missing values (``None``) become NaN for a
@@ -152,7 +152,7 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
 
         if self.data_type == "string":
             strings = [None if v is None else str(v) for v in self.values]
-            array: np.ndarray[Any, np.dtype[Any]] = np.array(strings, dtype=object)
+            array: npt.NDArray[Any] = np.array(strings, dtype=object)
         elif self.data_type == "integer" and not as_float:
             if has_missing:
                 masked = np.ma.MaskedArray(
@@ -191,7 +191,7 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
     @classmethod
     def from_numpy(
         cls,
-        array: "np.ndarray[Any, np.dtype[Any]]",
+        array: "npt.NDArray[Any]",
         axis_names: Iterable[str],
         *,
         data_type: Literal["float", "integer", "string"] | None = None,

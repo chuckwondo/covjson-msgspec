@@ -16,7 +16,7 @@ from covjson_msgspec.range import NdArray
 from covjson_msgspec.referencing import TemporalRS
 
 if TYPE_CHECKING:
-    import numpy as np
+    import numpy.typing as npt
 
 # Polygon domains carry vector geometry, not a tidy table or a regular grid, so
 # only the geopandas bridge handles them; pandas and xarray reject them.
@@ -51,7 +51,7 @@ def range_column(
     range_: NdArray,
     dims: list[str],
     sizes: dict[str, int],
-) -> "np.ndarray[Any, np.dtype[Any]]":
+) -> "npt.NDArray[Any]":
     """Lay a range's values over the canonical ``dims`` grid as a flat column."""
     import numpy as np
 
@@ -76,7 +76,7 @@ def broadcast(
     present: "tuple[str, ...] | list[str]",
     dims: list[str],
     sizes: dict[str, int],
-) -> "np.ndarray[Any, np.dtype[Any]]":
+) -> "npt.NDArray[Any]":
     """Broadcast ``data`` (varying only over ``present``) to the full ``dims`` grid.
 
     The result is raveled in row-major (C) order, matching pandas'

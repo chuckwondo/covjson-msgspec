@@ -63,6 +63,8 @@ from covjson_msgspec.referencing import GeographicCRS, ProjectedCRS
 
 if TYPE_CHECKING:
     import geopandas as gpd
+    import numpy as np
+    import numpy.typing as npt
     import pandas as pd
 
 # Raised (as the message) when the bridge is used without its dependencies.
@@ -319,7 +321,9 @@ def _collection_to_geopandas(
     return result
 
 
-def _point_frame(coverage: Coverage, domain: Domain) -> "tuple[pd.DataFrame, Any]":
+def _point_frame(
+    coverage: Coverage, domain: Domain
+) -> "tuple[pd.DataFrame, npt.NDArray[np.object_]]":
     import pandas as pd
     import shapely
 
@@ -362,13 +366,19 @@ def _point_frame(coverage: Coverage, domain: Domain) -> "tuple[pd.DataFrame, Any
     else:
         geometry = shapely.points(frame["x"].to_numpy(), frame["y"].to_numpy())
 
-    return frame, geometry
+    # With array inputs shapely.points always yields an object array of Points
+    # (its overloads also admit a scalar Point for scalar inputs, which cannot
+    # arise here); pin the array type so the geometry column is precisely typed.
+    return frame, cast("npt.NDArray[np.object_]", geometry)
 
 
-def _trajectory_linestring_frame(domain: Domain) -> "tuple[pd.DataFrame, Any]":
+def _trajectory_linestring_frame(
+    domain: Domain,
+) -> "tuple[pd.DataFrame, npt.NDArray[np.object_]]":
     # Linestring mode reads only the composite axis; unlike _point_frame and
     # _polygon_frame it needs nothing from the coverage (the per-vertex range
     # values are dropped when collapsing the path to one geometry).
+    import numpy as np
     import pandas as pd
     import shapely
 
@@ -405,10 +415,14 @@ def _trajectory_linestring_frame(domain: Domain) -> "tuple[pd.DataFrame, Any]":
 
     # One feature for the whole path. Per-vertex measurements do not reduce to a
     # single row, so linestring mode keeps the geometry only (no range columns).
-    return pd.DataFrame(index=[0]), [shapely.LineString(line)]
+    # An object array (like the point / polygon helpers) keeps the geometry slot
+    # uniformly typed across the three builders.
+    return pd.DataFrame(index=[0]), np.array([shapely.LineString(line)], dtype=object)
 
 
-def _polygon_frame(coverage: Coverage, domain: Domain) -> "tuple[pd.DataFrame, Any]":
+def _polygon_frame(
+    coverage: Coverage, domain: Domain
+) -> "tuple[pd.DataFrame, npt.NDArray[np.object_]]":
     import numpy as np
     import pandas as pd
 
