@@ -47,6 +47,7 @@ from covjson_msgspec.referencing import (
     TemporalRS,
     VerticalCRS,
 )
+from covjson_msgspec.subset import isel, sel
 from covjson_msgspec.validation import (
     DOMAIN_TYPE_RULES,
     CovJSONValidationError,
@@ -109,7 +110,9 @@ __all__ = [
     "from_datatree",
     "from_xarray",
     "i18n",
+    "isel",
     "resolve_references",
+    "sel",
     "to_datatree",
     "to_geojson",
     "to_geopandas",

@@ -30,6 +30,7 @@ import msgspec
 
 from covjson_msgspec._base import CovJSONStruct
 from covjson_msgspec._fetch import Fetch, fetch_and_decode
+from covjson_msgspec._ndindex import ravel_index, strides
 
 if sys.version_info >= (3, 13):
     from typing import TypeVar
@@ -575,38 +576,6 @@ def _tile_layout(
     return layout
 
 
-def _strides(shape: tuple[int, ...]) -> tuple[int, ...]:
-    """Return the row-major (C-order) flat-index strides for ``shape``.
-
-    Stride ``i`` is the flat-index step for a one-unit move along axis ``i``: the
-    product of the sizes of all later axes.
-
-    Parameters
-    ----------
-    shape
-        The array shape.
-
-    Returns
-    -------
-    tuple of int
-        One stride per axis.
-
-    Examples
-    --------
-    >>> _strides((2, 5, 10))
-    (50, 10, 1)
-    """
-    strides: list[int] = []
-    step = 1
-
-    for size in reversed(shape):
-        strides.append(step)
-        step *= size
-
-    strides.reverse()
-    return tuple(strides)
-
-
 def _assemble_tiles(
     data_type: Literal["float", "integer", "string"],
     axis_names: tuple[str, ...],
@@ -644,7 +613,7 @@ def _assemble_tiles(
     >>> _assemble_tiles("float", ("x",), (2,), [((0,), a), ((1,), b)]).values
     (1.0, 2.0)
     """
-    strides = _strides(shape)
+    full_strides = strides(shape)
     values: list[Scalar | None] = [None] * math.prod(shape)
 
     for offsets, tile in tiles:
@@ -656,8 +625,7 @@ def _assemble_tiles(
         for value, index in zip(
             tile.values, itertools.product(*axis_ranges), strict=True
         ):
-            flat = sum(i * stride for i, stride in zip(index, strides, strict=True))
-            values[flat] = value
+            values[ravel_index(index, full_strides)] = value
 
     return NdArray(
         data_type=data_type,

@@ -28,6 +28,8 @@ from covjson_msgspec.range import NdArray, TiledNdArray
 from covjson_msgspec.referencing import ReferenceSystemConnection
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     import geopandas as gpd
     import pandas as pd
     import xarray as xr
@@ -257,6 +259,66 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         from covjson_msgspec.references import resolve_references
 
         return resolve_references(self, fetch)
+
+    def isel(
+        self,
+        indexers: "Mapping[str, int | slice] | None" = None,
+        /,
+        **indexers_kwargs: "int | slice",
+    ) -> "Coverage":
+        """Subset this coverage by integer position along named axes.
+
+        Thin delegate to `covjson_msgspec.subset.isel`; see it for the selection
+        rules (integer drops the axis, slice keeps it) and what is supported.
+
+        Parameters
+        ----------
+        indexers
+            A mapping of axis name to an integer position or a `slice`.
+        **indexers_kwargs
+            Indexers given as keywords, e.g. ``cov.isel(x=0, t=slice(0, 3))``.
+
+        Returns
+        -------
+        Coverage
+            A new coverage narrowed to the selection.
+        """
+        from covjson_msgspec.subset import isel
+
+        return isel(self, indexers, **indexers_kwargs)
+
+    def sel(
+        self,
+        indexers: "Mapping[str, float | int | str | slice] | None" = None,
+        /,
+        *,
+        method: "Literal['nearest'] | None" = None,
+        **indexers_kwargs: "float | int | str | slice",
+    ) -> "Coverage":
+        """Subset this coverage by coordinate label along named axes.
+
+        Thin delegate to `covjson_msgspec.subset.sel`; see it for the matching
+        rules (exact or ``method="nearest"``; inclusive label slices) and what is
+        supported.
+
+        Parameters
+        ----------
+        indexers
+            A mapping of axis name to a coordinate label or a `slice` of labels.
+        method
+            ``None`` for an exact match, or ``"nearest"`` for the closest
+            coordinate (numeric axes only).
+        **indexers_kwargs
+            Indexers given as keywords, e.g. ``cov.sel(x=10.0, method="nearest")``.
+
+        Returns
+        -------
+        Coverage
+            A new coverage narrowed to the selection.
+        """
+        from covjson_msgspec.subset import sel
+
+        return sel(self, indexers, method=method, **indexers_kwargs)
 
 
 class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
