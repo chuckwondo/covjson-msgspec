@@ -516,7 +516,7 @@ def _subset_range(
     """
     arr = require_inline_ndarray(key, range_, "subset")
 
-    if not any(name in resolved for name in arr.axis_names):
+    if all(name not in resolved for name in arr.axis_names):
         return arr
 
     per_axis = [
@@ -758,7 +758,7 @@ def _within(value: AxisValue, start: Label | None, stop: Label | None) -> bool:
     # so a mismatched bound type would be caller error and raises at runtime.
     point: Any = value
 
-    return (start is None or point >= start) and (stop is None or point <= stop)
+    return (start is None or start <= point) and (stop is None or point <= stop)
 
 
 def _numeric_coordinates(name: str, coords: tuple[AxisValue, ...]) -> list[float]:
