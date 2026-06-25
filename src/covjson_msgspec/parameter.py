@@ -308,6 +308,15 @@ class Parameter(CovJSONStruct, frozen=True, tag="Parameter"):
             description=description,
         )
 
+    def _repr_html_(self) -> str:
+        """Render an HTML summary of this parameter for Jupyter.
+
+        Thin delegate to `covjson_msgspec._repr.parameter_html`.
+        """
+        from covjson_msgspec._repr import parameter_html
+
+        return parameter_html(self)
+
 
 class ParameterGroup(CovJSONStruct, frozen=True, tag="ParameterGroup"):
     """A logical grouping of parameters (e.g. the components of a vector).

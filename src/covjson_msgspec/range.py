@@ -270,6 +270,15 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
             axis_names=tuple(axis_names),
         )
 
+    def _repr_html_(self) -> str:
+        """Render an HTML summary of this array for Jupyter.
+
+        Thin delegate to `covjson_msgspec._repr.ndarray_html`.
+        """
+        from covjson_msgspec._repr import ndarray_html
+
+        return ndarray_html(self)
+
 
 class TileSet(CovJSONStruct, frozen=True):
     """One tiling of a `TiledNdArray`: a tile shape and a URL template.
@@ -425,6 +434,15 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         ]
 
         return _assemble_tiles(self.data_type, self.axis_names, self.shape, tiles)
+
+    def _repr_html_(self) -> str:
+        """Render an HTML summary of this tiled array for Jupyter.
+
+        Thin delegate to `covjson_msgspec._repr.tiled_ndarray_html`.
+        """
+        from covjson_msgspec._repr import tiled_ndarray_html
+
+        return tiled_ndarray_html(self)
 
 
 # A fetched tile is a standalone NdArray document (the CoverageJSON root union

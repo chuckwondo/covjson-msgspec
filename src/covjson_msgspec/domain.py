@@ -82,6 +82,15 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         """The ``t`` axis, if present."""
         return self.axes.get("t")
 
+    def _repr_html_(self) -> str:
+        """Render an HTML summary of this domain for Jupyter.
+
+        Thin delegate to `covjson_msgspec._repr.domain_html`.
+        """
+        from covjson_msgspec._repr import domain_html
+
+        return domain_html(self)
+
     @classmethod
     def grid(
         cls,

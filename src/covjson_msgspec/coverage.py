@@ -320,6 +320,15 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
 
         return sel(self, indexers, method=method, **indexers_kwargs)
 
+    def _repr_html_(self) -> str:
+        """Render an HTML summary of this coverage for Jupyter.
+
+        Thin delegate to `covjson_msgspec._repr.coverage_html`.
+        """
+        from covjson_msgspec._repr import coverage_html
+
+        return coverage_html(self)
+
 
 class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
     """A collection of coverages sharing a common structure.
@@ -532,6 +541,15 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
         from covjson_msgspec.references import resolve_references
 
         return resolve_references(self, fetch)
+
+    def _repr_html_(self) -> str:
+        """Render an HTML summary of this collection for Jupyter.
+
+        Thin delegate to `covjson_msgspec._repr.collection_html`.
+        """
+        from covjson_msgspec._repr import collection_html
+
+        return collection_html(self)
 
 
 # The root of any CoverageJSON document. Domain and the range types are valid
