@@ -10,6 +10,7 @@ https://github.com/covjson/specification/blob/master/domain-types.md.
 
 from importlib.metadata import PackageNotFoundError, version
 
+from covjson_msgspec._fetch import Fetch
 from covjson_msgspec.axis import Axis
 from covjson_msgspec.coverage import (
     Coverage,
@@ -35,6 +36,7 @@ from covjson_msgspec.parameter import (
     Unit,
 )
 from covjson_msgspec.range import NdArray, TiledNdArray, TileSet
+from covjson_msgspec.references import resolve_references
 from covjson_msgspec.referencing import (
     Concept,
     GeographicCRS,
@@ -79,6 +81,7 @@ __all__ = [
     "Domain",
     "DomainType",
     "DomainTypeRule",
+    "Fetch",
     "GeographicCRS",
     "I18n",
     "IdentifierRS",
@@ -106,6 +109,7 @@ __all__ = [
     "from_datatree",
     "from_xarray",
     "i18n",
+    "resolve_references",
     "to_datatree",
     "to_geojson",
     "to_geopandas",

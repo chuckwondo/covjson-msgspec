@@ -2,7 +2,8 @@
 
 A range is either an `NdArray` (inline values, optionally with a ``shape`` and
 ``axis_names``) or a `TiledNdArray` (the values are split across external tiles
-referenced by URL).
+referenced by URL). Given a user-supplied fetcher, `TiledNdArray.assemble`
+retrieves those tiles and stitches them back into a single inline `NdArray`.
 
 `NdArray` is generic in its element type. Decoding without a type parameter
 yields the permissive ``float | int | str`` element type; a caller who knows a
@@ -18,12 +19,17 @@ Spec: [NdArray objects][spec-ndarray] and [TiledNdArray objects][spec-tiled].
 [spec-tiled]: https://github.com/covjson/specification/blob/master/spec.md#63-tiledndarray-objects
 """
 
+import itertools
 import math
+import re
 import sys
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, Generic, Literal
+from typing import TYPE_CHECKING, Any, Final, Generic, Literal
+
+import msgspec
 
 from covjson_msgspec._base import CovJSONStruct
+from covjson_msgspec._fetch import Fetch, fetch_and_decode
 
 if sys.version_info >= (3, 13):
     from typing import TypeVar
@@ -31,7 +37,7 @@ else:
     from typing_extensions import TypeVar
 
 if TYPE_CHECKING:
-    import numpy as np
+    import numpy.typing as npt
 
 # Raised (as the message) when a numpy bridge method is called without numpy.
 _NUMPY_HINT = "NumPy is required for this conversion; install covjson-msgspec[numpy]"
@@ -100,7 +106,7 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
         *,
         fill_value: int | None = None,
         as_float: bool = False,
-    ) -> "np.ndarray[Any, np.dtype[Any]]":
+    ) -> "npt.NDArray[Any]":
         """Convert to a NumPy array of this range's ``shape``.
 
         Requires the ``numpy`` extra. Missing values (``None``) become NaN for a
@@ -152,7 +158,7 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
 
         if self.data_type == "string":
             strings = [None if v is None else str(v) for v in self.values]
-            array: np.ndarray[Any, np.dtype[Any]] = np.array(strings, dtype=object)
+            array: npt.NDArray[Any] = np.array(strings, dtype=object)
         elif self.data_type == "integer" and not as_float:
             if has_missing:
                 masked = np.ma.MaskedArray(
@@ -191,7 +197,7 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
     @classmethod
     def from_numpy(
         cls,
-        array: "np.ndarray[Any, np.dtype[Any]]",
+        array: "npt.NDArray[Any]",
         axis_names: Iterable[str],
         *,
         data_type: Literal["float", "integer", "string"] | None = None,
@@ -337,3 +343,325 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
             if len(tile_set.tile_shape) != len(self.shape):
                 msg = "each tileSet's tileShape must have the same length as shape"
                 raise ValueError(msg)
+
+    def assemble(self, fetch: Fetch, tileset: int | None = None) -> "NdArray":
+        """Fetch this array's tiles and stitch them into a single inline `NdArray`.
+
+        A `TiledNdArray`'s values live in external tile documents rather than
+        inline. Given a fetcher, this retrieves every tile of one tile set and
+        places it into a full-shape `NdArray`. Fetching is injected: ``fetch``
+        maps a tile's URL to its raw bytes, so this performs no I/O of its own.
+
+        Parameters
+        ----------
+        fetch
+            A callable mapping a tile's URL to its raw bytes. All I/O (and any
+            caching, auth, or retries) lives in this callable.
+        tileset
+            The index of the tile set to use. By default the tile set with the
+            fewest tiles is chosen, minimizing the number of fetches.
+
+        Returns
+        -------
+        NdArray
+            An inline array of this array's full ``shape`` and ``axis_names`` with
+            each tile's values placed at its position. Positions not covered by
+            any tile are ``None``.
+
+        Raises
+        ------
+        ValueError
+            If there are no tile sets, if ``tileset`` is out of range, or if a
+            fetched tile document is not a valid `NdArray`.
+
+        Examples
+        --------
+        A two-element array split into two single-element tiles, fetched from a
+        ``dict`` of canned documents keyed by URL:
+
+        >>> from covjson_msgspec import encode
+        >>> def tile(value):
+        ...     arr = NdArray(
+        ...         data_type="float", values=(value,), shape=(1,), axis_names=("x",)
+        ...     )
+        ...     return encode(arr)
+        >>> store = {"0.covjson": tile(10.0), "1.covjson": tile(20.0)}
+        >>> tiled = TiledNdArray(
+        ...     data_type="float",
+        ...     axis_names=("x",),
+        ...     shape=(2,),
+        ...     tile_sets=(TileSet(tile_shape=(1,), url_template="{x}.covjson"),),
+        ... )
+        >>> tiled.assemble(store.__getitem__).values
+        (10.0, 20.0)
+        """
+        if not self.tile_sets:
+            msg = "TiledNdArray has no tileSets to assemble from"
+            raise ValueError(msg)
+
+        if tileset is None:
+            tile_set = min(
+                self.tile_sets,
+                key=lambda candidate: _tile_count(self.shape, candidate.tile_shape),
+            )
+        else:
+            try:
+                tile_set = self.tile_sets[tileset]
+            except IndexError:
+                msg = (
+                    f"tileset index {tileset} is out of range; this TiledNdArray "
+                    f"has {len(self.tile_sets)} tileSet(s)"
+                )
+                raise ValueError(msg) from None
+
+        # Three phases, kept separate so an async variant can reuse phases 1 and 3
+        # and differ only in the fetch: (1) lay out each tile's URL and offset,
+        # (2) fetch and decode every tile, (3) place the tiles into the full array.
+        layout = _tile_layout(self.shape, self.axis_names, tile_set)
+        tiles = [
+            (offsets, fetch_and_decode(fetch, url, _TILE_DECODER))
+            for url, offsets in layout
+        ]
+
+        return _assemble_tiles(self.data_type, self.axis_names, self.shape, tiles)
+
+
+# A fetched tile is a standalone NdArray document (the CoverageJSON root union
+# decodes one on its own); the decoder is built once and reused.
+_TILE_DECODER: Final[msgspec.json.Decoder[NdArray]] = msgspec.json.Decoder(NdArray)
+
+# A single Level 1 RFC 6570 expression, e.g. ``{t}`` in a tile url template.
+_TEMPLATE_VARIABLE = re.compile(r"\{([^{}]+)\}")
+
+
+def _tile_count(shape: tuple[int, ...], tile_shape: tuple[int | None, ...]) -> int:
+    """Return how many tiles a tile set partitions the array into.
+
+    The product over the partitioned axes of how many tiles each is divided into
+    (``ceil(size / tile_size)``); an axis with a ``None`` tile size is whole and
+    contributes a single tile.
+
+    Parameters
+    ----------
+    shape
+        The full array shape.
+    tile_shape
+        A tile set's ``tile_shape`` (per-axis tile size, ``None`` where whole).
+
+    Returns
+    -------
+    int
+        The total number of tiles.
+
+    Examples
+    --------
+    >>> _tile_count((2, 5, 10), (1, None, None))
+    2
+    >>> _tile_count((2, 5, 10), (None, 2, 3))
+    12
+    >>> _tile_count((2, 5, 10), (None, None, None))
+    1
+    """
+    count = 1
+
+    for size, tile_size in zip(shape, tile_shape, strict=True):
+        if tile_size is not None:
+            count *= -(-size // tile_size)
+
+    return count
+
+
+def _expand_url_template(template: str, variables: dict[str, int]) -> str:
+    """Expand a Level 1 RFC 6570 URL template with integer tile indices.
+
+    Substitutes each ``{name}`` in ``template`` with ``variables[name]``.
+    CoverageJSON tile templates are Level 1 (simple ``{var}`` expansion only) and
+    the values are non-negative tile ordinals, so no percent-encoding is needed.
+
+    Parameters
+    ----------
+    template
+        The url template, e.g. ``"tiles/{y}-{x}.covjson"``.
+    variables
+        The tile ordinal for each partitioned axis name.
+
+    Returns
+    -------
+    str
+        The expanded URL.
+
+    Raises
+    ------
+    ValueError
+        If the template references a variable absent from ``variables``.
+
+    Examples
+    --------
+    >>> _expand_url_template("tiles/{y}-{x}.covjson", {"y": 0, "x": 3})
+    'tiles/0-3.covjson'
+    >>> _expand_url_template("tiles/{t}.covjson", {})
+    Traceback (most recent call last):
+        ...
+    ValueError: url template 'tiles/{t}.covjson' references unknown variable 't'
+    """
+
+    def _substitute(match: "re.Match[str]") -> str:
+        name = match.group(1)
+
+        if name not in variables:
+            msg = f"url template {template!r} references unknown variable {name!r}"
+            raise ValueError(msg)
+
+        return str(variables[name])
+
+    return _TEMPLATE_VARIABLE.sub(_substitute, template)
+
+
+def _tile_layout(
+    shape: tuple[int, ...],
+    axis_names: tuple[str, ...],
+    tile_set: "TileSet",
+) -> list[tuple[str, tuple[int, ...]]]:
+    """Lay out every tile of a tile set as a ``(url, offsets)`` pair.
+
+    Each partitioned axis is divided into ``ceil(size / tile_size)`` tiles indexed
+    by ordinal ``0, 1, ...``; an unpartitioned axis (``None`` tile size) spans the
+    whole axis at offset 0. The cartesian product over axes enumerates the tiles;
+    each tile's URL comes from expanding the template with the partitioned axes'
+    ordinals, and its offsets are the per-axis start indices
+    (``ordinal * tile_size``).
+
+    Parameters
+    ----------
+    shape
+        The full array shape.
+    axis_names
+        The axis names, aligned with ``shape``.
+    tile_set
+        The tile set to enumerate.
+
+    Returns
+    -------
+    list of tuple
+        One ``(url, offsets)`` pair per tile, where ``offsets`` is the tile's
+        start index along each axis.
+
+    Examples
+    --------
+    >>> tile_set = TileSet(tile_shape=(1,), url_template="{x}.covjson")
+    >>> _tile_layout((2,), ("x",), tile_set)
+    [('0.covjson', (0,)), ('1.covjson', (1,))]
+    """
+    per_axis: list[list[tuple[int, int | None]]] = []
+
+    for size, tile_size in zip(shape, tile_set.tile_shape, strict=True):
+        if tile_size is None:
+            per_axis.append([(0, None)])
+        else:
+            count = -(-size // tile_size)
+            per_axis.append([(o * tile_size, o) for o in range(count)])
+
+    layout: list[tuple[str, tuple[int, ...]]] = []
+
+    for combination in itertools.product(*per_axis):
+        offsets = tuple(offset for offset, _ in combination)
+        variables = {
+            name: ordinal
+            for name, (_, ordinal) in zip(axis_names, combination, strict=True)
+            if ordinal is not None
+        }
+        layout.append((_expand_url_template(tile_set.url_template, variables), offsets))
+
+    return layout
+
+
+def _strides(shape: tuple[int, ...]) -> tuple[int, ...]:
+    """Return the row-major (C-order) flat-index strides for ``shape``.
+
+    Stride ``i`` is the flat-index step for a one-unit move along axis ``i``: the
+    product of the sizes of all later axes.
+
+    Parameters
+    ----------
+    shape
+        The array shape.
+
+    Returns
+    -------
+    tuple of int
+        One stride per axis.
+
+    Examples
+    --------
+    >>> _strides((2, 5, 10))
+    (50, 10, 1)
+    """
+    strides: list[int] = []
+    step = 1
+
+    for size in reversed(shape):
+        strides.append(step)
+        step *= size
+
+    strides.reverse()
+    return tuple(strides)
+
+
+def _assemble_tiles(
+    data_type: Literal["float", "integer", "string"],
+    axis_names: tuple[str, ...],
+    shape: tuple[int, ...],
+    tiles: list[tuple[tuple[int, ...], "NdArray"]],
+) -> "NdArray":
+    """Place fetched tiles into one full-shape `NdArray`.
+
+    Each tile's row-major values are written into the full array at the tile's
+    per-axis offset (``itertools.product`` walks the tile's destination indices in
+    the same row-major order as its flat values). Positions not covered by any
+    tile stay ``None`` (missing).
+
+    Parameters
+    ----------
+    data_type
+        The assembled array's ``dataType``.
+    axis_names
+        The assembled array's axis names.
+    shape
+        The assembled array's full shape.
+    tiles
+        ``(offsets, tile)`` pairs: each tile's start index per axis and its
+        decoded `NdArray`.
+
+    Returns
+    -------
+    NdArray
+        The full array with every tile placed.
+
+    Examples
+    --------
+    >>> a = NdArray(data_type="float", values=(1.0,), shape=(1,), axis_names=("x",))
+    >>> b = NdArray(data_type="float", values=(2.0,), shape=(1,), axis_names=("x",))
+    >>> _assemble_tiles("float", ("x",), (2,), [((0,), a), ((1,), b)]).values
+    (1.0, 2.0)
+    """
+    strides = _strides(shape)
+    values: list[Scalar | None] = [None] * math.prod(shape)
+
+    for offsets, tile in tiles:
+        axis_ranges = [
+            range(start, start + size)
+            for start, size in zip(offsets, tile.shape, strict=True)
+        ]
+
+        for value, index in zip(
+            tile.values, itertools.product(*axis_ranges), strict=True
+        ):
+            flat = sum(i * stride for i, stride in zip(index, strides, strict=True))
+            values[flat] = value
+
+    return NdArray(
+        data_type=data_type,
+        values=tuple(values),
+        shape=shape,
+        axis_names=axis_names,
+    )

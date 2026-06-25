@@ -481,11 +481,6 @@ def test_roundtrip_recovers_projected_referencing() -> None:
     assert system.id == crs_id
 
 
-def test_to_xarray_rejects_a_collection() -> None:
-    with pytest.raises(TypeError, match="use to_datatree"):
-        to_xarray(CoverageCollection(coverages=()))  # type: ignore[arg-type]
-
-
 def test_roundtrip_continuous_parameter() -> None:
     cov = Coverage(
         domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),

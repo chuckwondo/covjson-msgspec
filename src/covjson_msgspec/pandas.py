@@ -183,6 +183,33 @@ def to_pandas(obj: Coverage | CoverageCollection) -> "pd.DataFrame":
 
 
 def _coverage_to_pandas(coverage: Coverage) -> "pd.DataFrame":
+    """Convert a single `Coverage` to a tidy frame (the per-coverage core).
+
+    The workhorse behind `to_pandas` for one coverage, and the per-member step of
+    `_collection_to_pandas`. It sorts the domain's axes into roles via
+    `_axis_layout`, then builds one column per composite component, per scalar
+    axis, and per parameter range (each broadcast to the shared grid by
+    `~covjson_msgspec._bridging.broadcast` / `range_column`), and indexes them
+    with `_index`. The coverage's ``domain_type`` and ``id`` ride along in
+    ``frame.attrs``.
+
+    Parameters
+    ----------
+    coverage
+        The coverage to convert; its ``domain`` must be an inline `Domain`.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The tidy frame for this coverage (see `to_pandas` for the column/index
+        mapping and a worked example).
+
+    Raises
+    ------
+    ValueError
+        If the domain is a URL reference, its effective domain type is a polygon
+        type (use the geopandas bridge), or a range is not an inline `NdArray`.
+    """
     import pandas as pd
 
     if not isinstance(domain := coverage.domain, Domain):
@@ -204,17 +231,24 @@ def _coverage_to_pandas(coverage: Coverage) -> "pd.DataFrame":
     temporal = temporal_coordinates(domain)
     layout = _axis_layout(domain, temporal)
 
-    columns: dict[str, Any] = {}
-
-    for name, dim, values in layout.composite_columns:
-        columns[name] = broadcast(values, (dim,), layout.dims, layout.sizes)
-
-    for name, value in layout.scalars.items():
-        columns[name] = broadcast(value, (), layout.dims, layout.sizes)
-
-    for key, range_ in coverage.ranges.items():
-        array = require_inline_ndarray(key, range_, "pandas")
-        columns[key] = range_column(array, layout.dims, layout.sizes)
+    # Lay every column source onto the shared grid: composite components, then
+    # the constant scalar axes, then the parameter ranges.
+    columns = (
+        {
+            name: broadcast(values, (dim,), layout.dims, layout.sizes)
+            for name, dim, values in layout.composite_columns
+        }
+        | {
+            name: broadcast(value, (), layout.dims, layout.sizes)
+            for name, value in layout.scalars.items()
+        }
+        | {
+            key: range_column(
+                require_inline_ndarray(key, range_, "pandas"), layout.dims, layout.sizes
+            )
+            for key, range_ in coverage.ranges.items()
+        }
+    )
 
     frame = pd.DataFrame(columns, index=_index(layout))
 
@@ -228,6 +262,26 @@ def _coverage_to_pandas(coverage: Coverage) -> "pd.DataFrame":
 
 
 def _collection_to_pandas(collection: "CoverageCollection") -> "pd.DataFrame":
+    """Concatenate a collection's members into one frame under a ``coverage`` level.
+
+    Members are resolved first so each inherits the collection's parameters and
+    referencing (the referencing is what tags temporal axes for datetime
+    parsing), then each is converted by `_coverage_to_pandas` and stacked with
+    `pandas.concat`. The leading index level is keyed by each member's ``id``,
+    falling back to its position so the key is always total.
+
+    Parameters
+    ----------
+    collection
+        The collection to convert.
+
+    Returns
+    -------
+    pandas.DataFrame
+        The members' frames concatenated under a leading ``coverage`` index
+        level, or an empty frame when the collection has no coverages (see
+        `to_pandas` for a worked example).
+    """
     import pandas as pd
 
     # Resolve first so each member carries the collection's inherited parameters
@@ -265,6 +319,7 @@ class _AxisLayout:
     """
 
     def __init__(self) -> None:
+        """Start with every role empty; `_axis_layout` fills them from a domain."""
         self.dims: list[str] = []
         self.sizes: dict[str, int] = {}
         self.values: dict[str, Any] = {}
@@ -273,6 +328,49 @@ class _AxisLayout:
 
 
 def _axis_layout(domain: Domain, temporal: set[str]) -> _AxisLayout:
+    """Sort a domain's axes into the `_AxisLayout` roles a frame gives them.
+
+    Each axis lands in exactly one role: a composite (``tuple``) axis becomes one
+    index dim plus a column per component (the tuples transposed); a
+    single-valued axis becomes a constant scalar column (its size-1 dimension
+    dropped); any other multi-valued axis becomes an index dim. Temporal axes
+    named in ``temporal`` have their values parsed to datetimes along the way.
+
+    Parameters
+    ----------
+    domain
+        The domain whose `~Domain.axes` are classified.
+    temporal
+        Coordinate identifiers to parse as datetimes (from
+        `~covjson_msgspec._bridging.temporal_coordinates`).
+
+    Returns
+    -------
+    _AxisLayout
+        The axes bucketed into ``dims`` / ``sizes`` / ``values`` (index),
+        ``scalars`` (constant columns), and ``composite_columns``.
+
+    Raises
+    ------
+    ValueError
+        If an axis is a ``polygon`` axis (vector geometry belongs in the
+        geopandas bridge).
+
+    Examples
+    --------
+    A single-valued ``x`` becomes a scalar column while a three-valued ``t``
+    becomes an index dim:
+
+    >>> from covjson_msgspec import Axis
+    >>> domain = Domain.point_series(
+    ...     x=Axis.listed((1.0,)), y=Axis.listed((2.0,)), t=Axis.listed((10, 20, 30))
+    ... )
+    >>> layout = _axis_layout(domain, temporal=set())
+    >>> layout.dims
+    ['t']
+    >>> sorted(layout.scalars)
+    ['x', 'y']
+    """
     layout = _AxisLayout()
 
     for key, axis in domain.axes.items():
@@ -311,6 +409,31 @@ def _axis_layout(domain: Domain, temporal: set[str]) -> _AxisLayout:
 
 
 def _index(layout: _AxisLayout) -> "pd.Index[Any]":
+    """Build the frame index from a layout's varying dims.
+
+    No varying axis gives a length-1 `~pandas.RangeIndex` (one row); a single dim
+    gives a flat `~pandas.Index`; two or more give a `~pandas.MultiIndex` over
+    their Cartesian product, in ``dims`` order (matching the row-major ravel that
+    `~covjson_msgspec._bridging.broadcast` uses for the columns).
+
+    Parameters
+    ----------
+    layout
+        The axis layout from `_axis_layout`.
+
+    Returns
+    -------
+    pandas.Index
+        The row index for the frame.
+
+    Examples
+    --------
+    >>> layout = _AxisLayout()
+    >>> layout.dims = ["t"]
+    >>> layout.values = {"t": [10, 20, 30]}
+    >>> _index(layout).tolist()
+    [10, 20, 30]
+    """
     import pandas as pd
 
     if not layout.dims:

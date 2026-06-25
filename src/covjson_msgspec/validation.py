@@ -22,6 +22,7 @@ Spec: [Common Domain Types](https://github.com/covjson/specification/blob/master
 
 import enum
 import math
+from collections.abc import Iterator
 from typing import Literal, assert_never
 
 import msgspec
@@ -73,6 +74,7 @@ class CovJSONValidationError(Exception):
     """
 
     def __init__(self, issues: tuple[Issue, ...]) -> None:
+        """Store the error issues and build a summary message from the first one."""
         self.issues = tuple(issues)
         count = len(self.issues)
         summary = self.issues[0].message if self.issues else "validation failed"
@@ -300,6 +302,36 @@ def validate(
 
 
 def _ptr(prefix: str, *parts: str | int) -> str:
+    """Join ``prefix`` and ``parts`` into a JSON Pointer for an `Issue.path`.
+
+    Each part is appended as a ``/``-separated reference token. Per RFC 6901, a
+    literal ``~`` and ``/`` inside a string token are escaped to ``~0`` and
+    ``~1`` so they are not mistaken for the path separator; integer parts (array
+    indices) are stringified as-is.
+
+    Parameters
+    ----------
+    prefix
+        The pointer built so far (e.g. ``"#"`` or a parent path).
+    *parts
+        Reference tokens to append: object keys (``str``) or array indices
+        (``int``).
+
+    Returns
+    -------
+    str
+        The extended JSON Pointer.
+
+    Examples
+    --------
+    >>> _ptr("#", "ranges", "temperature", "values", 0)
+    '#/ranges/temperature/values/0'
+
+    A ``/`` in a key is escaped so it is not read as a separator:
+
+    >>> _ptr("#", "axes", "x/y")
+    '#/axes/x~1y'
+    """
     # Build a JSON Pointer, escaping "~" and "/" in string tokens (RFC 6901).
     escaped = (
         part.replace("~", "~0").replace("/", "~1")
@@ -312,6 +344,31 @@ def _ptr(prefix: str, *parts: str | int) -> str:
 
 
 def _axis_length(axis: Axis) -> int:
+    """The number of coordinates an axis represents, in any of its forms.
+
+    An axis is either a listed/tuple/polygon form (with explicit ``values``) or a
+    regular form (a ``start`` / ``stop`` / ``num`` triple); `Axis.__post_init__`
+    guarantees exactly one is populated. This returns ``len(values)`` for the
+    former and ``num`` for the latter, so callers compare lengths without caring
+    which form an axis uses.
+
+    Parameters
+    ----------
+    axis
+        The axis to measure.
+
+    Returns
+    -------
+    int
+        The coordinate count.
+
+    Examples
+    --------
+    >>> _axis_length(Axis.listed((10.0, 20.0, 30.0)))
+    3
+    >>> _axis_length(Axis.regular(0.0, 10.0, 5))
+    5
+    """
     # __post_init__ guarantees exactly one form, so one of these is set.
     if axis.values is not None:
         return len(axis.values)
@@ -320,23 +377,36 @@ def _axis_length(axis: Axis) -> int:
     return axis.num
 
 
-def _validate_domain(
-    domain: Domain, domain_type: str | None, path: str, issues: list[Issue]
-) -> None:
-    # The effective domain type may come from the Domain itself or, inside a
-    # coverage, from the coverage's own domainType (passed in by the caller).
-    if domain_type is None:
-        return
+def _domain_issues(
+    domain: Domain, domain_type: str, rule: DomainTypeRule, path: str
+) -> Iterator[Issue]:
+    """Yield every axis-rule violation for a domain of a known type.
 
-    rule = DOMAIN_TYPE_RULES.get(domain_type)
+    The four checks `_validate_domain` applies once it has resolved a
+    `DomainTypeRule`: a missing required axis (ERROR), a single-valued axis that
+    carries more than one value (ERROR), a ``composite`` axis with the wrong
+    ``data_type`` (ERROR), and any axis outside the required-or-optional set
+    (WARNING).
 
-    # An unrecognized (e.g. custom URI) domain type carries no rules to check.
-    if rule is None:
-        return
+    Parameters
+    ----------
+    domain
+        The domain whose axes are checked.
+    domain_type
+        The (known) domain type, interpolated into each message.
+    rule
+        The axis constraints for ``domain_type`` from `DOMAIN_TYPE_RULES`.
+    path
+        The JSON Pointer to ``domain``, extended via `_ptr` for each issue.
 
+    Yields
+    ------
+    Issue
+        One issue per violation, in check order.
+    """
     axes = domain.axes
 
-    issues.extend(
+    yield from (
         Issue(
             code="domain.missing-axis",
             message=f"{domain_type} domain requires a {name!r} axis",
@@ -346,35 +416,33 @@ def _validate_domain(
         if name not in axes
     )
 
-    for name in rule.single_valued_axes:
-        if (axis := axes.get(name)) is not None and _axis_length(axis) != 1:
-            issues.append(
-                Issue(
-                    code="domain.axis-not-single",
-                    message=f"{domain_type} domain requires a single {name!r} value",
-                    path=_ptr(path, "axes", name),
-                )
-            )
+    yield from (
+        Issue(
+            code="domain.axis-not-single",
+            message=f"{domain_type} domain requires a single {name!r} value",
+            path=_ptr(path, "axes", name),
+        )
+        for name in rule.single_valued_axes
+        if (axis := axes.get(name)) is not None and _axis_length(axis) != 1
+    )
 
     if (
         rule.composite_data_type is not None
         and (composite := axes.get("composite")) is not None
         and composite.data_type != rule.composite_data_type
     ):
-        issues.append(
-            Issue(
-                code="domain.composite-data-type",
-                message=(
-                    f"{domain_type} domain requires a "
-                    f"{rule.composite_data_type!r} composite axis"
-                ),
-                path=_ptr(path, "axes", "composite"),
-            )
+        yield Issue(
+            code="domain.composite-data-type",
+            message=(
+                f"{domain_type} domain requires a "
+                f"{rule.composite_data_type!r} composite axis"
+            ),
+            path=_ptr(path, "axes", "composite"),
         )
 
     allowed = set(rule.required_axes) | set(rule.optional_axes)
 
-    issues.extend(
+    yield from (
         Issue(
             code="domain.unexpected-axis",
             message=f"{domain_type} domain has an unexpected {name!r} axis",
@@ -386,7 +454,76 @@ def _validate_domain(
     )
 
 
+def _validate_domain(
+    domain: Domain, domain_type: str | None, path: str, issues: list[Issue]
+) -> None:
+    """Check a domain's axes against its domain type's rules, appending any issues.
+
+    Resolves ``domain_type`` to a `DomainTypeRule` and, when one applies, appends
+    the violations `_domain_issues` finds. An absent ``domain_type`` or an
+    unrecognized (e.g. custom URI) one carries no rules, so nothing is checked.
+
+    Parameters
+    ----------
+    domain
+        The domain to validate.
+    domain_type
+        The effective domain type (from the domain itself, or a coverage's own
+        ``domainType``); ``None`` or unrecognized means no rules to apply.
+    path
+        The JSON Pointer to ``domain``, extended via `_ptr` for each issue.
+    issues
+        The accumulator that findings are appended to (mutated in place).
+    """
+    # The effective domain type may come from the Domain itself or, inside a
+    # coverage, from the coverage's own domainType (passed in by the caller).
+    if domain_type is None or (rule := DOMAIN_TYPE_RULES.get(domain_type)) is None:
+        return
+
+    issues.extend(_domain_issues(domain, domain_type, rule, path))
+
+
 def _validate_ndarray(arr: NdArray, path: str, issues: list[Issue]) -> None:
+    """Check an `NdArray`'s internal shape consistency, appending any issues.
+
+    Two self-contained checks (no domain needed): ``shape`` and ``axisNames``
+    must have the same rank, and the number of ``values`` must equal the product
+    of ``shape`` (``math.prod(()) == 1``, so a 0-dimensional array must hold
+    exactly one value). Decoding is permissive about these, so they surface here.
+
+    Parameters
+    ----------
+    arr
+        The inline array to check.
+    path
+        The JSON Pointer to ``arr``, extended via `_ptr` for each issue.
+    issues
+        The accumulator that findings are appended to (mutated in place).
+
+    Examples
+    --------
+    A value count that disagrees with ``shape`` yields one ``ndarray.value-count``
+    issue:
+
+    >>> arr = NdArray(
+    ...     data_type="float", values=(1.0, 2.0), shape=(3,), axis_names=("x",)
+    ... )
+    >>> issues = []
+    >>> _validate_ndarray(arr, "#/ranges/v", issues)
+    >>> [issue.code for issue in issues]
+    ['ndarray.value-count']
+
+    A consistent array yields nothing:
+
+    >>> issues = []
+    >>> _validate_ndarray(
+    ...     NdArray(data_type="float", values=(1.0,), shape=(1,), axis_names=("x",)),
+    ...     "#/ranges/v",
+    ...     issues,
+    ... )
+    >>> issues
+    []
+    """
     if len(arr.axis_names) != len(arr.shape):
         issues.append(
             Issue(
@@ -415,6 +552,25 @@ def _validate_ndarray(arr: NdArray, path: str, issues: list[Issue]) -> None:
 def _check_range_against_domain(
     arr: NdArray, domain: Domain, path: str, issues: list[Issue]
 ) -> None:
+    """Check a range's axes line up with the domain's, appending any issues.
+
+    For each of the range's ``axisNames``: the name must be a real domain axis
+    (else ``coverage.range-axis-not-in-domain``), and the range's size along that
+    axis must equal the domain axis's length from `_axis_length` (else
+    ``coverage.range-shape-mismatch``). Only callable with an inline `Domain`; a
+    URL-reference domain skips this (its axes are unfetched).
+
+    Parameters
+    ----------
+    arr
+        The inline range to check.
+    domain
+        The coverage's (inline) domain.
+    path
+        The JSON Pointer to ``arr``, extended via `_ptr` for each issue.
+    issues
+        The accumulator that findings are appended to (mutated in place).
+    """
     for i, name in enumerate(arr.axis_names):
         if name not in domain.axes:
             issues.append(
@@ -443,6 +599,26 @@ def _check_range_against_domain(
 def _check_categorical_codes(
     arr: NdArray, param: Parameter | None, path: str, issues: list[Issue]
 ) -> None:
+    """Check a categorical range's values are defined codes, appending any issues.
+
+    Only applies when the parameter is categorical (its observed property has
+    ``categories``) and carries a ``category_encoding``; otherwise it is a no-op.
+    The encoding's values (each a single code or a tuple of codes) are flattened
+    into the set of valid codes, and every non-null range value must be an integer
+    in that set (else ``range.invalid-category-code``). This is one of the value-
+    scanning checks gated behind ``check_values=True``.
+
+    Parameters
+    ----------
+    arr
+        The inline range whose values are scanned.
+    param
+        The parameter the range belongs to, or ``None`` when unknown (skips).
+    path
+        The JSON Pointer to ``arr``, extended via `_ptr` for each issue.
+    issues
+        The accumulator that findings are appended to (mutated in place).
+    """
     if param is None or param.observed_property.categories is None:
         return
 
@@ -468,34 +644,74 @@ def _check_categorical_codes(
     )
 
 
-def _validate_coverage(
-    coverage: Coverage, path: str, issues: list[Issue], check_values: bool
+def _validate_parameter_groups(
+    coverage: Coverage,
+    parameters: dict[str, Parameter],
+    path: str,
+    issues: list[Issue],
 ) -> None:
-    domain = coverage.domain
+    """Check each parameter group references only known members, appending issues.
 
-    # A URL-reference domain is validated only where it is inline: the domain and
-    # the range-vs-domain checks below are skipped (you cannot check unfetched
-    # data) without an issue, since a URL reference is spec-valid. See validate()'s
-    # Notes on this partial validation.
-    if isinstance(domain, Domain):
-        _validate_domain(
-            domain, coverage.effective_domain_type, _ptr(path, "domain"), issues
+    A parameter group bundles the keys of parameters it groups together; any
+    member not present in the coverage's ``parameters`` is reported
+    (``parameter-group.unknown-member``).
+
+    Parameters
+    ----------
+    coverage
+        The coverage whose `~covjson_msgspec.coverage.Coverage.parameter_groups`
+        are checked.
+    parameters
+        The coverage's parameters (the set of valid member keys).
+    path
+        The JSON Pointer to ``coverage``, extended via `_ptr` per group.
+    issues
+        The accumulator that findings are appended to (mutated in place).
+    """
+    for i, group in enumerate(coverage.parameter_groups or ()):
+        issues.extend(
+            Issue(
+                code="parameter-group.unknown-member",
+                message=f"parameter group references unknown member {member!r}",
+                path=_ptr(path, "parameterGroups", i),
+            )
+            for member in group.members
+            if member not in parameters
         )
 
-    parameters = coverage.parameters
 
-    if coverage.parameter_groups is not None and parameters is not None:
-        for i, group in enumerate(coverage.parameter_groups):
-            issues.extend(
-                Issue(
-                    code="parameter-group.unknown-member",
-                    message=(f"parameter group references unknown member {member!r}"),
-                    path=_ptr(path, "parameterGroups", i),
-                )
-                for member in group.members
-                if member not in parameters
-            )
+def _validate_ranges(
+    coverage: Coverage,
+    domain: Domain | str,
+    parameters: dict[str, Parameter] | None,
+    path: str,
+    issues: list[Issue],
+    check_values: bool,
+) -> None:
+    """Validate each of a coverage's ranges, appending any issues.
 
+    For each range: warn when it has no matching parameter
+    (``coverage.range-without-parameter``); and, for an inline `NdArray`, check
+    its shape is self-consistent (`_validate_ndarray`), it aligns with an inline
+    domain (`_check_range_against_domain`), and, when ``check_values``, its
+    categorical codes are defined (`_check_categorical_codes`).
+
+    Parameters
+    ----------
+    coverage
+        The coverage whose `~covjson_msgspec.coverage.Coverage.ranges` are checked.
+    domain
+        The coverage's domain; the range-vs-domain check runs only when it is an
+        inline `Domain` (a URL reference is unfetched yet spec-valid).
+    parameters
+        The coverage's parameters, or ``None`` when undescribed.
+    path
+        The JSON Pointer to ``coverage``, extended via `_ptr` per range.
+    issues
+        The accumulator that findings are appended to (mutated in place).
+    check_values
+        Whether to run the value-scanning checks (categorical codes).
+    """
     for key, range_ in coverage.ranges.items():
         range_path = _ptr(path, "ranges", key)
 
@@ -521,12 +737,65 @@ def _validate_coverage(
                 )
 
 
+def _validate_coverage(
+    coverage: Coverage, path: str, issues: list[Issue], check_values: bool
+) -> None:
+    """Validate one coverage end to end, appending any issues.
+
+    Orchestrates the per-coverage rules: validates an inline domain
+    (`_validate_domain`), checks each parameter group's members
+    (`_validate_parameter_groups`), and checks every range (`_validate_ranges`).
+    A URL-reference domain skips the domain and range-vs-domain checks silently
+    (it is unfetched yet spec-valid; see `validate`'s Notes).
+
+    Parameters
+    ----------
+    coverage
+        The coverage to validate.
+    path
+        The JSON Pointer to ``coverage``, extended via `_ptr` for each issue.
+    issues
+        The accumulator that findings are appended to (mutated in place).
+    check_values
+        Whether to run the value-scanning checks (categorical codes).
+    """
+    domain = coverage.domain
+    parameters = coverage.parameters
+
+    if isinstance(domain, Domain):
+        _validate_domain(
+            domain, coverage.effective_domain_type, _ptr(path, "domain"), issues
+        )
+
+    if parameters is not None:
+        _validate_parameter_groups(coverage, parameters, path, issues)
+
+    _validate_ranges(coverage, domain, parameters, path, issues, check_values)
+
+
 def _validate_collection(
     collection: CoverageCollection,
     path: str,
     issues: list[Issue],
     check_values: bool,
 ) -> None:
+    """Validate every member of a collection, appending any issues.
+
+    Resolves the collection first so each member inherits the collection's
+    parameters and ``domainType``, then runs `_validate_coverage` on each at a
+    ``coverages/<i>`` path.
+
+    Parameters
+    ----------
+    collection
+        The collection to validate.
+    path
+        The JSON Pointer to ``collection``, extended via `_ptr` per member.
+    issues
+        The accumulator that findings are appended to (mutated in place).
+    check_values
+        Whether to run the value-scanning checks (passed through to each member).
+    """
     # Resolve first so inherited parameters / domainType apply to each member.
     for i, coverage in enumerate(collection.resolved_coverages()):
         _validate_coverage(coverage, _ptr(path, "coverages", i), issues, check_values)

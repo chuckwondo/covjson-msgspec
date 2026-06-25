@@ -32,6 +32,8 @@ if TYPE_CHECKING:
     import pandas as pd
     import xarray as xr
 
+    from covjson_msgspec._fetch import Fetch
+
 # A range is inline values (`NdArray` / `TiledNdArray`) or a bare string URL
 # referencing the values in a separate document.
 Range = NdArray | TiledNdArray | str
@@ -235,6 +237,27 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
 
         return to_geojson(self, trajectory_as=trajectory_as)
 
+    def resolve_references(self, fetch: "Fetch") -> "Coverage":
+        """Inline this coverage's URL-string domain and range references.
+
+        Thin delegate to `covjson_msgspec.references.resolve_references`; see it
+        for the resolution rules and what it does (and does not) follow.
+
+        Parameters
+        ----------
+        fetch
+            A callable mapping a referenced document's URL to its raw bytes.
+
+        Returns
+        -------
+        Coverage
+            A new coverage with its URL references inlined (this instance
+            unchanged when it has none).
+        """
+        from covjson_msgspec.references import resolve_references
+
+        return resolve_references(self, fetch)
+
 
 class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
     """A collection of coverages sharing a common structure.
@@ -426,6 +449,27 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
         from covjson_msgspec.geo import to_geojson
 
         return to_geojson(self, trajectory_as=trajectory_as)
+
+    def resolve_references(self, fetch: "Fetch") -> "CoverageCollection":
+        """Inline every member coverage's URL-string references.
+
+        Thin delegate to `covjson_msgspec.references.resolve_references`; see it
+        for the resolution rules. Collection-level inheritance is not applied;
+        call `resolved_coverages` first if you need that.
+
+        Parameters
+        ----------
+        fetch
+            A callable mapping a referenced document's URL to its raw bytes.
+
+        Returns
+        -------
+        CoverageCollection
+            A new collection whose members have their URL references inlined.
+        """
+        from covjson_msgspec.references import resolve_references
+
+        return resolve_references(self, fetch)
 
 
 # The root of any CoverageJSON document. Domain and the range types are valid

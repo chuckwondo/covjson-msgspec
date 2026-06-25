@@ -71,13 +71,12 @@ jobs:
       - name: Run pre-commit hooks (prek)
         run: uv run --quiet prek run --all-files --show-diff-on-failure
 
-  # Type-checking across the supported Python versions and across checkers. Only
-  # mypy (strict) is blocking. basedpyright (strict), pyrefly, and ty run as
-  # informational-only (continue-on-error): they are stricter than mypy about the
-  # inherently dynamic msgspec / numpy / pandas surfaces (and basedpyright wants
-  # stubs for cftime, which has none), so they surface real divergences in the
-  # logs without red-CI'ing the build on findings the project does not treat as
-  # errors.
+  # Type-checking across the supported Python versions and across checkers.
+  # mypy (strict) and basedpyright (strict) are both blocking. pyrefly and ty run
+  # as informational-only (continue-on-error): being pre-1.0, they are stricter
+  # than the blocking pair about the inherently dynamic msgspec / numpy / pandas
+  # surfaces, so they surface real divergences in the logs without red-CI'ing the
+  # build on findings the project does not treat as errors.
   typecheck:
     needs: config
     runs-on: ubuntu-latest
