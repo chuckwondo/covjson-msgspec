@@ -24,6 +24,21 @@ from covjson_msgspec import (
     i18n,
 )
 
+# The types that carry a `_repr_html_` hook.
+Displayable = (
+    Coverage | CoverageCollection | Domain | NdArray | TiledNdArray | Parameter
+)
+
+
+def _render(obj: Displayable) -> str:
+    """Invoke the Jupyter ``_repr_html_`` hook.
+
+    The hook name has a leading underscore (the IPython protocol), which strict
+    type-checkers treat as a protected member; routing every call through this
+    one helper keeps the single suppression in one place.
+    """
+    return obj._repr_html_()  # pyright: ignore[reportPrivateUsage]
+
 
 def _temp_parameter() -> Parameter:
     """A continuous air-temperature parameter in kelvin."""
@@ -56,7 +71,7 @@ def _grid_coverage() -> Coverage:
 
 
 def test_coverage_repr_has_card_and_facts() -> None:
-    html = _grid_coverage()._repr_html_()
+    html = _render(_grid_coverage())
 
     assert html.startswith('<div class="cj-repr">')
     assert html.endswith("</div>")
@@ -75,7 +90,7 @@ def test_coverage_repr_summarizes_axes_without_materializing() -> None:
         domain=Domain.grid(x=Axis.regular(0.0, 1.0, 1_000_000), y=Axis.listed((0.0,))),
         ranges={},
     )
-    html = big._repr_html_()
+    html = _render(big)
 
     assert "1000000" in html  # the x axis length
     assert "0.0 to 1.0" in html  # its extent, not a million values
@@ -92,7 +107,7 @@ def test_coverage_repr_escapes_dynamic_text() -> None:
             )
         },
     )
-    html = cov._repr_html_()
+    html = _render(cov)
 
     assert "<script>" not in html
     assert "&lt;script&gt;" in html
@@ -107,7 +122,7 @@ def test_ndarray_string_values_are_escaped() -> None:
         shape=(2,),
         axis_names=("x",),
     )
-    html = arr._repr_html_()
+    html = _render(arr)
 
     assert "<script>" not in html
     assert "&lt;script&gt;" in html
@@ -120,7 +135,7 @@ def test_collection_missing_member_id_shows_placeholder() -> None:
         domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
         ranges={},
     )
-    html = CoverageCollection(coverages=(member,), domain_type="Point")._repr_html_()
+    html = _render(CoverageCollection(coverages=(member,), domain_type="Point"))
 
     assert "(none)" in html
 
@@ -131,7 +146,7 @@ def test_coverage_repr_with_url_reference_domain() -> None:
         ranges={"t": "https://example.org/range.json"},
         domain_type="Grid",
     )
-    html = cov._repr_html_()
+    html = _render(cov)
 
     assert "https://example.org/domain.json" in html
     # A URL-string range is labeled as a reference, not an inline array.
@@ -145,7 +160,7 @@ def test_collection_repr_lists_members() -> None:
         domain_type="Grid",
         parameters={"t": _temp_parameter()},
     )
-    html = coll._repr_html_()
+    html = _render(coll)
 
     assert "CoverageCollection" in html
     assert "Members (2)" in html
@@ -154,7 +169,7 @@ def test_collection_repr_lists_members() -> None:
 
 def test_domain_repr_lists_axes() -> None:
     dom = Domain.grid(x=Axis.regular(0.0, 10.0, 3), y=Axis.listed((0.0, 1.0)))
-    html = dom._repr_html_()
+    html = _render(dom)
 
     assert "Domain" in html
     assert "Axes (2)" in html
@@ -168,7 +183,7 @@ def test_ndarray_repr_shows_shape_and_preview() -> None:
         shape=(10,),
         axis_names=("x",),
     )
-    html = arr._repr_html_()
+    html = _render(arr)
 
     assert "NdArray" in html
     assert "(10,)" in html
@@ -178,7 +193,7 @@ def test_ndarray_repr_shows_shape_and_preview() -> None:
 
 def test_ndarray_repr_scalar_shape() -> None:
     arr = NdArray(data_type="float", values=(280.0,))
-    html = arr._repr_html_()
+    html = _render(arr)
 
     assert "scalar" in html
     assert "(none)" in html  # no axis names
@@ -193,7 +208,7 @@ def test_tiled_ndarray_repr_lists_tile_sets() -> None:
             TileSet(tile_shape=(1, None, None), url_template="http://ex/{t}.covjson"),
         ),
     )
-    html = tiled._repr_html_()
+    html = _render(tiled)
 
     assert "TiledNdArray" in html
     assert "http://ex/{t}.covjson" in html
@@ -207,7 +222,7 @@ def test_parameter_repr_continuous_shows_unit() -> None:
         ObservedProperty(label=i18n("Air temperature")),
         Unit(symbol=Symbol(value="Cel", type_="http://ex/Cel")),
     )
-    html = param._repr_html_()
+    html = _render(param)
 
     assert "continuous" in html
     assert "Air temperature" in html
@@ -223,7 +238,7 @@ def test_parameter_repr_categorical_lists_categories() -> None:
         ),
     )
     param = Parameter.categorical(land_cover, {"1": 1, "2": 2})
-    html = param._repr_html_()
+    html = _render(param)
 
     assert "categorical" in html
     assert "Categories" in html
@@ -235,13 +250,10 @@ def test_parameter_repr_categorical_lists_categories() -> None:
     "obj",
     [
         _grid_coverage(),
-        _grid_coverage().domain,
+        Domain.grid(x=Axis.regular(0.0, 10.0, 3), y=Axis.listed((0.0, 1.0))),
         _temp_range(),
         _temp_parameter(),
     ],
 )
-def test_repr_html_is_nonempty_str(obj: object) -> None:
-    html = obj._repr_html_()  # type: ignore[attr-defined]
-
-    assert isinstance(html, str)
-    assert html.strip()
+def test_repr_html_is_nonempty_str(obj: Displayable) -> None:
+    assert _render(obj).strip()
