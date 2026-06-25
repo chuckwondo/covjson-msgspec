@@ -40,7 +40,7 @@ import contextlib
 import math
 from datetime import datetime
 from itertools import pairwise
-from typing import TYPE_CHECKING, Any, NoReturn, cast
+from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
 
 from covjson_msgspec._bridging import (
     POLYGON_DOMAIN_TYPES,
@@ -56,6 +56,7 @@ from covjson_msgspec.parameter import (
     CategoryEncoding,
     ObservedProperty,
     Parameter,
+    Symbol,
     Unit,
 )
 from covjson_msgspec.range import NdArray
@@ -928,23 +929,24 @@ def _crs_coordinate(domain: Domain) -> _Variable | None:
     # The horizontal CRS becomes a CF grid-mapping variable. ``reference_system_type``
     # records which CoverageJSON system it was so the round-trip can rebuild the
     # right class (CF has no projection params for a CRS identified only by id).
-    for connection in domain.referencing:
-        system = connection.system
+    crss = (
+        system
+        for connection in domain.referencing
+        if isinstance(system := connection.system, (GeographicCRS, ProjectedCRS))
+    )
 
-        if isinstance(system, GeographicCRS | ProjectedCRS):
-            attrs: dict[str, Any] = {
-                "reference_system_type": type(system).__name__,
-            }
+    if (crs := next(crss, None)) is None:
+        return None
 
-            if isinstance(system, GeographicCRS):
-                attrs["grid_mapping_name"] = "latitude_longitude"
+    attrs = {"reference_system_type": type(crs).__name__}
 
-            if system.id is not None:
-                attrs["reference_system_id"] = system.id
+    if isinstance(crs, GeographicCRS):
+        attrs["grid_mapping_name"] = "latitude_longitude"
 
-            return ((), 0, attrs)
+    if crs.id is not None:
+        attrs["reference_system_id"] = crs.id
 
-    return None
+    return ((), 0, attrs)
 
 
 def _data_variable(
@@ -1078,10 +1080,11 @@ def _unit_symbol(unit: Unit) -> str | None:
     str or None
         The unit symbol, or ``None`` when there is none.
     """
-    if isinstance(unit.symbol, str):
-        return unit.symbol
-
-    return unit.symbol.value if unit.symbol is not None else None
+    match unit.symbol:
+        case Symbol(value, _):
+            return value
+        case symbol:
+            return symbol
 
 
 def _flags(
@@ -1217,20 +1220,21 @@ def _detect_roles(
     """
     # Explicit overrides win; remaining roles are filled from CF attributes and
     # common coordinate names, never reusing a coordinate already assigned.
-    roles: dict[str, str | None] = {"x": x, "y": y, "z": z, "t": t}
+    roles = {"x": x, "y": y, "z": z, "t": t}
     taken = {name for name in roles.values() if name is not None}
 
     for name, coord in dataset.coords.items():
-        role = _role_of(str(name), coord)
+        str_name = str(name)
+        role = _role_of(str_name, coord)
 
-        if role is not None and roles[role] is None and str(name) not in taken:
-            roles[role] = str(name)
-            taken.add(str(name))
+        if role is not None and roles[role] is None and str_name not in taken:
+            roles[role] = str_name
+            taken.add(str_name)
 
     return roles
 
 
-def _role_of(name: str, coord: "xr.DataArray") -> str | None:
+def _role_of(name: str, coord: "xr.DataArray") -> Literal["x", "y", "z", "t"] | None:
     """Guess a coordinate's x / y / z / t role from its CF attributes and name.
 
     Checks, in order, longitude (``standard_name`` / ``degrees_east`` units /
@@ -1247,7 +1251,7 @@ def _role_of(name: str, coord: "xr.DataArray") -> str | None:
 
     Returns
     -------
-    str or None
+    Literal["x", "y", "z", "t"] or None
         ``"x"`` / ``"y"`` / ``"z"`` / ``"t"``, or ``None`` when unrecognized.
     """
     standard_name = str(coord.attrs.get("standard_name", "")).lower()
@@ -1346,11 +1350,10 @@ def _detect_composite(
         if coord.ndim == 1 and str(coord.dims[0]) != name:
             groups.setdefault(str(coord.dims[0]), set()).add(role)
 
-    for dim, grouped in groups.items():
-        if len(grouped) >= 2:
-            return dim, grouped
-
-    return None, set()
+    return next(
+        ((dim, grouped) for dim, grouped in groups.items() if len(grouped) >= 2),
+        (None, set()),
+    )
 
 
 def _build_axes(
