@@ -25,6 +25,13 @@ from covjson_msgspec.coverage import (
 from covjson_msgspec.domain import Domain
 from covjson_msgspec.geo import to_geojson, to_geopandas
 from covjson_msgspec.i18n import I18n, i18n
+from covjson_msgspec.media_type import (
+    MEDIA_TYPE,
+    decode_response,
+    encode_response,
+    is_coverage_json_media_type,
+    media_type,
+)
 from covjson_msgspec.pandas import to_pandas
 from covjson_msgspec.parameter import (
     Category,
@@ -71,6 +78,7 @@ except PackageNotFoundError:  # pragma: no cover - only during local dev
 
 __all__ = [
     "DOMAIN_TYPE_RULES",
+    "MEDIA_TYPE",
     "Axis",
     "Category",
     "CategoryEncoding",
@@ -106,11 +114,15 @@ __all__ = [
     "decode",
     "decode_coverage",
     "decode_coverage_collection",
+    "decode_response",
     "encode",
+    "encode_response",
     "from_datatree",
     "from_xarray",
     "i18n",
+    "is_coverage_json_media_type",
     "isel",
+    "media_type",
     "resolve_references",
     "sel",
     "to_datatree",

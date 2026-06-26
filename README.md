@@ -21,15 +21,34 @@ the rest of the Python geo ecosystem.
 
 | Install | Adds |
 | --- | --- |
-| `covjson-msgspec` | core encode/decode/validate (msgspec only) |
+| `covjson-msgspec` | core encode/decode/validate + media type & HTTP helpers (msgspec only) |
 | `covjson-msgspec[numpy]` | `NdArray` ↔ numpy |
 | `covjson-msgspec[xarray]` | two-way, CF-aware `Coverage` ↔ xarray |
 | `covjson-msgspec[pandas]` | point/series/trajectory → pandas |
 | `covjson-msgspec[geo]` | polygon/point/trajectory → geopandas / GeoJSON |
 
-_Planned:_ web-framework response helpers + media types for Litestar
-(msgspec-native, so first-class) and FastAPI (a thin adapter). Not yet shipped,
-so they carry no install extra.
+_Planned:_ framework-specific `Response` adapters for Litestar (msgspec-native,
+so first-class) and FastAPI (a thin adapter), wrapping the core helpers below. As
+they require a web-framework dependency, they will ship behind their own extras;
+not yet shipped, so they carry no install extra.
+
+## Serving over HTTP
+
+The core knows CoverageJSON's media type, `application/prs.coverage+json`, and
+pairs it with the existing encode/decode (no web framework required):
+
+```python
+from covjson_msgspec import MEDIA_TYPE, decode_response, encode_response
+
+# Outbound: body + the Content-Type to set on the response.
+body, content_type = encode_response(coverage)
+
+# Advertise an RFC 6906 profile via the media type's `profile` parameter:
+body, content_type = encode_response(coverage, profile="https://example.com/p")
+
+# Inbound: verify the declared Content-Type, then decode.
+coverage = decode_response(request_body, content_type)
+```
 
 A guiding principle is **dependency injection at the edges, data-in/data-out at
 the core**: the core never reaches the network or imports a heavy framework — it
