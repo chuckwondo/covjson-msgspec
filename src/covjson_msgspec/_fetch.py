@@ -21,6 +21,8 @@ Spec: [NdArray / range URL references][spec-ranges] and
 [spec-tiled]: https://github.com/covjson/specification/blob/master/spec.md#63-tiledndarray-objects
 """
 
+from __future__ import annotations
+
 from collections.abc import Callable
 from typing import TypeVar
 
@@ -35,7 +37,7 @@ Fetch = Callable[[str], bytes]
 _T = TypeVar("_T")
 
 
-def fetch_and_decode(fetch: Fetch, url: str, decoder: "msgspec.json.Decoder[_T]") -> _T:
+def fetch_and_decode(fetch: Fetch, url: str, decoder: msgspec.json.Decoder[_T]) -> _T:
     """Fetch the document at ``url`` and decode it with ``decoder``.
 
     The single choke point through which both `resolve_references` and tile

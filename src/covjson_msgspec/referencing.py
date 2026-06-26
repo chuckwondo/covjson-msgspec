@@ -14,6 +14,8 @@ embedded coordinate-system (``cs``) object, so CRSs are identified by ``id``.
 Spec: [Reference system objects](https://github.com/covjson/specification/blob/master/spec.md#5-reference-system-objects).
 """
 
+from __future__ import annotations
+
 from covjson_msgspec._base import CovJSONStruct
 from covjson_msgspec.i18n import I18n
 

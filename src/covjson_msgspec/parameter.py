@@ -19,6 +19,8 @@ Spec: [Parameter objects][spec-parameter] and [ParameterGroup objects][spec-grou
 [spec-group]: https://github.com/covjson/specification/blob/master/spec.md#4-parametergroup-objects
 """
 
+from __future__ import annotations
+
 from typing import Self
 
 import msgspec

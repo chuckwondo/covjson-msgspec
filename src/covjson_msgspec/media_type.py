@@ -24,6 +24,8 @@ parameter follows [RFC 6906][rfc6906], the JSON encoding rules (always UTF-8, no
 [rfc9110]: https://www.rfc-editor.org/rfc/rfc9110
 """
 
+from __future__ import annotations
+
 from collections.abc import Sequence
 from typing import Final
 

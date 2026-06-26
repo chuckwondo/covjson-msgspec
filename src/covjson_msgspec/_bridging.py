@@ -8,6 +8,8 @@ imported lazily inside the helpers, so importing this module never pulls in an
 optional dependency.
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 
 from covjson_msgspec.coverage import Range
@@ -97,7 +99,7 @@ def range_column(
     range_: NdArray,
     dims: list[str],
     sizes: dict[str, int],
-) -> "npt.NDArray[Any]":
+) -> npt.NDArray[Any]:
     """Lay a range's values over the canonical ``dims`` grid as a flat column.
 
     A coverage's ranges may each vary over a different subset of the domain's
@@ -168,10 +170,10 @@ def range_column(
 
 def broadcast(
     data: Any,
-    present: "tuple[str, ...] | list[str]",
+    present: tuple[str, ...] | list[str],
     dims: list[str],
     sizes: dict[str, int],
-) -> "npt.NDArray[Any]":
+) -> npt.NDArray[Any]:
     """Broadcast ``data`` (varying only over ``present``) to the full ``dims`` grid.
 
     A lower-level step of `range_column`: it assumes ``data`` is already in

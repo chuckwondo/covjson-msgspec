@@ -19,6 +19,8 @@ subsetting along an axis stored as a `~covjson_msgspec.range.TiledNdArray` or a
 URL reference, are not supported yet and raise.
 """
 
+from __future__ import annotations
+
 import itertools
 from collections.abc import Mapping
 from typing import Any, Literal, NamedTuple, TypeVar

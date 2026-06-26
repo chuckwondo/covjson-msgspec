@@ -20,6 +20,8 @@ Spec: [ranges object][spec-ranges] (a range may be a URL string) and
 [spec-coverage]: https://github.com/covjson/specification/blob/master/spec.md#64-coverage-objects
 """
 
+from __future__ import annotations
+
 from typing import Final, overload
 
 import msgspec

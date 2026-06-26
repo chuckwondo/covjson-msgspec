@@ -38,13 +38,14 @@ plain column so it survives ``to_json`` into each feature's ``properties``.
 Spec: [Coverage objects](https://github.com/covjson/specification/blob/master/spec.md#64-coverage-objects).
 """
 
+from __future__ import annotations
+
 # This bridge is internal glue over dynamically-typed third-party libraries
 # (geopandas / shapely / pandas) whose stubs leave many call results partly
 # unknown, so basedpyright's reportUnknown* rules are relaxed here. The public
 # functions stay safe: their signatures are explicitly typed and mypy strict
 # guards them, so those rules never fire on the user-facing surface.
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false
-
 import contextlib
 import json
 import warnings
@@ -96,7 +97,7 @@ def to_geopandas(
     obj: Coverage | CoverageCollection,
     *,
     trajectory_as: TrajectoryAs = "points",
-) -> "gpd.GeoDataFrame":
+) -> gpd.GeoDataFrame:
     """Convert a `Coverage` or `CoverageCollection` to a `geopandas.GeoDataFrame`.
 
     Requires the ``geo`` extra. For a `Coverage`, each coverage element becomes
@@ -255,7 +256,7 @@ def to_geojson(
 
 def _coverage_to_geopandas(
     coverage: Coverage, trajectory_as: TrajectoryAs
-) -> "gpd.GeoDataFrame":
+) -> gpd.GeoDataFrame:
     """Convert a single `Coverage` to a `~geopandas.GeoDataFrame` (per-coverage core).
 
     The workhorse behind `to_geopandas` for one coverage, and the per-member step
@@ -318,7 +319,7 @@ def _coverage_to_geopandas(
 
 def _collection_to_geopandas(
     collection: CoverageCollection, trajectory_as: TrajectoryAs
-) -> "gpd.GeoDataFrame":
+) -> gpd.GeoDataFrame:
     """Concatenate a collection's members into one frame keyed by a ``coverage`` column.
 
     Members are resolved first so each inherits the collection's parameters and
@@ -377,7 +378,7 @@ def _collection_to_geopandas(
 
 def _point_frame(
     coverage: Coverage, domain: Domain
-) -> "tuple[pd.DataFrame, npt.NDArray[np.object_]]":
+) -> tuple[pd.DataFrame, npt.NDArray[np.object_]]:
     """Build a point-per-element frame and ``Point`` geometry from ``x`` / ``y``.
 
     The default builder for every point-like domain (Point, PointSeries,
@@ -436,7 +437,7 @@ def _point_frame(
     return frame, _point_geometry(frame)
 
 
-def _point_geometry(frame: "pd.DataFrame") -> "npt.NDArray[np.object_]":
+def _point_geometry(frame: pd.DataFrame) -> npt.NDArray[np.object_]:
     """Build the per-row ``Point`` geometry from a point frame's ``x`` / ``y`` columns.
 
     A ``z`` column is carried into the geometry as a third dimension (``POINT Z``;
@@ -481,7 +482,7 @@ def _point_geometry(frame: "pd.DataFrame") -> "npt.NDArray[np.object_]":
 
 def _trajectory_linestring_frame(
     domain: Domain,
-) -> "tuple[pd.DataFrame, npt.NDArray[np.object_]]":
+) -> tuple[pd.DataFrame, npt.NDArray[np.object_]]:
     """Collapse a Trajectory's vertices into a single ``LineString`` feature.
 
     The builder for ``trajectory_as="linestring"``. It reads the path from the
@@ -555,7 +556,7 @@ def _trajectory_linestring_frame(
 
 def _polygon_frame(
     coverage: Coverage, domain: Domain
-) -> "tuple[pd.DataFrame, npt.NDArray[np.object_]]":
+) -> tuple[pd.DataFrame, npt.NDArray[np.object_]]:
     """Build ``Polygon`` geometry and an attribute frame for the Polygon family.
 
     The builder for Polygon / PolygonSeries / MultiPolygon / MultiPolygonSeries.

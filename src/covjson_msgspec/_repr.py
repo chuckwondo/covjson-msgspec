@@ -13,6 +13,8 @@ This is presentation only: it never decodes, fetches, or materializes large data
 previews are truncated), so a repr is cheap even for a big coverage.
 """
 
+from __future__ import annotations
+
 import html
 import math
 from typing import TYPE_CHECKING
@@ -49,7 +51,7 @@ _PREVIEW_LIMIT = 6
 _EMPTY = '<span class="cj-empty">(none)</span>'
 
 
-def coverage_html(coverage: "Coverage") -> str:
+def coverage_html(coverage: Coverage) -> str:
     """Render a `Coverage` as an HTML summary card.
 
     Sections cover the domain's axes, the parameters (when the coverage carries
@@ -97,7 +99,7 @@ def coverage_html(coverage: "Coverage") -> str:
     return _document("Coverage", coverage.id, summary, sections)
 
 
-def collection_html(collection: "CoverageCollection") -> str:
+def collection_html(collection: CoverageCollection) -> str:
     """Render a `CoverageCollection` as an HTML summary card.
 
     Shows the collection-level fields (shared ``domain_type`` and parameters)
@@ -144,7 +146,7 @@ def collection_html(collection: "CoverageCollection") -> str:
     return _document("CoverageCollection", None, summary, sections)
 
 
-def domain_html(domain: "Domain") -> str:
+def domain_html(domain: Domain) -> str:
     """Render a `Domain` as an HTML summary card.
 
     Parameters
@@ -172,7 +174,7 @@ def domain_html(domain: "Domain") -> str:
     return _document("Domain", None, summary, [_axis_section(domain)])
 
 
-def ndarray_html(array: "NdArray") -> str:
+def ndarray_html(array: NdArray) -> str:
     """Render an `NdArray` as an HTML summary card with a truncated value preview.
 
     Parameters
@@ -206,7 +208,7 @@ def ndarray_html(array: "NdArray") -> str:
     return _document("NdArray", None, summary, [])
 
 
-def tiled_ndarray_html(array: "TiledNdArray") -> str:
+def tiled_ndarray_html(array: TiledNdArray) -> str:
     """Render a `TiledNdArray` as an HTML summary card listing its tile sets.
 
     Each tile set row reports its tile shape, the number of tiles that covers
@@ -254,7 +256,7 @@ def tiled_ndarray_html(array: "TiledNdArray") -> str:
     return _document("TiledNdArray", None, summary, [section])
 
 
-def parameter_html(parameter: "Parameter") -> str:
+def parameter_html(parameter: Parameter) -> str:
     """Render a `Parameter` as an HTML summary card.
 
     Shows whether the parameter is continuous or categorical, its observed
@@ -483,7 +485,7 @@ def _table_section(title: str, headers: list[str], rows: list[list[str]]) -> str
     return _section(f"{title} ({len(rows)})", _grid_table(headers, rows))
 
 
-def _axis_section(domain: "Domain") -> str:
+def _axis_section(domain: Domain) -> str:
     """Render a domain's axes as a collapsible table of name/length/extent.
 
     Parameters
@@ -511,7 +513,7 @@ def _axis_section(domain: "Domain") -> str:
     return _table_section("Axes", ["Axis", "Length", "Extent"], rows)
 
 
-def _parameter_section(parameters: "dict[str, Parameter]") -> str:
+def _parameter_section(parameters: dict[str, Parameter]) -> str:
     """Render a mapping of parameters as a collapsible key/label/unit table.
 
     Parameters
@@ -547,7 +549,7 @@ def _parameter_section(parameters: "dict[str, Parameter]") -> str:
     return _table_section("Parameters", ["Key", "Observed property", "Unit"], rows)
 
 
-def _range_section(ranges: "dict[str, NdArray | TiledNdArray | str]") -> str:
+def _range_section(ranges: dict[str, NdArray | TiledNdArray | str]) -> str:
     """Render a coverage's ranges as a collapsible key/type/shape table.
 
     Parameters
@@ -573,7 +575,7 @@ def _range_section(ranges: "dict[str, NdArray | TiledNdArray | str]") -> str:
     return _table_section("Ranges", ["Key", "Type", "Data type", "Shape"], rows)
 
 
-def _range_summary(value: "NdArray | TiledNdArray | str") -> list[str]:
+def _range_summary(value: NdArray | TiledNdArray | str) -> list[str]:
     """Summarize one range as raw ``[type, data_type, shape]`` cells.
 
     Parameters
@@ -602,7 +604,7 @@ def _range_summary(value: "NdArray | TiledNdArray | str") -> list[str]:
     return [type(value).__name__, value.data_type, _shape_text(value.shape)]
 
 
-def _axis_length(axis: "Axis") -> int:
+def _axis_length(axis: Axis) -> int:
     """Return an axis's coordinate count without materializing a regular axis.
 
     Parameters
@@ -632,7 +634,7 @@ def _axis_length(axis: "Axis") -> int:
     return axis.num
 
 
-def _axis_detail(axis: "Axis") -> str:
+def _axis_detail(axis: Axis) -> str:
     """Describe an axis's coordinate extent in one short line.
 
     Parameters
@@ -666,7 +668,7 @@ def _axis_detail(axis: "Axis") -> str:
     return _value_preview(axis.values)
 
 
-def _value_preview(values: "tuple[object, ...]") -> str:
+def _value_preview(values: tuple[object, ...]) -> str:
     """Format a flat sequence, eliding the middle past ``_PREVIEW_LIMIT``.
 
     Parameters
@@ -719,7 +721,7 @@ def _format_value(value: object) -> str:
     return "null" if value is None else str(value)
 
 
-def _shape_text(shape: "tuple[int | None, ...]") -> str:
+def _shape_text(shape: tuple[int | None, ...]) -> str:
     """Render a shape tuple, naming the empty (scalar) shape.
 
     Parameters
@@ -745,7 +747,7 @@ def _shape_text(shape: "tuple[int | None, ...]") -> str:
     return "scalar" if not shape else str(shape)
 
 
-def _tile_count(shape: "tuple[int, ...]", tile_shape: "tuple[int | None, ...]") -> int:
+def _tile_count(shape: tuple[int, ...], tile_shape: tuple[int | None, ...]) -> int:
     """Count the tiles of one tile set that cover the full array.
 
     Parameters
@@ -777,7 +779,7 @@ def _tile_count(shape: "tuple[int, ...]", tile_shape: "tuple[int | None, ...]") 
     )
 
 
-def _label(text: "I18n | None") -> str:
+def _label(text: I18n | None) -> str:
     """Pick one display string from an i18n language map.
 
     Parameters
@@ -808,7 +810,7 @@ def _label(text: "I18n | None") -> str:
     return next(iter(text.values()))
 
 
-def _unit_text(unit: "Unit | None") -> str:
+def _unit_text(unit: Unit | None) -> str:
     """Describe a `Unit` in one line: its symbol, else its label.
 
     Parameters

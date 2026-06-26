@@ -7,6 +7,8 @@ These two helpers are that translation. They are pure Python (no numpy) so the
 core operations that depend on them stay free of optional dependencies.
 """
 
+from __future__ import annotations
+
 from collections.abc import Sequence
 
 

@@ -19,6 +19,8 @@ Spec: [NdArray objects][spec-ndarray] and [TiledNdArray objects][spec-tiled].
 [spec-tiled]: https://github.com/covjson/specification/blob/master/spec.md#63-tiledndarray-objects
 """
 
+from __future__ import annotations
+
 import itertools
 import math
 import re
@@ -107,7 +109,7 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
         *,
         fill_value: int | None = None,
         as_float: bool = False,
-    ) -> "npt.NDArray[Any]":
+    ) -> npt.NDArray[Any]:
         """Convert to a NumPy array of this range's ``shape``.
 
         Requires the ``numpy`` extra. Missing values (``None``) become NaN for a
@@ -198,11 +200,11 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
     @classmethod
     def from_numpy(
         cls,
-        array: "npt.NDArray[Any]",
+        array: npt.NDArray[Any],
         axis_names: Iterable[str],
         *,
         data_type: Literal["float", "integer", "string"] | None = None,
-    ) -> "NdArray[Scalar]":
+    ) -> NdArray[Scalar]:
         """Build an `NdArray` from a NumPy array.
 
         Requires the ``numpy`` extra. Masked entries and non-finite floats (NaN,
@@ -354,7 +356,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
                 msg = "each tileSet's tileShape must have the same length as shape"
                 raise ValueError(msg)
 
-    def assemble(self, fetch: Fetch, tileset: int | None = None) -> "NdArray":
+    def assemble(self, fetch: Fetch, tileset: int | None = None) -> NdArray:
         """Fetch this array's tiles and stitch them into a single inline `NdArray`.
 
         A `TiledNdArray`'s values live in external tile documents rather than
@@ -524,7 +526,7 @@ def _expand_url_template(template: str, variables: dict[str, int]) -> str:
     ValueError: url template 'tiles/{t}.covjson' references unknown variable 't'
     """
 
-    def _substitute(match: "re.Match[str]") -> str:
+    def _substitute(match: re.Match[str]) -> str:
         name = match.group(1)
 
         if name not in variables:
@@ -539,7 +541,7 @@ def _expand_url_template(template: str, variables: dict[str, int]) -> str:
 def _tile_layout(
     shape: tuple[int, ...],
     axis_names: tuple[str, ...],
-    tile_set: "TileSet",
+    tile_set: TileSet,
 ) -> list[tuple[str, tuple[int, ...]]]:
     """Lay out every tile of a tile set as a ``(url, offsets)`` pair.
 
@@ -598,8 +600,8 @@ def _assemble_tiles(
     data_type: Literal["float", "integer", "string"],
     axis_names: tuple[str, ...],
     shape: tuple[int, ...],
-    tiles: list[tuple[tuple[int, ...], "NdArray"]],
-) -> "NdArray":
+    tiles: list[tuple[tuple[int, ...], NdArray]],
+) -> NdArray:
     """Place fetched tiles into one full-shape `NdArray`.
 
     Each tile's row-major values are written into the full array at the tile's

@@ -20,6 +20,8 @@ The per-domain-type axis rules live in the `DOMAIN_TYPE_RULES` registry, keyed b
 Spec: [Common Domain Types](https://github.com/covjson/specification/blob/master/domain-types.md).
 """
 
+from __future__ import annotations
+
 import enum
 import math
 from collections.abc import Iterator
