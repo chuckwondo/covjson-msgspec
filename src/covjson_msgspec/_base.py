@@ -1,5 +1,7 @@
 """Shared msgspec configuration for every CoverageJSON model struct."""
 
+from __future__ import annotations
+
 import msgspec
 
 

@@ -28,6 +28,8 @@ geopandas bridge; `to_xarray` rejects them.
 Spec: [Coverage objects](https://github.com/covjson/specification/blob/master/spec.md#64-coverage-objects).
 """
 
+from __future__ import annotations
+
 # This bridge is internal glue over dynamically-typed third-party libraries
 # (xarray / numpy / cftime) whose stubs are incomplete (cftime has none), so
 # basedpyright's reportUnknown* and reportMissingTypeStubs rules are relaxed
@@ -35,7 +37,6 @@ Spec: [Coverage objects](https://github.com/covjson/specification/blob/master/sp
 # and mypy strict guards them, so those rules never fire on the user-facing
 # surface.
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportMissingTypeStubs=false
-
 import contextlib
 import math
 from datetime import datetime
@@ -88,7 +89,7 @@ _GEOGRAPHIC_ROLES = ("longitude", "latitude", "height")
 _Variable = tuple[str | tuple[str, ...], Any, dict[str, Any]]
 
 
-def to_xarray(coverage: Coverage) -> "xr.Dataset":
+def to_xarray(coverage: Coverage) -> xr.Dataset:
     """Convert a `Coverage` to a CF-aware `xarray.Dataset`.
 
     Requires the ``xarray`` extra. Each parameter range becomes a data variable
@@ -189,7 +190,7 @@ def to_xarray(coverage: Coverage) -> "xr.Dataset":
 
 
 def from_xarray(
-    dataset: "xr.Dataset",
+    dataset: xr.Dataset,
     *,
     domain_type: str | None = None,
     x: str | None = None,
@@ -327,7 +328,7 @@ def from_xarray(
     )
 
 
-def to_datatree(collection: CoverageCollection) -> "xr.DataTree":
+def to_datatree(collection: CoverageCollection) -> xr.DataTree:
     """Convert a `CoverageCollection` to an `xarray.DataTree`.
 
     Requires the ``xarray`` extra (and xarray with ``DataTree`` support). Each
@@ -407,7 +408,7 @@ def to_datatree(collection: CoverageCollection) -> "xr.DataTree":
 
 
 def from_datatree(
-    tree: "xr.DataTree",
+    tree: xr.DataTree,
     *,
     domain_type: str | None = None,
     x: str | None = None,
@@ -510,7 +511,7 @@ def from_datatree(
     """
     _require_datatree()
 
-    def convert(dataset: "xr.Dataset") -> Coverage:
+    def convert(dataset: xr.Dataset) -> Coverage:
         """Convert one node's dataset to a `Coverage`, applying the shared options."""
         return from_xarray(
             dataset,
@@ -787,7 +788,7 @@ def _coordinate(
     return ((), data[0], attrs) if scalar else (dim, data, attrs)
 
 
-def _parse_times(column: list[Any], calendar: str) -> "npt.NDArray[Any]":
+def _parse_times(column: list[Any], calendar: str) -> npt.NDArray[Any]:
     """Parse ISO time strings into a numpy time array, picking datetime64 or cftime.
 
     A standard-calendar column is parsed to ``datetime64[ns]`` when it fits
@@ -1192,7 +1193,7 @@ _ROLE_NAMES: dict[str, frozenset[str]] = {
 
 
 def _detect_roles(
-    dataset: "xr.Dataset",
+    dataset: xr.Dataset,
     *,
     x: str | None,
     y: str | None,
@@ -1234,7 +1235,7 @@ def _detect_roles(
     return roles
 
 
-def _role_of(name: str, coord: "xr.DataArray") -> Literal["x", "y", "z", "t"] | None:
+def _role_of(name: str, coord: xr.DataArray) -> Literal["x", "y", "z", "t"] | None:
     """Guess a coordinate's x / y / z / t role from its CF attributes and name.
 
     Checks, in order, longitude (``standard_name`` / ``degrees_east`` units /
@@ -1282,7 +1283,7 @@ def _role_of(name: str, coord: "xr.DataArray") -> Literal["x", "y", "z", "t"] | 
     return "t" if _is_time(coord) or lowered in _ROLE_NAMES["t"] else None
 
 
-def _is_time(coord: "xr.DataArray") -> bool:
+def _is_time(coord: xr.DataArray) -> bool:
     """Whether a coordinate holds datetimes (numpy ``datetime64`` or cftime).
 
     True for a ``datetime64`` dtype, or an object array whose first element has a
@@ -1314,7 +1315,7 @@ def _is_time(coord: "xr.DataArray") -> bool:
 
 
 def _detect_composite(
-    dataset: "xr.Dataset",
+    dataset: xr.Dataset,
     roles: dict[str, str | None],
 ) -> tuple[str | None, set[str]]:
     """Detect a composite (trajectory-style) axis: roles sharing one dimension.
@@ -1357,7 +1358,7 @@ def _detect_composite(
 
 
 def _build_axes(
-    dataset: "xr.Dataset",
+    dataset: xr.Dataset,
     roles: dict[str, str | None],
     composite_dim: str | None,
     composite_roles: set[str],
@@ -1436,7 +1437,7 @@ def _build_axes(
     return axes, dim_to_key
 
 
-def _axis_from_coord(coord: "xr.DataArray", compact_regular: bool) -> Axis:
+def _axis_from_coord(coord: xr.DataArray, compact_regular: bool) -> Axis:
     """Build a primitive `~covjson_msgspec.axis.Axis` from a 1-D coordinate.
 
     A time coordinate becomes a listed axis of ISO strings (`_time_to_iso`). A
@@ -1515,7 +1516,7 @@ def _is_regular(values: list[Any]) -> bool:
     )
 
 
-def _coord_to_list(coord: "xr.DataArray") -> list[Any]:
+def _coord_to_list(coord: xr.DataArray) -> list[Any]:
     """Read a coordinate's values into a plain list (time as ISO strings).
 
     A time coordinate is rendered as ISO strings (`_time_to_iso`); any other
@@ -1541,7 +1542,7 @@ def _coord_to_list(coord: "xr.DataArray") -> list[Any]:
     return list(np.atleast_1d(coord.values).tolist())
 
 
-def _scalar(coord: "xr.DataArray") -> Any:
+def _scalar(coord: xr.DataArray) -> Any:
     """Read a 0-dimensional coordinate's single value (time as an ISO string).
 
     Parameters
@@ -1558,7 +1559,7 @@ def _scalar(coord: "xr.DataArray") -> Any:
     return _time_to_iso(coord)[0] if _is_time(coord) else coord.values.item()
 
 
-def _time_to_iso(coord: "xr.DataArray") -> list[str]:
+def _time_to_iso(coord: xr.DataArray) -> list[str]:
     """Render a time coordinate's values as ISO 8601 strings for a CoverageJSON axis.
 
     A ``datetime64`` value is narrowed to microsecond resolution (datetime's
@@ -1606,7 +1607,7 @@ def _time_to_iso(coord: "xr.DataArray") -> list[str]:
     return result
 
 
-def _raise_missing_time(coord: "xr.DataArray") -> NoReturn:
+def _raise_missing_time(coord: xr.DataArray) -> NoReturn:
     """Raise a clear error for a missing value in a time coordinate.
 
     Factored out of `_time_to_iso` (it is reached from two branches: NaT and
@@ -1631,7 +1632,7 @@ def _raise_missing_time(coord: "xr.DataArray") -> NoReturn:
     raise ValueError(msg)
 
 
-def _calendar(coord: "xr.DataArray") -> str:
+def _calendar(coord: xr.DataArray) -> str:
     """Read the calendar name from a time coordinate, defaulting to Gregorian.
 
     A cftime coordinate carries its calendar on each element; a numpy
@@ -1660,7 +1661,7 @@ def _calendar(coord: "xr.DataArray") -> str:
 
 
 def _build_referencing(
-    dataset: "xr.Dataset",
+    dataset: xr.Dataset,
     roles: dict[str, str | None],
 ) -> tuple[ReferenceSystemConnection, ...]:
     """Rebuild CoverageJSON referencing from a dataset's roles and grid mapping.
@@ -1721,7 +1722,7 @@ def _build_referencing(
 
 
 def _infer_domain_type(
-    dataset: "xr.Dataset",
+    dataset: xr.Dataset,
     roles: dict[str, str | None],
     composite_dim: str | None,
 ) -> str | None:
@@ -1771,7 +1772,7 @@ def _infer_domain_type(
     return None
 
 
-def _is_grid_mapping(variable: "xr.DataArray") -> bool:
+def _is_grid_mapping(variable: xr.DataArray) -> bool:
     """Whether a variable is a CF grid-mapping container (not real range data).
 
     A grid-mapping variable carries a ``grid_mapping_name`` attribute and holds no
@@ -1791,7 +1792,7 @@ def _is_grid_mapping(variable: "xr.DataArray") -> bool:
     return "grid_mapping_name" in variable.attrs
 
 
-def _parameter_from_variable(name: str, variable: "xr.DataArray") -> Parameter | None:
+def _parameter_from_variable(name: str, variable: xr.DataArray) -> Parameter | None:
     """Build a CoverageJSON `~covjson_msgspec.parameter.Parameter` from a data variable.
 
     Inverts `_variable_attrs`: CF ``flag_values`` / ``flag_meanings`` yield a
@@ -1843,7 +1844,7 @@ def _parameter_from_variable(name: str, variable: "xr.DataArray") -> Parameter |
 
 
 def _build_ranges(
-    dataset: "xr.Dataset",
+    dataset: xr.Dataset,
     dim_to_key: dict[str, str],
 ) -> tuple[dict[str, Range], dict[str, Parameter]]:
     """Build a coverage's ranges and parameters from a dataset's data variables.

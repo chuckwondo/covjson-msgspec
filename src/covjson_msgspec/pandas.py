@@ -37,13 +37,14 @@ identifies it (its ``id`` when set, otherwise its position).
 Spec: [Coverage objects](https://github.com/covjson/specification/blob/master/spec.md#64-coverage-objects).
 """
 
+from __future__ import annotations
+
 # This bridge is internal glue over the dynamically-typed pandas library, whose
 # stubs leave many call results partly unknown, so basedpyright's reportUnknown*
 # rules are relaxed here. The public functions stay safe: their signatures are
 # explicitly typed and mypy strict guards them, so those rules never fire on the
 # user-facing surface.
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false
-
 from typing import TYPE_CHECKING, Any, cast
 
 from covjson_msgspec._bridging import (
@@ -66,7 +67,7 @@ _INSTALL_HINT = (
 )
 
 
-def to_pandas(obj: Coverage | CoverageCollection) -> "pd.DataFrame":
+def to_pandas(obj: Coverage | CoverageCollection) -> pd.DataFrame:
     """Convert a `Coverage` or `CoverageCollection` to a tidy `pandas.DataFrame`.
 
     Requires the ``pandas`` extra. For a `Coverage`, each parameter range becomes
@@ -182,7 +183,7 @@ def to_pandas(obj: Coverage | CoverageCollection) -> "pd.DataFrame":
     return _coverage_to_pandas(obj)
 
 
-def _coverage_to_pandas(coverage: Coverage) -> "pd.DataFrame":
+def _coverage_to_pandas(coverage: Coverage) -> pd.DataFrame:
     """Convert a single `Coverage` to a tidy frame (the per-coverage core).
 
     The workhorse behind `to_pandas` for one coverage, and the per-member step of
@@ -261,7 +262,7 @@ def _coverage_to_pandas(coverage: Coverage) -> "pd.DataFrame":
     return frame
 
 
-def _collection_to_pandas(collection: "CoverageCollection") -> "pd.DataFrame":
+def _collection_to_pandas(collection: CoverageCollection) -> pd.DataFrame:
     """Concatenate a collection's members into one frame under a ``coverage`` level.
 
     Members are resolved first so each inherits the collection's parameters and
@@ -408,7 +409,7 @@ def _axis_layout(domain: Domain, temporal: set[str]) -> _AxisLayout:
     return layout
 
 
-def _index(layout: _AxisLayout) -> "pd.Index[Any]":
+def _index(layout: _AxisLayout) -> pd.Index[Any]:
     """Build the frame index from a layout's varying dims.
 
     No varying axis gives a length-1 `~pandas.RangeIndex` (one row); a single dim

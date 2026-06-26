@@ -10,6 +10,8 @@ build one without hand-writing the mapping.
 Spec: [i18n objects](https://github.com/covjson/specification/blob/master/spec.md#2-i18n-objects).
 """
 
+from __future__ import annotations
+
 # A CoverageJSON i18n object: language tag -> string ("und" if undetermined).
 # Deliberately a plain ``dict`` (not a NewType): it is exactly a JSON object and
 # users benefit from the familiar dict API. This is also why structs carrying a

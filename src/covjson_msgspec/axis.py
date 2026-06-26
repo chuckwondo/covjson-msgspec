@@ -15,6 +15,8 @@ composite forms (`Axis.tuple_`, `Axis.polygon`).
 Spec: [Axis objects](https://github.com/covjson/specification/blob/master/spec.md#611-axis-objects).
 """
 
+from __future__ import annotations
+
 from collections.abc import Iterable
 from typing import Any, Self
 

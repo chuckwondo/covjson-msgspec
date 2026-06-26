@@ -16,6 +16,8 @@ the [Common Domain Types](https://github.com/covjson/specification/blob/master/d
 specification (see `covjson_msgspec.validation`).
 """
 
+from __future__ import annotations
+
 from collections.abc import Iterable
 from typing import Self
 

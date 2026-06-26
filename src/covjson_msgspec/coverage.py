@@ -17,6 +17,8 @@ Spec: [Coverage][spec-coverage] and [CoverageCollection][spec-collection] object
 [spec-collection]: https://github.com/covjson/specification/blob/master/spec.md#65-coverage-collection-objects
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any, Final, Literal
 
 import msgspec
@@ -134,7 +136,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
 
         return declared or self.domain_type
 
-    def to_xarray(self) -> "xr.Dataset":
+    def to_xarray(self) -> xr.Dataset:
         """Convert this coverage to a CF-aware `xarray.Dataset`.
 
         Requires the ``xarray`` extra. Thin delegate to
@@ -154,7 +156,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
     @classmethod
     def from_xarray(
         cls,
-        dataset: "xr.Dataset",
+        dataset: xr.Dataset,
         *,
         domain_type: str | None = None,
         x: str | None = None,
@@ -162,7 +164,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         z: str | None = None,
         t: str | None = None,
         compact_regular: bool = True,
-    ) -> "Coverage":
+    ) -> Coverage:
         """Build a `Coverage` from an `xarray.Dataset`.
 
         Requires the ``xarray`` extra. Thin delegate to
@@ -186,7 +188,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
             compact_regular=compact_regular,
         )
 
-    def to_pandas(self) -> "pd.DataFrame":
+    def to_pandas(self) -> pd.DataFrame:
         """Convert this coverage to a tidy `pandas.DataFrame`.
 
         Requires the ``pandas`` extra. Thin delegate to
@@ -205,7 +207,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
 
     def to_geopandas(
         self, *, trajectory_as: Literal["points", "linestring"] = "points"
-    ) -> "gpd.GeoDataFrame":
+    ) -> gpd.GeoDataFrame:
         """Convert this coverage to a `geopandas.GeoDataFrame`.
 
         Requires the ``geo`` extra. Thin delegate to
@@ -239,7 +241,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
 
         return to_geojson(self, trajectory_as=trajectory_as)
 
-    def resolve_references(self, fetch: "Fetch") -> "Coverage":
+    def resolve_references(self, fetch: Fetch) -> Coverage:
         """Inline this coverage's URL-string domain and range references.
 
         Thin delegate to `covjson_msgspec.references.resolve_references`; see it
@@ -262,10 +264,10 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
 
     def isel(
         self,
-        indexers: "Mapping[str, int | slice] | None" = None,
+        indexers: Mapping[str, int | slice] | None = None,
         /,
-        **indexers_kwargs: "int | slice",
-    ) -> "Coverage":
+        **indexers_kwargs: int | slice,
+    ) -> Coverage:
         """Subset this coverage by integer position along named axes.
 
         Thin delegate to `covjson_msgspec.subset.isel`; see it for the selection
@@ -289,12 +291,12 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
 
     def sel(
         self,
-        indexers: "Mapping[str, float | int | str | slice] | None" = None,
+        indexers: Mapping[str, float | int | str | slice] | None = None,
         /,
         *,
-        method: "Literal['nearest'] | None" = None,
-        **indexers_kwargs: "float | int | str | slice",
-    ) -> "Coverage":
+        method: Literal["nearest"] | None = None,
+        **indexers_kwargs: float | int | str | slice,
+    ) -> Coverage:
         """Subset this coverage by coordinate label along named axes.
 
         Thin delegate to `covjson_msgspec.subset.sel`; see it for the matching
@@ -413,7 +415,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
 
         return msgspec.structs.replace(coverage, **changes) if changes else coverage
 
-    def to_datatree(self) -> "xr.DataTree":
+    def to_datatree(self) -> xr.DataTree:
         """Convert this collection to an `xarray.DataTree`.
 
         Requires the ``xarray`` extra. Thin delegate to
@@ -432,7 +434,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
     @classmethod
     def from_datatree(
         cls,
-        tree: "xr.DataTree",
+        tree: xr.DataTree,
         *,
         domain_type: str | None = None,
         x: str | None = None,
@@ -440,7 +442,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
         z: str | None = None,
         t: str | None = None,
         compact_regular: bool = True,
-    ) -> "CoverageCollection":
+    ) -> CoverageCollection:
         """Build a `CoverageCollection` from an `xarray.DataTree`.
 
         Requires the ``xarray`` extra. Thin delegate to
@@ -464,7 +466,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
             compact_regular=compact_regular,
         )
 
-    def to_pandas(self) -> "pd.DataFrame":
+    def to_pandas(self) -> pd.DataFrame:
         """Convert this collection to a single tidy `pandas.DataFrame`.
 
         Requires the ``pandas`` extra. Thin delegate to
@@ -483,7 +485,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
 
     def to_geopandas(
         self, *, trajectory_as: Literal["points", "linestring"] = "points"
-    ) -> "gpd.GeoDataFrame":
+    ) -> gpd.GeoDataFrame:
         """Convert this collection to a single `geopandas.GeoDataFrame`.
 
         Requires the ``geo`` extra. Thin delegate to
@@ -521,7 +523,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
 
         return to_geojson(self, trajectory_as=trajectory_as)
 
-    def resolve_references(self, fetch: "Fetch") -> "CoverageCollection":
+    def resolve_references(self, fetch: Fetch) -> CoverageCollection:
         """Inline every member coverage's URL-string references.
 
         Thin delegate to `covjson_msgspec.references.resolve_references`; see it
