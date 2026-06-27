@@ -25,6 +25,13 @@ from covjson_msgspec._base import CovJSONStruct
 # A primitive value, or a tuple covering both composite forms: "tuple" (a flat
 # tuple of primitives) and "polygon" (nested rings of positions).
 #
+# Temporal coordinates are plain ``str`` here, never ``datetime``: the model
+# stores time values as their raw ISO 8601 strings and never parses them, so a
+# decode -> encode round trip is byte-faithful (``Z`` vs ``+00:00``, fractional
+# seconds, and dates outside numpy's datetime64 range are all preserved). Date
+# parsing is confined to the opt-in export bridges (pandas/xarray). See the
+# `covjson_msgspec.referencing.TemporalRS` calendar for the companion note.
+#
 # Two msgspec constraints shape this:
 #
 # 1. A union may contain at most ONE array-like (list/set/tuple) member, so the
@@ -50,6 +57,15 @@ PolygonCoords = Iterable[RingCoords]
 # multiple structs. __post_init__ enforces that exactly one form is present.
 class Axis(CovJSONStruct, frozen=True):
     """A domain axis in any of its CoverageJSON shapes.
+
+    Notes
+    -----
+    Temporal coordinates are kept as their raw ISO 8601 strings and are never
+    parsed into ``datetime``: decode -> encode is byte-faithful, so ``Z`` vs
+    ``+00:00``, fractional seconds, and dates outside numpy's ``datetime64``
+    range all survive a round trip. Date parsing happens only in the opt-in
+    pandas/xarray export bridges. See `covjson_msgspec.referencing.TemporalRS`
+    for the companion calendar note.
 
     Examples
     --------
