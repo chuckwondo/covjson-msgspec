@@ -7,11 +7,19 @@ CoverageJSON is validated in tiers:
    (e.g. a `Unit` needs a label or symbol); and
 3. cross-cutting, document-level rules, performed here by `validate`.
 
+Tiers 1 and 2 stay deliberately local: they reject only what a single struct
+cannot be valid without, so a document with merely cross-cutting problems still
+decodes and round-trips (you can load an imperfect document to inspect or repair
+it). The tier-3 rules span objects and need the whole-document view plus a
+collect-all, error-or-warning result that a fail-fast ``__post_init__`` cannot
+give, so they are an opt-in step rather than enforced at decode.
+
 `validate` collects `Issue` records rather than raising on the first problem, so
 a caller sees every error and warning at once, each with a stable ``code`` and a
 JSON Pointer ``path``. Pass ``mode="raise"`` to raise a `CovJSONValidationError`
 instead when any error-severity issue is found, and ``check_values=True`` to add
-the value-scanning checks that are skipped by default.
+the value-scanning checks that are skipped by default (each value matching its
+range's ``dataType``, and categorical codes being defined).
 
 The per-domain-type axis rules live in the `DOMAIN_TYPE_RULES` registry, keyed by
 `DomainType`. The registry is a plain dict: add or replace an entry to teach
@@ -206,14 +214,30 @@ def validate(
 ) -> list[Issue]:
     """Check a CoverageJSON document for cross-cutting, document-level problems.
 
+    Decoding already yields a structurally valid, correctly typed object: msgspec
+    enforces the JSON structure, field types, and ``type`` tags on decode, and
+    each struct's ``__post_init__`` enforces its local invariants (e.g. a `Unit`
+    needs a label or symbol). If you only need a well-formed object to read or
+    transform, decoding alone is sufficient and you need not call this.
+
+    `validate` adds the rules that span several fields or objects and so cannot be
+    expressed at decode time: a domain's axes satisfy its ``domainType``'s
+    requirements, each range lines up with the domain (axis names, shapes),
+    parameter groups reference known members, and (with ``check_values=True``)
+    every value matches its range's ``dataType`` and categorical codes are
+    defined. Reach for it when you need those spec-conformance guarantees, e.g.
+    before publishing a document or when ingesting one from an untrusted source.
+
     Parameters
     ----------
     obj
         Any decoded CoverageJSON document.
     check_values
-        Also run the checks that scan range values (currently: categorical codes
-        must be defined in the parameter's encoding). Off by default because it
-        is O(number of values).
+        Also run the checks that scan range values: every value matches its
+        range's ``dataType`` (``range.value-type-mismatch``), and categorical
+        codes are defined in the parameter's encoding
+        (``range.invalid-category-code``). Off by default because it is
+        O(number of values).
     mode
         ``"collect"`` (default) returns every issue found. ``"raise"`` raises a
         `CovJSONValidationError` if any error-severity issue is found, and
@@ -286,6 +310,8 @@ def validate(
             _validate_collection(obj, "", issues, check_values)
         case NdArray():
             _validate_ndarray(obj, "", issues)
+            if check_values:
+                _check_value_data_types(obj, "", issues)
         case TiledNdArray():
             # Its only document-level rule (tileShape rank) is already enforced
             # in __post_init__, so there is nothing extra to check here.
@@ -646,6 +672,79 @@ def _check_categorical_codes(
     )
 
 
+def _check_value_data_types(arr: NdArray, path: str, issues: list[Issue]) -> None:
+    """Check each value matches the declared ``dataType``, appending any issues.
+
+    The spec requires an `NdArray`'s ``values`` to match its ``dataType``, but
+    decoding does not reliably enforce this: a parameterized decode (e.g.
+    ``NdArray[int]``) can silently accept an out-of-type value because msgspec's
+    generic resolution is order-sensitive (see the Notes on
+    `~covjson_msgspec.range.NdArray`). So the check is done here, deterministically.
+    ``None`` is always allowed (missing data). The rules per ``dataType`` are:
+
+    * ``"float"``: a real number, so a Python ``int`` or ``float`` (a JSON
+      integer like ``5`` is a valid float value and decodes to a Python ``int``,
+      so requiring ``float`` here would reject spec-valid data). ``bool`` excluded.
+    * ``"integer"``: a Python ``int``, with ``bool`` excluded. A whole-valued
+      float like ``1.0`` is rejected: its type is ``float`` and the ``dataType``
+      declares integers.
+    * ``"string"``: a Python ``str``.
+
+    This is one of the value-scanning checks gated behind ``check_values=True``;
+    it is O(number of values). An offending value yields one
+    ``range.value-type-mismatch`` issue (ERROR).
+
+    Parameters
+    ----------
+    arr
+        The inline range whose values are scanned.
+    path
+        The JSON Pointer to ``arr``, extended via `_ptr` for each issue.
+    issues
+        The accumulator that findings are appended to (mutated in place).
+
+    Examples
+    --------
+    A non-integer value in an ``"integer"`` range is reported, with its index in
+    the JSON Pointer:
+
+    >>> arr = NdArray(data_type="integer", values=(1, 1.5, None))
+    >>> issues = []
+    >>> _check_value_data_types(arr, "#/ranges/v", issues)
+    >>> [(i.code, i.path) for i in issues]
+    [('range.value-type-mismatch', '#/ranges/v/values/1')]
+
+    A ``"float"`` range accepts integer-written values (no issues):
+
+    >>> floats = NdArray(data_type="float", values=(5, 5.0))
+    >>> issues = []
+    >>> _check_value_data_types(floats, "#", issues)
+    >>> issues
+    []
+    """
+    data_type = arr.data_type
+
+    for i, value in enumerate(arr.values):
+        if value is None:
+            continue
+
+        if data_type == "float":
+            ok = isinstance(value, (int, float)) and not isinstance(value, bool)
+        elif data_type == "integer":
+            ok = isinstance(value, int) and not isinstance(value, bool)
+        else:  # "string"
+            ok = isinstance(value, str)
+
+        if not ok:
+            issues.append(
+                Issue(
+                    code="range.value-type-mismatch",
+                    message=f"value {value!r} is not a valid {data_type} value",
+                    path=_ptr(path, "values", i),
+                )
+            )
+
+
 def _validate_parameter_groups(
     coverage: Coverage,
     parameters: dict[str, Parameter],
@@ -695,8 +794,11 @@ def _validate_ranges(
     For each range: warn when it has no matching parameter
     (``coverage.range-without-parameter``); and, for an inline `NdArray`, check
     its shape is self-consistent (`_validate_ndarray`), it aligns with an inline
-    domain (`_check_range_against_domain`), and, when ``check_values``, its
-    categorical codes are defined (`_check_categorical_codes`).
+    domain (`_check_range_against_domain`), and, when ``check_values``, its values
+    match its ``dataType`` (`_check_value_data_types`) and its categorical codes
+    are defined (`_check_categorical_codes`). The ``dataType`` check needs no
+    parameter, so it runs for every range; the categorical check runs only when
+    ``parameters`` is set.
 
     Parameters
     ----------
@@ -712,7 +814,8 @@ def _validate_ranges(
     issues
         The accumulator that findings are appended to (mutated in place).
     check_values
-        Whether to run the value-scanning checks (categorical codes).
+        Whether to run the value-scanning checks (value ``dataType`` match and
+        categorical codes).
     """
     for key, range_ in coverage.ranges.items():
         range_path = _ptr(path, "ranges", key)
@@ -733,10 +836,13 @@ def _validate_ranges(
             if isinstance(domain, Domain):
                 _check_range_against_domain(range_, domain, range_path, issues)
 
-            if check_values and parameters is not None:
-                _check_categorical_codes(
-                    range_, parameters.get(key), range_path, issues
-                )
+            if check_values:
+                _check_value_data_types(range_, range_path, issues)
+
+                if parameters is not None:
+                    _check_categorical_codes(
+                        range_, parameters.get(key), range_path, issues
+                    )
 
 
 def _validate_coverage(

@@ -84,14 +84,16 @@ codes = ["domain.axis-not-single"]
 file = "polygon-domain-too-many-t.json"
 codes = ["domain.axis-not-single"]
 
+# Mixed-type values: a string/float in a "float"/"integer" range. The shape-rank
+# mismatch is independent; check_values adds the value-type-mismatch.
 [[validate_reject]]
 file = "mixed-type-ndarray-1.json"
-codes = ["ndarray.shape-rank"]
+codes = ["ndarray.shape-rank", "range.value-type-mismatch"]
 
 [[validate_reject]]
 file = "mixed-type-ndarray-2.json"
-codes = ["ndarray.shape-rank"]
+codes = ["ndarray.shape-rank", "range.value-type-mismatch"]
 
 [[validate_reject]]
 file = "mixed-type-ndarray-3.json"
-codes = ["ndarray.shape-rank"]
+codes = ["ndarray.shape-rank", "range.value-type-mismatch"]

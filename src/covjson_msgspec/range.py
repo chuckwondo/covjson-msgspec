@@ -79,6 +79,47 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
     ``shape``; ``None`` marks missing data. ``shape`` and ``axis_names`` may be
     omitted for a single (0-dimensional) value.
 
+    The bare ``NdArray`` may also be parameterized with its element type (e.g.
+    ``NdArray[float]``) when a caller knows the ``dataType`` ahead of time. Read
+    the Notes first: that parameter is for static typing, not a decode-time
+    guarantee that every element matches it.
+
+    Notes
+    -----
+    **Parameterizing the element type does not reliably validate it at decode
+    time.** ``NdArray[float]`` / ``NdArray[int]`` / ``NdArray[str]`` exist so a
+    type checker knows what ``values`` holds and can check your downstream code.
+    They are *not* a dependable runtime guard: decoding
+    ``{"dataType": "integer", "values": [1.5]}`` as ``NdArray[int]`` may
+    **accept** the ``1.5`` (storing it as a plain ``float``) instead of raising
+    `msgspec.ValidationError`.
+
+    Why: the element type is a generic ``TypeVar`` whose ``bound`` is `Scalar`
+    (``float | int | str``). msgspec resolves that ``TypeVar`` lazily and caches
+    the result per struct, and the cache is order-sensitive. Once the bare
+    ``NdArray`` decoder (where the ``TypeVar`` resolves to its `Scalar` bound)
+    has been built in a process, a later ``NdArray[int]`` decoder can reuse that
+    cached `Scalar` resolution rather than narrowing to ``int``, and an
+    out-of-type value then passes. Whether it happens depends on the order in which
+    the specializations are first built, which a caller cannot control. (This is
+    an upstream msgspec quirk, not a CoverageJSON rule.)
+
+    What this means for you:
+
+    * Use ``NdArray[T]`` for static typing. Do not rely on it to reject elements
+      that are not ``T`` at decode time.
+    * If you must enforce a concrete element type, do it after decoding rather
+      than assuming ``NdArray[int]`` raised on a bad value. The library's
+      `~covjson_msgspec.validation.validate` does this for you:
+      ``validate(obj, check_values=True)`` flags any value that does not match
+      its range's ``dataType`` (a ``range.value-type-mismatch`` issue). To check
+      manually instead, scan the values yourself (e.g.
+      ``all(v is None or isinstance(v, int) for v in arr.values)``).
+    * The strictness that *always* holds is the bound on the **bare**
+      ``NdArray``: a bare decode still rejects non-`Scalar` values (nested
+      arrays, booleans, etc.). The library only ever decodes the bare form (via
+      the `Range` union), so spec parsing is unaffected by this quirk.
+
     Examples
     --------
     >>> import msgspec
@@ -103,6 +144,49 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
     >>> floats = msgspec.json.decode(blob, type=NdArray[float])
     >>> floats.values
     (1.0, 2.0)
+
+    The element type is not a reliable runtime guard (see Notes). Decoding a
+    non-integer value as ``NdArray[int]`` may raise `msgspec.ValidationError`
+    *or* may accept it, depending on process state, so this call is shown but
+    not run (a doctest of it would be flaky):
+
+    >>> msgspec.json.decode(  # doctest: +SKIP
+    ...     b'{"type": "NdArray", "dataType": "integer", "values": [1.5]}',
+    ...     type=NdArray[int],
+    ... )  # may raise, or may return NdArray(values=(1.5,), ...) with 1.5 kept
+
+    So rather than trusting the parameterized decode to reject, decode the bare
+    ``NdArray`` and let `~covjson_msgspec.validation.validate` check the values
+    against the declared ``dataType`` (pass ``check_values=True``). A correctly
+    typed array reports nothing:
+
+    >>> from covjson_msgspec import NdArray, validate
+    >>> blob = b'''
+    ... {
+    ...   "type": "NdArray",
+    ...   "dataType": "integer",
+    ...   "axisNames": ["x"],
+    ...   "shape": [3],
+    ...   "values": [1, 2, 3]
+    ... }
+    ... '''
+    >>> validate(msgspec.json.decode(blob, type=NdArray), check_values=True)
+    []
+
+    while a non-integer value is flagged deterministically:
+
+    >>> blob = b'''
+    ... {
+    ...   "type": "NdArray",
+    ...   "dataType": "integer",
+    ...   "axisNames": ["x"],
+    ...   "shape": [2],
+    ...   "values": [1, 1.5]
+    ... }
+    ... '''
+    >>> bad = msgspec.json.decode(blob, type=NdArray)
+    >>> [issue.code for issue in validate(bad, check_values=True)]
+    ['range.value-type-mismatch']
     """
 
     data_type: Literal["float", "integer", "string"]
