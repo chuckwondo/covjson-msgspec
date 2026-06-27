@@ -1,6 +1,7 @@
 """Behavioral tests for resolve_references and the injected fetcher seam."""
 
-from collections.abc import Callable
+import asyncio
+from collections.abc import Awaitable, Callable
 
 import pytest
 
@@ -14,12 +15,22 @@ from covjson_msgspec import (
     TileSet,
     encode,
     resolve_references,
+    resolve_references_async,
 )
 
 
 def _store_fetcher(store: dict[str, bytes]) -> Callable[[str], bytes]:
     """A Fetch backed by an in-memory dict of canned documents."""
     return store.__getitem__
+
+
+def _async_store_fetcher(store: dict[str, bytes]) -> Callable[[str], Awaitable[bytes]]:
+    """An AsyncFetch backed by an in-memory dict of canned documents."""
+
+    async def fetch(url: str) -> bytes:
+        return store[url]
+
+    return fetch
 
 
 def _domain() -> Domain:
@@ -140,3 +151,68 @@ def test_collection_delegate_matches_the_function() -> None:
     )
 
     assert collection.resolve_references(fetch) == resolve_references(collection, fetch)
+
+
+def test_async_resolve_matches_sync_for_a_collection() -> None:
+    store = {"d": encode(_domain()), "t": encode(_ndarray())}
+    collection = CoverageCollection(
+        coverages=(
+            Coverage(domain="d", ranges={}),
+            Coverage(domain=_domain(), ranges={"t": "t"}),
+        )
+    )
+
+    resolved = asyncio.run(
+        resolve_references_async(collection, _async_store_fetcher(store))
+    )
+
+    assert resolved == resolve_references(collection, _store_fetcher(store))
+
+
+def test_async_resolves_url_range_to_tiled_ndarray() -> None:
+    fetch = _async_store_fetcher({"t": encode(_tiled())})
+    cov = Coverage(domain=_domain(), ranges={"t": "t"})
+
+    resolved = asyncio.run(resolve_references_async(cov, fetch))
+
+    # One level deep: the referenced TiledNdArray is inlined, not assembled.
+    assert isinstance(resolved.ranges["t"], TiledNdArray)
+
+
+def test_async_coverage_without_references_returns_same_instance() -> None:
+    cov = Coverage(domain=_domain(), ranges={"t": _ndarray()})
+
+    async def _explode(url: str) -> bytes:  # must never be awaited
+        msg = f"unexpected fetch of {url!r}"
+        raise AssertionError(msg)
+
+    assert asyncio.run(resolve_references_async(cov, _explode)) is cov
+
+
+def test_async_decode_failure_is_reported_against_the_url() -> None:
+    fetch = _async_store_fetcher({"d": b"not json"})
+    cov = Coverage(domain="d", ranges={})
+
+    with pytest.raises(ValueError, match=r"fetched from 'd'"):
+        asyncio.run(resolve_references_async(cov, fetch))
+
+
+def test_async_fetcher_errors_propagate_unchanged() -> None:
+    fetch = _async_store_fetcher({})  # empty store -> KeyError
+    cov = Coverage(domain="missing", ranges={})
+
+    with pytest.raises(KeyError):
+        asyncio.run(resolve_references_async(cov, fetch))
+
+
+def test_async_delegates_match_the_function() -> None:
+    store = {"t": encode(_ndarray())}
+    cov = Coverage(domain=_domain(), ranges={"t": "t"})
+    collection = CoverageCollection(coverages=(cov,))
+
+    assert asyncio.run(cov.resolve_references_async(_async_store_fetcher(store))) == (
+        resolve_references(cov, _store_fetcher(store))
+    )
+    assert asyncio.run(
+        collection.resolve_references_async(_async_store_fetcher(store))
+    ) == resolve_references(collection, _store_fetcher(store))

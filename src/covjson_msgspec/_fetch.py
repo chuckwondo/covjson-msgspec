@@ -23,16 +23,17 @@ Spec: [NdArray / range URL references][spec-ranges] and
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
 import msgspec
 
 # A user-supplied callable mapping a referenced document's URL to its raw bytes.
-# Synchronous by design (an async variant is a possible future addition); the
-# caller is free to satisfy the request from the network, a cache, or a local
-# store, so the core stays I/O-free and offline-testable.
+# The caller is free to satisfy the request from the network, a cache, or a local
+# store, so the core stays I/O-free and offline-testable. `AsyncFetch` is the
+# awaitable counterpart, for resolving or assembling many references concurrently.
 Fetch = Callable[[str], bytes]
+AsyncFetch = Callable[[str], Awaitable[bytes]]
 
 _T = TypeVar("_T")
 
@@ -85,6 +86,60 @@ def fetch_and_decode(fetch: Fetch, url: str, decoder: msgspec.json.Decoder[_T]) 
     ValueError: document fetched from 'u' is not valid CoverageJSON: ...
     """
     raw = fetch(url)
+
+    try:
+        return decoder.decode(raw)
+    except msgspec.DecodeError as exc:
+        msg = f"document fetched from {url!r} is not valid CoverageJSON: {exc}"
+        raise ValueError(msg) from exc
+
+
+async def fetch_and_decode_async(
+    fetch: AsyncFetch, url: str, decoder: msgspec.json.Decoder[_T]
+) -> _T:
+    """Await the document at ``url`` and decode it with ``decoder``.
+
+    The awaitable counterpart of `fetch_and_decode`, with an identical contract:
+    the single choke point through which the async variants of `resolve_references`
+    and tile assembly pull a referenced document. Exceptions raised by ``fetch``
+    itself (network, auth, missing key) propagate unchanged; only a decode failure
+    is rewrapped to name the offending URL. Many of these can be driven
+    concurrently with `asyncio.gather`.
+
+    Parameters
+    ----------
+    fetch
+        The caller's `AsyncFetch`, awaitably mapping ``url`` to the raw bytes.
+    url
+        The URL of the referenced document.
+    decoder
+        A reusable `msgspec.json.Decoder` for the expected document type.
+
+    Returns
+    -------
+    object
+        The decoded document, of the decoder's type.
+
+    Raises
+    ------
+    ValueError
+        If the fetched bytes do not decode to the expected type.
+
+    Examples
+    --------
+    >>> import asyncio
+    >>> import msgspec
+    >>> from covjson_msgspec.domain import Domain
+    >>> decoder = msgspec.json.Decoder(Domain)
+    >>> store = {
+    ...     "u": b'{"type":"Domain","domainType":"Point","axes":{"x":{"values":[1.0]}}}'
+    ... }
+    >>> async def fetch(url):
+    ...     return store[url]
+    >>> asyncio.run(fetch_and_decode_async(fetch, "u", decoder)).domain_type
+    'Point'
+    """
+    raw = await fetch(url)
 
     try:
         return decoder.decode(raw)

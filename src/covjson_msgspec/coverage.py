@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     import pandas as pd
     import xarray as xr
 
-    from covjson_msgspec._fetch import Fetch
+    from covjson_msgspec._fetch import AsyncFetch, Fetch
 
 # A range is inline values (`NdArray` / `TiledNdArray`) or a bare string URL
 # referencing the values in a separate document.
@@ -261,6 +261,29 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         from covjson_msgspec.references import resolve_references
 
         return resolve_references(self, fetch)
+
+    async def resolve_references_async(self, fetch: AsyncFetch) -> Coverage:
+        """Concurrently inline this coverage's URL-string references.
+
+        Thin delegate to `covjson_msgspec.references.resolve_references_async`; the
+        awaitable counterpart of `resolve_references`, fetching the references
+        concurrently.
+
+        Parameters
+        ----------
+        fetch
+            An awaitable callable mapping a referenced document's URL to its raw
+            bytes.
+
+        Returns
+        -------
+        Coverage
+            A new coverage with its URL references inlined (this instance
+            unchanged when it has none).
+        """
+        from covjson_msgspec.references import resolve_references_async
+
+        return await resolve_references_async(self, fetch)
 
     def isel(
         self,
@@ -543,6 +566,28 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
         from covjson_msgspec.references import resolve_references
 
         return resolve_references(self, fetch)
+
+    async def resolve_references_async(self, fetch: AsyncFetch) -> CoverageCollection:
+        """Concurrently inline every member coverage's URL-string references.
+
+        Thin delegate to `covjson_msgspec.references.resolve_references_async`; the
+        awaitable counterpart of `resolve_references`, fetching every member's
+        references concurrently.
+
+        Parameters
+        ----------
+        fetch
+            An awaitable callable mapping a referenced document's URL to its raw
+            bytes.
+
+        Returns
+        -------
+        CoverageCollection
+            A new collection whose members have their URL references inlined.
+        """
+        from covjson_msgspec.references import resolve_references_async
+
+        return await resolve_references_async(self, fetch)
 
     def _repr_html_(self) -> str:
         """Render an HTML summary of this collection for Jupyter.

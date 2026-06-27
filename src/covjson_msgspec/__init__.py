@@ -10,7 +10,7 @@ https://github.com/covjson/specification/blob/master/domain-types.md.
 
 from importlib.metadata import PackageNotFoundError, version
 
-from covjson_msgspec._fetch import Fetch
+from covjson_msgspec._fetch import AsyncFetch, Fetch
 from covjson_msgspec.axis import Axis
 from covjson_msgspec.coverage import (
     Coverage,
@@ -43,7 +43,7 @@ from covjson_msgspec.parameter import (
     Unit,
 )
 from covjson_msgspec.range import NdArray, TiledNdArray, TileSet
-from covjson_msgspec.references import resolve_references
+from covjson_msgspec.references import resolve_references, resolve_references_async
 from covjson_msgspec.referencing import (
     Concept,
     GeographicCRS,
@@ -79,6 +79,7 @@ except PackageNotFoundError:  # pragma: no cover - only during local dev
 __all__ = [
     "DOMAIN_TYPE_RULES",
     "MEDIA_TYPE",
+    "AsyncFetch",
     "Axis",
     "Category",
     "CategoryEncoding",
@@ -124,6 +125,7 @@ __all__ = [
     "isel",
     "media_type",
     "resolve_references",
+    "resolve_references_async",
     "sel",
     "to_datatree",
     "to_geojson",
