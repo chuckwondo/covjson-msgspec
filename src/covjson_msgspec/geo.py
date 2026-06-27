@@ -231,11 +231,17 @@ def to_geojson(
     Examples
     --------
     >>> from covjson_msgspec import decode_coverage
-    >>> cov = decode_coverage(
-    ...     '{"type": "Coverage", "domain": {"type": "Domain",'
-    ...     ' "domainType": "Point", "axes": {"x": {"values": [1.0]},'
-    ...     ' "y": {"values": [2.0]}}}, "ranges": {}}'
-    ... )
+    >>> cov = decode_coverage('''
+    ... {
+    ...   "type": "Coverage",
+    ...   "domain": {
+    ...     "type": "Domain",
+    ...     "domainType": "Point",
+    ...     "axes": {"x": {"values": [1.0]}, "y": {"values": [2.0]}}
+    ...   },
+    ...   "ranges": {}
+    ... }
+    ... ''')
     >>> gj = cov.to_geojson()
     >>> gj["type"]
     'FeatureCollection'

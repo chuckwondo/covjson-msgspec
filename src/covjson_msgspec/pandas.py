@@ -146,20 +146,46 @@ def to_pandas(obj: Coverage | CoverageCollection) -> pd.DataFrame:
     ...   "domainType": "PointSeries",
     ...   "coverages": [
     ...     {
-    ...       "type": "Coverage", "id": "a",
-    ...       "domain": {"type": "Domain", "axes": {
-    ...         "x": {"values": [1.0]}, "y": {"values": [2.0]},
-    ...         "t": {"values": ["2020-01-01", "2020-01-02"]}}},
-    ...       "ranges": {"v": {"type": "NdArray", "dataType": "float",
-    ...         "axisNames": ["t"], "shape": [2], "values": [280.0, 281.0]}}
+    ...       "type": "Coverage",
+    ...       "id": "a",
+    ...       "domain": {
+    ...         "type": "Domain",
+    ...         "axes": {
+    ...           "x": {"values": [1.0]},
+    ...           "y": {"values": [2.0]},
+    ...           "t": {"values": ["2020-01-01", "2020-01-02"]}
+    ...         }
+    ...       },
+    ...       "ranges": {
+    ...         "v": {
+    ...           "type": "NdArray",
+    ...           "dataType": "float",
+    ...           "axisNames": ["t"],
+    ...           "shape": [2],
+    ...           "values": [280.0, 281.0]
+    ...         }
+    ...       }
     ...     },
     ...     {
-    ...       "type": "Coverage", "id": "b",
-    ...       "domain": {"type": "Domain", "axes": {
-    ...         "x": {"values": [3.0]}, "y": {"values": [4.0]},
-    ...         "t": {"values": ["2020-01-01", "2020-01-02"]}}},
-    ...       "ranges": {"v": {"type": "NdArray", "dataType": "float",
-    ...         "axisNames": ["t"], "shape": [2], "values": [290.0, 291.0]}}
+    ...       "type": "Coverage",
+    ...       "id": "b",
+    ...       "domain": {
+    ...         "type": "Domain",
+    ...         "axes": {
+    ...           "x": {"values": [3.0]},
+    ...           "y": {"values": [4.0]},
+    ...           "t": {"values": ["2020-01-01", "2020-01-02"]}
+    ...         }
+    ...       },
+    ...       "ranges": {
+    ...         "v": {
+    ...           "type": "NdArray",
+    ...           "dataType": "float",
+    ...           "axisNames": ["t"],
+    ...           "shape": [2],
+    ...           "values": [290.0, 291.0]
+    ...         }
+    ...       }
     ...     }
     ...   ]
     ... }
