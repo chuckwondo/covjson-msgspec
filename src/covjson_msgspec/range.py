@@ -21,6 +21,7 @@ Spec: [NdArray objects][spec-ndarray] and [TiledNdArray objects][spec-tiled].
 
 from __future__ import annotations
 
+import asyncio
 import itertools
 import math
 import re
@@ -31,7 +32,12 @@ from typing import TYPE_CHECKING, Any, Final, Generic, Literal
 import msgspec
 
 from covjson_msgspec._base import CovJSONStruct
-from covjson_msgspec._fetch import Fetch, fetch_and_decode
+from covjson_msgspec._fetch import (
+    AsyncFetch,
+    Fetch,
+    fetch_and_decode,
+    fetch_and_decode_async,
+)
 from covjson_msgspec._ndindex import ravel_index, strides
 
 if sys.version_info >= (3, 13):
@@ -370,8 +376,10 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
             A callable mapping a tile's URL to its raw bytes. All I/O (and any
             caching, auth, or retries) lives in this callable.
         tileset
-            The index of the tile set to use. By default the tile set with the
-            fewest tiles is chosen, minimizing the number of fetches.
+            The index of the tile set to use. Every tile set reconstructs the
+            same array, so this only changes how many tiles are fetched, not the
+            result; by default the one with the fewest tiles (fewest fetches) is
+            chosen, and the first listed wins a tie.
 
         Returns
         -------
@@ -407,35 +415,148 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         >>> tiled.assemble(store.__getitem__).values
         (10.0, 20.0)
         """
-        if not self.tile_sets:
-            msg = "TiledNdArray has no tileSets to assemble from"
-            raise ValueError(msg)
-
-        if tileset is None:
-            tile_set = min(
-                self.tile_sets,
-                key=lambda candidate: _tile_count(self.shape, candidate.tile_shape),
-            )
-        else:
-            try:
-                tile_set = self.tile_sets[tileset]
-            except IndexError:
-                msg = (
-                    f"tileset index {tileset} is out of range; this TiledNdArray "
-                    f"has {len(self.tile_sets)} tileSet(s)"
-                )
-                raise ValueError(msg) from None
-
-        # Three phases, kept separate so an async variant can reuse phases 1 and 3
-        # and differ only in the fetch: (1) lay out each tile's URL and offset,
+        # Three phases, kept separate so the async variant reuses phases 1 and 3
+        # and differs only in the fetch: (1) lay out each tile's URL and offset,
         # (2) fetch and decode every tile, (3) place the tiles into the full array.
-        layout = _tile_layout(self.shape, self.axis_names, tile_set)
+        layout = _tile_layout(
+            self.shape, self.axis_names, self._select_tile_set(tileset)
+        )
         tiles = [
             (offsets, fetch_and_decode(fetch, url, _TILE_DECODER))
             for url, offsets in layout
         ]
 
         return _assemble_tiles(self.data_type, self.axis_names, self.shape, tiles)
+
+    async def assemble_async(
+        self, fetch: AsyncFetch, tileset: int | None = None
+    ) -> NdArray:
+        """Concurrently fetch this array's tiles and stitch them into an `NdArray`.
+
+        The awaitable counterpart of `assemble` with identical semantics; only the
+        fetching differs. A tile set is typically dozens or hundreds of independent
+        tiles, so fetching them concurrently via `asyncio.gather` is the main win.
+
+        Parameters
+        ----------
+        fetch
+            An `AsyncFetch` awaitably mapping a tile's URL to its raw bytes. All
+            I/O (and any caching, auth, or retries) lives in this callable. There
+            is no built-in concurrency cap; wrap ``fetch`` in an `asyncio.Semaphore`
+            to bound the fan-out (see `resolve_references_async`).
+        tileset
+            The index of the tile set to use. Every tile set reconstructs the
+            same array, so this only changes how many tiles are fetched, not the
+            result; by default the one with the fewest tiles (fewest fetches) is
+            chosen, and the first listed wins a tie.
+
+        Returns
+        -------
+        NdArray
+            An inline array of this array's full ``shape`` and ``axis_names`` with
+            each tile's values placed at its position. Positions not covered by
+            any tile are ``None``.
+
+        Raises
+        ------
+        ValueError
+            If there are no tile sets, if ``tileset`` is out of range, or if a
+            fetched tile document is not a valid `NdArray`.
+
+        Examples
+        --------
+        >>> import asyncio
+        >>> from covjson_msgspec import encode
+        >>> def tile(value):
+        ...     arr = NdArray(
+        ...         data_type="float", values=(value,), shape=(1,), axis_names=("x",)
+        ...     )
+        ...     return encode(arr)
+        >>> store = {"0.covjson": tile(10.0), "1.covjson": tile(20.0)}
+        >>> tiled = TiledNdArray(
+        ...     data_type="float",
+        ...     axis_names=("x",),
+        ...     shape=(2,),
+        ...     tile_sets=(TileSet(tile_shape=(1,), url_template="{x}.covjson"),),
+        ... )
+        >>> async def fetch(url):
+        ...     return store[url]
+        >>> asyncio.run(tiled.assemble_async(fetch)).values
+        (10.0, 20.0)
+        """
+        layout = _tile_layout(
+            self.shape, self.axis_names, self._select_tile_set(tileset)
+        )
+        # gather, not TaskGroup, so a fetcher's own exception propagates unchanged
+        # (matching the sync seam); a TaskGroup would wrap it in an ExceptionGroup.
+        decoded = await asyncio.gather(
+            *(fetch_and_decode_async(fetch, url, _TILE_DECODER) for url, _ in layout)
+        )
+        tiles = [
+            (offsets, array)
+            for (_, offsets), array in zip(layout, decoded, strict=True)
+        ]
+
+        return _assemble_tiles(self.data_type, self.axis_names, self.shape, tiles)
+
+    def _select_tile_set(self, tileset: int | None) -> TileSet:
+        """Choose the tile set to assemble: the explicit index, else the fewest tiles.
+
+        Shared by `assemble` and `assemble_async`. With ``tileset=None`` the tile
+        set partitioning the array into the fewest tiles is chosen (the fewest
+        fetches), the first one winning a tie; otherwise the tile set at that
+        index is returned.
+
+        Parameters
+        ----------
+        tileset
+            The index of the tile set to use, or ``None`` to pick the fewest-tile
+            one.
+
+        Returns
+        -------
+        TileSet
+            The selected tile set.
+
+        Raises
+        ------
+        ValueError
+            If there are no tile sets, or if ``tileset`` is out of range.
+
+        Examples
+        --------
+        >>> tiled = TiledNdArray(
+        ...     data_type="float",
+        ...     axis_names=("x",),
+        ...     shape=(2,),
+        ...     tile_sets=(
+        ...         TileSet(tile_shape=(1,), url_template="a/{x}"),
+        ...         TileSet(tile_shape=(2,), url_template="b/{x}"),
+        ...     ),
+        ... )
+        >>> tiled._select_tile_set(None).url_template  # fewest tiles
+        'b/{x}'
+        >>> tiled._select_tile_set(0).url_template
+        'a/{x}'
+        """
+        if not self.tile_sets:
+            msg = "TiledNdArray has no tileSets to assemble from"
+            raise ValueError(msg)
+
+        if tileset is None:
+            return min(
+                self.tile_sets,
+                key=lambda candidate: _tile_count(self.shape, candidate.tile_shape),
+            )
+
+        try:
+            return self.tile_sets[tileset]
+        except IndexError:
+            msg = (
+                f"tileset index {tileset} is out of range; this TiledNdArray "
+                f"has {len(self.tile_sets)} tileSet(s)"
+            )
+            raise ValueError(msg) from None
 
     def _repr_html_(self) -> str:
         """Render an HTML summary of this tiled array for Jupyter.

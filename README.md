@@ -6,10 +6,10 @@ Fast, fully-typed [CoverageJSON](https://covjson.org/) models built on
 An alternative to [covjson-pydantic](https://github.com/KNMI/covjson-pydantic)
 that aims for:
 
-- **Performance & a small footprint** — msgspec instead of pydantic.
-- **Full CoverageJSON spec coverage** — every domain type, composite/tuple and
+- **Performance & a small footprint**: msgspec instead of pydantic.
+- **Full CoverageJSON spec coverage**: every domain type, composite/tuple and
   polygon axes, tiled ranges, i18n, categorical parameters, and referencing.
-- **Better ergonomics & type-checker support** — generic `NdArray[T]`, narrow
+- **Better ergonomics & type-checker support**: generic `NdArray[T]`, narrow
   named builders instead of wide mutually-exclusive constructors, and a public
   API verified across multiple type checkers.
 
@@ -51,9 +51,32 @@ coverage = decode_response(request_body, content_type)
 ```
 
 A guiding principle is **dependency injection at the edges, data-in/data-out at
-the core**: the core never reaches the network or imports a heavy framework — it
+the core**: the core never reaches the network or imports a heavy framework, but
 accepts a seam (a callable, a protocol, a plain return value) and lets the
 caller wire in their choice.
+
+## Resolving references & assembling tiles
+
+A CoverageJSON document may defer parts of itself to other URLs: a coverage's
+`domain` or a range may be a URL string, and a `TiledNdArray` splits its values
+across tile documents. Inlining those means fetching URLs, which is I/O the core
+does not perform itself. Instead you inject a fetcher (a plain callable mapping a
+URL to bytes), so caching, auth, retries, and throttling stay yours:
+
+```python
+# Sync: you supply Fetch = Callable[[str], bytes]
+resolved = coverage.resolve_references(fetch)  # inline URL-string domain/ranges
+array = tiled.assemble(fetch)                  # stitch a TiledNdArray's tiles
+
+# Async: AsyncFetch = Callable[[str], Awaitable[bytes]], so independent fetches
+# run concurrently via asyncio.gather (ideal under Starlette/FastAPI/litestar)
+resolved = await coverage.resolve_references_async(afetch)
+array = await tiled.assemble_async(afetch)
+```
+
+The async fan-out is unbounded by design: since the fetcher owns all I/O policy,
+bound concurrency there (see `resolve_references_async` for an `asyncio.Semaphore`
+example).
 
 > **Status:** early development. APIs are not yet stable.
 
