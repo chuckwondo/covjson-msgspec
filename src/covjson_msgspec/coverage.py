@@ -629,6 +629,16 @@ def decode(data: bytes | str) -> CoverageJSON:
     Coverage or CoverageCollection or Domain or NdArray or TiledNdArray
         The decoded document, dispatched on its ``type`` member.
 
+    Notes
+    -----
+    Decoding enforces structure and field types, not cross-cutting spec
+    conformance (a domain's ``domainType`` axis rules, range/domain alignment,
+    value-vs-``dataType`` matches). A successfully decoded document is not
+    necessarily spec-conformant; call `~covjson_msgspec.validation.validate` on
+    the result when you need those guarantees. This permissiveness is deliberate:
+    it lets you load a slightly malformed document to inspect or repair it rather
+    than failing at the door.
+
     Examples
     --------
     >>> doc = decode('''

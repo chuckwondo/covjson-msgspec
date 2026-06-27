@@ -9,6 +9,7 @@ from covjson_msgspec import (
     CoverageCollection,
     CovJSONValidationError,
     Domain,
+    Issue,
     NdArray,
     ObservedProperty,
     Parameter,
@@ -180,6 +181,85 @@ def test_categorical_code_check_is_opt_in() -> None:
 
     assert len(bad) == 1
     assert bad[0].path == "/ranges/lc/values/1"
+
+
+def _value_type_paths(issues: list[Issue]) -> list[str]:
+    """Paths of the value-type-mismatch issues, in document order."""
+    return [i.path for i in issues if i.code == "range.value-type-mismatch"]
+
+
+def _coverage_with_range(arr: NdArray) -> Coverage:
+    return Coverage(
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={"v": arr},
+    )
+
+
+def test_value_data_type_check_is_opt_in() -> None:
+    cov = _coverage_with_range(NdArray(data_type="integer", values=(1, 1.5)))
+
+    # Off by default: the float in an integer range is not scanned.
+    assert _value_type_paths(validate(cov)) == []
+
+    # Opt in: the float is flagged, with its index in the path.
+    issues = validate(cov, check_values=True)
+    bad = [i for i in issues if i.code == "range.value-type-mismatch"]
+
+    assert len(bad) == 1
+    assert bad[0].path == "/ranges/v/values/1"
+    assert bad[0].severity is Severity.ERROR
+
+
+def test_integer_range_rejects_floats_including_whole_valued() -> None:
+    # Strict: a fractional float AND a whole-valued float (1.0) are both flagged.
+    cov = _coverage_with_range(NdArray(data_type="integer", values=(1, 1.0, 1.5)))
+    paths = _value_type_paths(validate(cov, check_values=True))
+
+    assert paths == ["/ranges/v/values/1", "/ranges/v/values/2"]
+
+
+def test_float_range_accepts_int_and_float() -> None:
+    # A JSON integer like 5 decodes to a Python int but is a valid float value.
+    cov = _coverage_with_range(NdArray(data_type="float", values=(5, 5.0)))
+
+    assert _value_type_paths(validate(cov, check_values=True)) == []
+
+
+def test_float_range_rejects_string() -> None:
+    cov = _coverage_with_range(NdArray(data_type="float", values=(1.0, "x")))
+    paths = _value_type_paths(validate(cov, check_values=True))
+
+    assert paths == ["/ranges/v/values/1"]
+
+
+def test_string_range_accepts_str_rejects_number() -> None:
+    cov = _coverage_with_range(NdArray(data_type="string", values=("a", 1)))
+    paths = _value_type_paths(validate(cov, check_values=True))
+
+    assert paths == ["/ranges/v/values/1"]
+
+
+def test_bool_rejected_in_integer_and_float_ranges() -> None:
+    # bool is an int subclass, so it must be excluded explicitly.
+    for data_type in ("integer", "float"):
+        cov = _coverage_with_range(NdArray(data_type=data_type, values=(True,)))
+        paths = _value_type_paths(validate(cov, check_values=True))
+
+        assert paths == ["/ranges/v/values/0"], data_type
+
+
+def test_none_is_always_allowed() -> None:
+    cov = _coverage_with_range(NdArray(data_type="integer", values=(1, None, 3)))
+
+    assert _value_type_paths(validate(cov, check_values=True)) == []
+
+
+def test_standalone_ndarray_value_types_checked() -> None:
+    arr = NdArray(data_type="integer", values=(1, 1.5))
+
+    # Off by default, on with check_values; path is relative to the array root.
+    assert _value_type_paths(validate(arr)) == []
+    assert _value_type_paths(validate(arr, check_values=True)) == ["/values/1"]
 
 
 def test_collection_validates_resolved_members() -> None:
