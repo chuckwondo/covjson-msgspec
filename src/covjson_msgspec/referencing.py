@@ -71,7 +71,11 @@ class VerticalCRS(CovJSONStruct, frozen=True, tag="VerticalCRS"):
 class TemporalRS(CovJSONStruct, frozen=True, tag="TemporalRS"):
     """A temporal reference system.
 
-    ``calendar`` is required by the standard (``"Gregorian"`` or a URI).
+    ``calendar`` is required by the standard (``"Gregorian"`` or a URI). The
+    model carries it verbatim: the calendar string is neither validated nor
+    interpreted, and the time values it governs stay opaque ISO 8601 strings on
+    their axis (see `covjson_msgspec.axis.AxisValue`). A non-Gregorian calendar
+    therefore round-trips untouched; only the opt-in export bridges interpret it.
 
     Examples
     --------
