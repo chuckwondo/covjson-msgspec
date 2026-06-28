@@ -16,7 +16,7 @@ around.
 Mapping
 -------
 - Each parameter range becomes a column.
-- Each multi-valued independent axis becomes an index level (the index is a
+- Each multi-valued individual axis becomes an index level (the index is a
   ``MultiIndex`` when more than one axis varies); a single-valued axis becomes a
   constant column (its size-1 dimension is dropped, a documented round-trip loss).
 - A composite ``tuple`` axis (e.g. a trajectory) becomes one index level holding

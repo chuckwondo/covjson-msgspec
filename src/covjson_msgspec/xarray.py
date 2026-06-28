@@ -8,7 +8,7 @@ read by the wider CF-aware ecosystem. A `CoverageCollection` maps to an
 Mapping
 -------
 - Each parameter range becomes a data variable, with its ``axisNames`` as dims.
-- An independent (multi-valued) primitive axis becomes a dimension coordinate;
+- An individual (multi-valued) primitive axis becomes a dimension coordinate;
   a single-valued axis becomes a scalar coordinate (the size-1 dimension is
   dropped, a documented round-trip loss).
 - A composite ``tuple`` axis (e.g. a trajectory) becomes one dimension with one
@@ -119,7 +119,7 @@ def to_xarray(coverage: Coverage) -> xr.Dataset:
     Examples
     --------
     Decode a CoverageJSON document and convert it via its `to_xarray` method (the
-    module-level `to_xarray` function is equivalent). Each independent axis becomes
+    module-level `to_xarray` function is equivalent). Each individual axis becomes
     a dimension coordinate, the range becomes a data variable over those
     dimensions, and the domain type is recorded in the attributes:
 
