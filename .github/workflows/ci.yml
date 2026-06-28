@@ -160,3 +160,21 @@ jobs:
         run: uv run --quiet pytest --cov --cov-report=term-missing
       - name: Write coverage summary to the job summary
         run: uv run --quiet coverage report --format=markdown --show-missing >> "$GITHUB_STEP_SUMMARY"
+
+  # Single stable status check for branch protection to require. `typecheck`
+  # and `test` are matrix jobs, so each Python version reports its own
+  # separately-named check (e.g. "typecheck (3.11)"); since the matrix is
+  # derived from pyproject.toml classifiers, those names drift whenever the
+  # supported Python range changes, which would otherwise require updating
+  # branch protection by hand. This job depends on every other job and is the
+  # only one branch protection needs to know about.
+  required-checks:
+    name: Required checks
+    if: always()
+    needs: [config, checks, typecheck, test, coverage]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail if any required job did not succeed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
+        run: exit 1
