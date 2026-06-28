@@ -58,6 +58,16 @@ Bridges (each behind an extra): `numpy` (NdArray <-> numpy, methods on NdArray),
   never reaches the network or imports a web framework; it accepts a seam (a
   callable, a return value) and lets the caller wire in their choice. Optional
   dependencies are imported locally inside helpers, not as module-level imports.
+- **A functional core with an imperative shell.** The core is pure functions
+  over immutable data: helpers return values (a stream of `Issue`, a `Failure`)
+  rather than mutating a shared accumulator or performing effects, and favor
+  implicit iteration (comprehensions, `itertools.chain`, `functools.partial`)
+  over explicit loops. Effects -- I/O, raising, sleeping, materializing a
+  stream -- live in a thin shell at the edges: the codec entry points,
+  `validate`'s `mode=`, the injected fetcher. Errors are values first: a rich
+  domain report (`Issue`, and the planned `Failure`) with an opt-in raise
+  bridge, not exceptions threaded through the core. This is the same instinct as
+  dependency injection at the edges, applied to control flow.
 - **Opt-in tiered `validate()`, not `__post_init__`, for cross-cutting checks.**
   `__post_init__` is only for local structural invariants (cheap, O(1), about
   one object). Anything cross-cutting or data-scanning lives in `validate()` so
@@ -80,6 +90,17 @@ Code:
 - Absolute imports only (relative imports are banned by ruff).
 - Place `_private` module functions after the public API. Private helpers still
   get full numpy-style docstrings with cheap, runnable examples.
+- Prefer implicit iteration (comprehensions, generator expressions,
+  `itertools.chain`) over explicit `for`/`while` where it stays readable; reach
+  for an explicit loop only when the body has genuine imperative structure.
+- Build behavior from small, single-purpose, composable functions. Let the
+  full-docstring-with-example convention be the granularity test: if a candidate
+  helper can't earn a real runnable example, it's too small to extract.
+- Compose with the standard library (`itertools`, `functools`); prefer small
+  named domain functions over point-free combinators that fight the type
+  checkers.
+- A checker/transform helper returns an iterable rather than taking and mutating
+  a shared accumulator.
 - Trust type contracts: no runtime `isinstance` check against a type the
   parameter's annotation already excludes.
 - Assign an exception message to a `msg` variable before `raise X(msg)` (ruff
