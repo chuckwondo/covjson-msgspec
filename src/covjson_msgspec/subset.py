@@ -13,7 +13,7 @@ coverage (the model is immutable). The semantics follow xarray's
 coordinate labels (and label `slice` objects) and maps them to positions before
 delegating to `isel`.
 
-Only independent axes (a Grid's ``x`` / ``y`` / ``z`` / ``t``, and the like) are
+Only individual axes (a Grid's ``x`` / ``y`` / ``z`` / ``t``, and the like) are
 supported. Subsetting a composite (``"tuple"`` / ``"polygon"``) axis, and
 subsetting along an axis stored as a `~covjson_msgspec.range.TiledNdArray` or a
 URL reference, are not supported yet and raise.
@@ -333,9 +333,9 @@ def _inline_domain(coverage: Coverage) -> Domain:
 def _reject_unsupported_axes(domain: Domain, selection: Mapping[str, object]) -> None:
     """Reject indexers naming an unknown axis or a composite axis.
 
-    Subsetting only supports independent axes; an indexer must name a real domain
+    Subsetting only supports individual axes; an indexer must name a real domain
     axis, and that axis must not be a composite (``"tuple"`` / ``"polygon"``)
-    axis, whose coordinates are bundled positions rather than an independent
+    axis, whose coordinates are bundled positions rather than an individual
     dimension.
 
     Parameters
