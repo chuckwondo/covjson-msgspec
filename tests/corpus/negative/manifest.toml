@@ -62,3 +62,9 @@ issues = [{ code = "tiled-ndarray.shape-rank", severity = "error" }]
 [[case]]
 file = "tiled-ndarray-tile-shape-not-positive.json"
 issues = [{ code = "tiled-ndarray.tile-shape-not-positive", severity = "error" }]
+
+[[case]]
+file = "tiled-ndarray-url-template-unknown-variable.json"
+issues = [
+  { code = "tiled-ndarray.url-template-unknown-variable", severity = "error" },
+]

@@ -659,7 +659,12 @@ def _validate_tiled_ndarray(arr: TiledNdArray, path: str, issues: list[Issue]) -
     * the ``urlTemplate`` must contain a variable for each axis whose
       ``tileShape`` element is non-null -- the subdivided axes whose per-tile
       ordinals the template interpolates (else
-      ``tiled-ndarray.url-template-missing-variable``).
+      ``tiled-ndarray.url-template-missing-variable``); and
+    * conversely, the ``urlTemplate`` must not reference a variable that names no
+      subdivided axis (else ``tiled-ndarray.url-template-unknown-variable``):
+      such a variable cannot be expanded, so `assemble` would raise on it. This
+      reverse check is skipped once ``tiled-ndarray.shape-rank`` has fired, since
+      the axis/tile alignment is then unreliable.
 
     Parameters
     ----------
@@ -699,10 +704,25 @@ def _validate_tiled_ndarray(arr: TiledNdArray, path: str, issues: list[Issue]) -
     >>> _validate_tiled_ndarray(arr, "#", issues)
     >>> [(i.code, i.path) for i in issues]
     [('tiled-ndarray.url-template-missing-variable', '#/tileSets/0/urlTemplate')]
+
+    A template variable that names no subdivided axis is flagged too:
+
+    >>> arr = TiledNdArray(
+    ...     data_type="float",
+    ...     axis_names=("t", "x"),
+    ...     shape=(4, 2),
+    ...     tile_sets=(TileSet(tile_shape=(1, None), url_template="{t}-{z}.cov"),),
+    ... )
+    >>> issues = []
+    >>> _validate_tiled_ndarray(arr, "#", issues)
+    >>> [(i.code, i.path) for i in issues]
+    [('tiled-ndarray.url-template-unknown-variable', '#/tileSets/0/urlTemplate')]
     """
     # As for NdArray, axisNames and shape must rank-match. __post_init__ pins each
     # tileShape to shape's rank but not axisNames, so a mismatch surfaces here.
-    if len(arr.axis_names) != len(arr.shape):
+    rank_ok = len(arr.axis_names) == len(arr.shape)
+
+    if not rank_ok:
         issues.append(
             Issue(
                 code="tiled-ndarray.shape-rank",
@@ -737,11 +757,13 @@ def _validate_tiled_ndarray(arr: TiledNdArray, path: str, issues: list[Issue]) -
             if tile_dim is not None and tile_dim < 1
         )
 
-        present = set(_TEMPLATE_VARIABLE.findall(tile_set.url_template))
+        present_names = _TEMPLATE_VARIABLE.findall(tile_set.url_template)
+        present = set(present_names)
 
-        # Pair axis names with their tile sizes. When axisNames does not rank-match
-        # shape (flagged above), this zip is intentionally non-strict so it cannot
-        # raise -- validate() reports issues rather than raising.
+        # A subdivided axis (non-null tileShape) MUST have a template variable.
+        # When axisNames does not rank-match shape (flagged above), this zip is
+        # intentionally non-strict so it cannot raise -- validate() reports issues
+        # rather than raising.
         issues.extend(
             Issue(
                 code="tiled-ndarray.url-template-missing-variable",
@@ -754,6 +776,31 @@ def _validate_tiled_ndarray(arr: TiledNdArray, path: str, issues: list[Issue]) -
             for name, tile_dim in zip(arr.axis_names, tile_set.tile_shape, strict=False)
             if tile_dim is not None and name not in present
         )
+
+        # The reverse: a template variable that names no subdivided axis cannot be
+        # expanded, so `assemble` would raise on it. Skipped on a rank mismatch,
+        # where the axis/tile alignment -- and so the set of subdivided axes -- is
+        # unreliable and the membership test would yield false positives.
+        if rank_ok:
+            subdivided = {
+                name
+                for name, tile_dim in zip(
+                    arr.axis_names, tile_set.tile_shape, strict=True
+                )
+                if tile_dim is not None
+            }
+            issues.extend(
+                Issue(
+                    code="tiled-ndarray.url-template-unknown-variable",
+                    message=(
+                        f"urlTemplate references {name!r}, "
+                        "which is not a subdivided axis"
+                    ),
+                    path=_ptr(path, "tileSets", ts, "urlTemplate"),
+                )
+                for name in dict.fromkeys(present_names)
+                if name not in subdivided
+            )
 
 
 def _check_range_against_domain(
