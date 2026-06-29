@@ -35,7 +35,8 @@ from __future__ import annotations
 import enum
 import math
 import re
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
+from itertools import chain
 from typing import Literal, assert_never
 
 import msgspec
@@ -48,7 +49,7 @@ from covjson_msgspec.coverage import (
 )
 from covjson_msgspec.domain import Domain
 from covjson_msgspec.parameter import Parameter
-from covjson_msgspec.range import NdArray, TiledNdArray
+from covjson_msgspec.range import NdArray, TiledNdArray, TileSet
 
 
 class Severity(enum.StrEnum):
@@ -327,25 +328,7 @@ def validate(
     >>> validate(Coverage(domain=point, ranges={}))[0].code
     'coverage.missing-parameters'
     """
-    issues: list[Issue] = []
-
-    match obj:
-        case Domain():
-            _validate_domain(obj, obj.domain_type, "", issues)
-        case Coverage():
-            _validate_coverage(obj, "", issues, check_values)
-        case CoverageCollection():
-            _validate_collection(obj, "", issues, check_values)
-        case NdArray():
-            _validate_ndarray(obj, "", issues)
-            if check_values:
-                _check_value_data_types(obj, "", issues)
-        case TiledNdArray():
-            _validate_tiled_ndarray(obj, "", issues)
-        case _:
-            # Exhaustiveness: a new CoverageJSON member would fail type checking
-            # here until it is handled above.
-            assert_never(obj)
+    issues = list(_issues(obj, check_values))
 
     if mode == "raise" and (
         errors := tuple(i for i in issues if i.severity is Severity.ERROR)
@@ -353,6 +336,54 @@ def validate(
         raise CovJSONValidationError(errors)
 
     return issues
+
+
+def _issues(obj: CoverageJSON, check_values: bool) -> Iterator[Issue]:
+    """Yield every issue for a document, dispatching on its concrete type.
+
+    The pure core of `validate`: it threads no accumulator and performs no
+    effects, so each branch is just the composition of the relevant checkers.
+    `validate` is the shell that materializes this into a list and applies
+    ``mode``. The ``check_values`` flag is forwarded to the value-scanning
+    checkers (which are otherwise skipped).
+
+    Parameters
+    ----------
+    obj
+        Any decoded CoverageJSON document.
+    check_values
+        Whether to run the O(number of values) value-scanning checks.
+
+    Yields
+    ------
+    Issue
+        Every issue found, in document order.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain
+    >>> dom = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
+    >>> [issue.code for issue in _issues(dom, False)]
+    ['domain.missing-axis', 'domain.missing-referencing']
+    """
+    match obj:
+        case Domain():
+            yield from _validate_domain(obj, obj.domain_type, "")
+        case Coverage():
+            yield from _validate_coverage(obj, "", check_values)
+        case CoverageCollection():
+            yield from _validate_collection(obj, "", check_values)
+        case NdArray():
+            yield from _validate_ndarray(obj, "")
+
+            if check_values:
+                yield from _check_value_data_types(obj, "")
+        case TiledNdArray():
+            yield from _validate_tiled_ndarray(obj, "")
+        case _:
+            # Exhaustiveness: a new CoverageJSON member would fail type checking
+            # here until it is handled above.
+            assert_never(obj)
 
 
 def _ptr(prefix: str, *parts: str | int) -> str:
@@ -431,17 +462,226 @@ def _axis_length(axis: Axis) -> int:
     return axis.num
 
 
+def _missing_axis_issues(
+    domain: Domain, domain_type: str, rule: DomainTypeRule, path: str
+) -> Iterator[Issue]:
+    """Yield a ``domain.missing-axis`` issue for each absent required axis.
+
+    Parameters
+    ----------
+    domain
+        The domain whose axes are checked.
+    domain_type
+        The (known) domain type, interpolated into each message.
+    rule
+        The axis constraints for ``domain_type`` from `DOMAIN_TYPE_RULES`.
+    path
+        The JSON Pointer to ``domain``, extended via `_ptr` for each issue.
+
+    Yields
+    ------
+    Issue
+        One issue per missing required axis, in ``required_axes`` order.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain
+    >>> rule = DOMAIN_TYPE_RULES["Grid"]
+    >>> dom = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
+    >>> [issue.path for issue in _missing_axis_issues(dom, "Grid", rule, "")]
+    ['/axes/y']
+    """
+    return (
+        Issue(
+            code="domain.missing-axis",
+            message=f"{domain_type} domain requires a {name!r} axis",
+            path=_ptr(path, "axes", name),
+        )
+        for name in rule.required_axes
+        if name not in domain.axes
+    )
+
+
+def _non_single_axis_issues(
+    domain: Domain, domain_type: str, rule: DomainTypeRule, path: str
+) -> Iterator[Issue]:
+    """Yield a ``domain.axis-not-single`` issue for each over-valued single axis.
+
+    A ``single_valued_axes`` entry that is present yet carries more than one
+    coordinate (per `_axis_length`) violates the domain type.
+
+    Parameters
+    ----------
+    domain
+        The domain whose axes are checked.
+    domain_type
+        The (known) domain type, interpolated into each message.
+    rule
+        The axis constraints for ``domain_type`` from `DOMAIN_TYPE_RULES`.
+    path
+        The JSON Pointer to ``domain``, extended via `_ptr` for each issue.
+
+    Yields
+    ------
+    Issue
+        One issue per over-valued single-valued axis, in ``single_valued_axes``
+        order.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain
+    >>> rule = DOMAIN_TYPE_RULES["Point"]
+    >>> dom = Domain(
+    ...     axes={"x": Axis.listed((1.0, 2.0)), "y": Axis.listed((3.0,))},
+    ...     domain_type="Point",
+    ... )
+    >>> [issue.path for issue in _non_single_axis_issues(dom, "Point", rule, "")]
+    ['/axes/x']
+    """
+    return (
+        Issue(
+            code="domain.axis-not-single",
+            message=f"{domain_type} domain requires a single {name!r} value",
+            path=_ptr(path, "axes", name),
+        )
+        for name in rule.single_valued_axes
+        if (axis := domain.axes.get(name)) is not None and _axis_length(axis) != 1
+    )
+
+
+def _composite_data_type_issue(
+    domain: Domain, domain_type: str, rule: DomainTypeRule, path: str
+) -> Issue | None:
+    """Return the ``domain.composite-data-type`` issue, or ``None`` if conformant.
+
+    At most one finding: when the rule pins the ``composite`` axis's ``dataType``
+    and the domain's ``composite`` axis declares a different one. A domain type
+    without a ``composite_data_type`` rule, or one whose ``composite`` axis is
+    absent or already correct, returns ``None``.
+
+    Parameters
+    ----------
+    domain
+        The domain whose ``composite`` axis is checked.
+    domain_type
+        The (known) domain type, interpolated into the message.
+    rule
+        The axis constraints for ``domain_type`` from `DOMAIN_TYPE_RULES`.
+    path
+        The JSON Pointer to ``domain``, extended via `_ptr` for the issue.
+
+    Returns
+    -------
+    Issue or None
+        The single composite-axis issue, or ``None`` when conformant.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain
+    >>> rule = DOMAIN_TYPE_RULES["Trajectory"]  # wants a "tuple" composite axis
+    >>> composite = Axis(
+    ...     values=((0.0, 1.0),), data_type="polygon", coordinates=("x", "y")
+    ... )
+    >>> dom = Domain(axes={"composite": composite}, domain_type="Trajectory")
+    >>> _composite_data_type_issue(dom, "Trajectory", rule, "").code
+    'domain.composite-data-type'
+    """
+    composite = domain.axes.get("composite")
+
+    if (
+        rule.composite_data_type is not None
+        and composite is not None
+        and composite.data_type != rule.composite_data_type
+    ):
+        return Issue(
+            code="domain.composite-data-type",
+            message=(
+                f"{domain_type} domain requires a "
+                f"{rule.composite_data_type!r} composite axis"
+            ),
+            path=_ptr(path, "axes", "composite"),
+        )
+
+    return None
+
+
+def _unexpected_axis_issues(
+    domain: Domain, domain_type: str, rule: DomainTypeRule, path: str
+) -> Iterator[Issue]:
+    """Yield a ``domain.extra-axis-not-single`` issue per surplus multi axis.
+
+    An axis outside the required-or-optional set is permitted only if it is
+    single-valued; a surplus multi-valued axis is a MUST violation.
+
+    Parameters
+    ----------
+    domain
+        The domain whose axes are checked.
+    domain_type
+        The (known) domain type, interpolated into each message.
+    rule
+        The axis constraints for ``domain_type`` from `DOMAIN_TYPE_RULES`.
+    path
+        The JSON Pointer to ``domain``, extended via `_ptr` for each issue.
+
+    Yields
+    ------
+    Issue
+        One issue per surplus multi-valued axis, in ``axes`` order.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain
+    >>> rule = DOMAIN_TYPE_RULES["Grid"]
+    >>> dom = Domain(
+    ...     axes={
+    ...         "x": Axis.listed((1.0,)),
+    ...         "y": Axis.listed((2.0,)),
+    ...         "bogus": Axis.listed((3.0, 4.0)),
+    ...     },
+    ...     domain_type="Grid",
+    ... )
+    >>> [issue.path for issue in _unexpected_axis_issues(dom, "Grid", rule, "")]
+    ['/axes/bogus']
+    """
+    allowed = set(rule.required_axes) | set(rule.optional_axes)
+
+    # The spec permits surplus axes, but only single-valued ones: "A domain that
+    # states conformance to one of the domain types in this specification MAY
+    # have any number of additional one-coordinate axes not defined here." The
+    # spec states this rule without a rationale; the reason is structural. An
+    # axis's length is a factor in the range-array shape (see
+    # `_check_range_against_domain`), so a length-1 axis adds no dimension: it is
+    # pure positioning (a scalar coordinate, e.g. the fixed time or elevation of
+    # a 2-D snapshot) and is transparent to the contract the domainType promises.
+    # A multi-valued surplus axis adds a real dimension, silently redefining that
+    # structure; the spec steers such data to a different domain type (or none).
+    # So a surplus single-valued axis is conformant (no issue); a surplus
+    # multi-valued one is a MUST violation (error).
+    return (
+        Issue(
+            code="domain.extra-axis-not-single",
+            message=(
+                f"{domain_type} domain may only add single-valued axes, "
+                f"but {name!r} has multiple values"
+            ),
+            path=_ptr(path, "axes", name),
+        )
+        for name in domain.axes
+        if name not in allowed and _axis_length(domain.axes[name]) != 1
+    )
+
+
 def _domain_issues(
     domain: Domain, domain_type: str, rule: DomainTypeRule, path: str
 ) -> Iterator[Issue]:
     """Yield every axis-rule violation for a domain of a known type.
 
-    The four checks `_validate_domain` applies once it has resolved a
-    `DomainTypeRule`, all error-severity: a missing required axis, a
-    single-valued axis that carries more than one value, a ``composite`` axis
-    with the wrong ``data_type``, and a surplus axis (one outside the
-    required-or-optional set) that carries more than one value. A surplus
-    single-valued axis is spec-conformant and yields nothing.
+    The composition of the four per-rule generators, all error-severity, in
+    document/check order: a missing required axis, a single-valued axis that
+    carries more than one value, a ``composite`` axis with the wrong
+    ``dataType``, and a surplus multi-valued axis. A surplus single-valued axis
+    is spec-conformant and yields nothing.
 
     Parameters
     ----------
@@ -458,79 +698,35 @@ def _domain_issues(
     ------
     Issue
         One issue per violation, in check order.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain
+    >>> rule = DOMAIN_TYPE_RULES["Grid"]
+    >>> dom = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
+    >>> [issue.code for issue in _domain_issues(dom, "Grid", rule, "")]
+    ['domain.missing-axis']
     """
-    axes = domain.axes
+    composite = _composite_data_type_issue(domain, domain_type, rule, path)
 
-    yield from (
-        Issue(
-            code="domain.missing-axis",
-            message=f"{domain_type} domain requires a {name!r} axis",
-            path=_ptr(path, "axes", name),
-        )
-        for name in rule.required_axes
-        if name not in axes
-    )
-
-    yield from (
-        Issue(
-            code="domain.axis-not-single",
-            message=f"{domain_type} domain requires a single {name!r} value",
-            path=_ptr(path, "axes", name),
-        )
-        for name in rule.single_valued_axes
-        if (axis := axes.get(name)) is not None and _axis_length(axis) != 1
-    )
-
-    if (
-        rule.composite_data_type is not None
-        and (composite := axes.get("composite")) is not None
-        and composite.data_type != rule.composite_data_type
-    ):
-        yield Issue(
-            code="domain.composite-data-type",
-            message=(
-                f"{domain_type} domain requires a "
-                f"{rule.composite_data_type!r} composite axis"
-            ),
-            path=_ptr(path, "axes", "composite"),
-        )
-
-    allowed = set(rule.required_axes) | set(rule.optional_axes)
-
-    # The spec permits surplus axes, but only single-valued ones: "A domain that
-    # states conformance to one of the domain types in this specification MAY
-    # have any number of additional one-coordinate axes not defined here." The
-    # spec states this rule without a rationale; the reason is structural. An
-    # axis's length is a factor in the range-array shape (see
-    # `_check_range_against_domain`), so a length-1 axis adds no dimension: it is
-    # pure positioning (a scalar coordinate, e.g. the fixed time or elevation of
-    # a 2-D snapshot) and is transparent to the contract the domainType promises.
-    # A multi-valued surplus axis adds a real dimension, silently redefining that
-    # structure; the spec steers such data to a different domain type (or none).
-    # So a surplus single-valued axis is conformant (no issue); a surplus
-    # multi-valued one is a MUST violation (error).
-    yield from (
-        Issue(
-            code="domain.extra-axis-not-single",
-            message=(
-                f"{domain_type} domain may only add single-valued axes, "
-                f"but {name!r} has multiple values"
-            ),
-            path=_ptr(path, "axes", name),
-        )
-        for name in axes
-        if name not in allowed and _axis_length(axes[name]) != 1
+    return chain(
+        _missing_axis_issues(domain, domain_type, rule, path),
+        _non_single_axis_issues(domain, domain_type, rule, path),
+        () if composite is None else (composite,),
+        _unexpected_axis_issues(domain, domain_type, rule, path),
     )
 
 
 def _validate_domain(
-    domain: Domain, domain_type: str | None, path: str, issues: list[Issue]
-) -> None:
-    """Check a domain's axes against its domain type's rules, appending any issues.
+    domain: Domain, domain_type: str | None, path: str
+) -> Iterator[Issue]:
+    """Yield a domain's axis-rule and referencing violations, in document order.
 
-    Resolves ``domain_type`` to a `DomainTypeRule` and, when one applies, appends
-    the violations `_domain_issues` finds. An absent ``domain_type`` or an
-    unrecognized (e.g. custom URI) one carries no rules, so nothing is checked.
+    Resolves ``domain_type`` to a `DomainTypeRule` and, when one applies, yields
+    the violations `_domain_issues` finds; then yields a missing-referencing issue
+    when the domain carries no ``referencing`` in scope. An absent or unrecognized
+    (e.g. custom URI) ``domain_type`` carries no axis rules, but the referencing
+    check still applies.
 
     Parameters
     ----------
@@ -538,22 +734,33 @@ def _validate_domain(
         The domain to validate.
     domain_type
         The effective domain type (from the domain itself, or a coverage's own
-        ``domainType``); ``None`` or unrecognized means no rules to apply.
+        ``domainType``); ``None`` or unrecognized means no axis rules to apply.
     path
         The JSON Pointer to ``domain``, extended via `_ptr` for each issue.
-    issues
-        The accumulator that findings are appended to (mutated in place).
+
+    Yields
+    ------
+    Issue
+        Axis-rule issues first (``axes`` precedes ``referencing`` on the wire),
+        then the referencing issue if any.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain
+    >>> dom = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
+    >>> [issue.code for issue in _validate_domain(dom, "Grid", "")]
+    ['domain.missing-axis', 'domain.missing-referencing']
     """
-    # Axis-rule issues are emitted before the referencing check so issues come
-    # out in document order (`axes` precedes `referencing` on the wire). The
-    # effective domain type may come from the Domain itself or, inside a coverage,
-    # from the coverage's own domainType (passed in by the caller); an absent or
-    # unrecognized one carries no rules.
+    # Axis-rule issues come before the referencing check so issues stay in
+    # document order (`axes` precedes `referencing` on the wire). The effective
+    # domain type may come from the Domain itself or, inside a coverage, from the
+    # coverage's own domainType (passed in by the caller); an absent or
+    # unrecognized one carries no axis rules.
     if (
         domain_type is not None
         and (rule := DOMAIN_TYPE_RULES.get(domain_type)) is not None
     ):
-        issues.extend(_domain_issues(domain, domain_type, rule, path))
+        yield from _domain_issues(domain, domain_type, rule, path)
 
     # Spec 6.1: a domain MUST carry `referencing` unless it is a member of a
     # collection that supplies it. `_validate_collection` resolves each member
@@ -562,17 +769,15 @@ def _validate_domain(
     # scope. A URL-reference domain never reaches this function (it is unfetched),
     # so the check applies only where a referencing array could actually exist.
     if not domain.referencing:
-        issues.append(
-            Issue(
-                code="domain.missing-referencing",
-                message="domain must have a 'referencing' member",
-                path=_ptr(path, "referencing"),
-            )
+        yield Issue(
+            code="domain.missing-referencing",
+            message="domain must have a 'referencing' member",
+            path=_ptr(path, "referencing"),
         )
 
 
-def _validate_ndarray(arr: NdArray, path: str, issues: list[Issue]) -> None:
-    """Check an `NdArray`'s internal shape consistency, appending any issues.
+def _validate_ndarray(arr: NdArray, path: str) -> Iterator[Issue]:
+    """Yield an `NdArray`'s internal shape-consistency issues.
 
     Two self-contained checks (no domain needed): ``shape`` and ``axisNames``
     must have the same rank, and the number of ``values`` must equal the product
@@ -585,8 +790,11 @@ def _validate_ndarray(arr: NdArray, path: str, issues: list[Issue]) -> None:
         The inline array to check.
     path
         The JSON Pointer to ``arr``, extended via `_ptr` for each issue.
-    issues
-        The accumulator that findings are appended to (mutated in place).
+
+    Yields
+    ------
+    Issue
+        A shape-rank issue and/or a value-count issue.
 
     Examples
     --------
@@ -596,44 +804,35 @@ def _validate_ndarray(arr: NdArray, path: str, issues: list[Issue]) -> None:
     >>> arr = NdArray(
     ...     data_type="float", values=(1.0, 2.0), shape=(3,), axis_names=("x",)
     ... )
-    >>> issues = []
-    >>> _validate_ndarray(arr, "#/ranges/v", issues)
-    >>> [issue.code for issue in issues]
+    >>> [issue.code for issue in _validate_ndarray(arr, "#/ranges/v")]
     ['ndarray.value-count']
 
     A consistent array yields nothing:
 
-    >>> issues = []
-    >>> _validate_ndarray(
-    ...     NdArray(data_type="float", values=(1.0,), shape=(1,), axis_names=("x",)),
-    ...     "#/ranges/v",
-    ...     issues,
+    >>> consistent = NdArray(
+    ...     data_type="float", values=(1.0,), shape=(1,), axis_names=("x",)
     ... )
-    >>> issues
+    >>> list(_validate_ndarray(consistent, "#/ranges/v"))
     []
     """
     if len(arr.axis_names) != len(arr.shape):
-        issues.append(
-            Issue(
-                code="ndarray.shape-rank",
-                message="shape and axisNames must have the same length",
-                path=_ptr(path, "shape"),
-            )
+        yield Issue(
+            code="ndarray.shape-rank",
+            message="shape and axisNames must have the same length",
+            path=_ptr(path, "shape"),
         )
 
     # math.prod(()) == 1, so a 0-dimensional array must hold a single value.
     expected = math.prod(arr.shape)
 
     if len(arr.values) != expected:
-        issues.append(
-            Issue(
-                code="ndarray.value-count",
-                message=(
-                    f"expected {expected} value(s) for shape {tuple(arr.shape)}, "
-                    f"got {len(arr.values)}"
-                ),
-                path=_ptr(path, "values"),
-            )
+        yield Issue(
+            code="ndarray.value-count",
+            message=(
+                f"expected {expected} value(s) for shape {tuple(arr.shape)}, "
+                f"got {len(arr.values)}"
+            ),
+            path=_ptr(path, "values"),
         )
 
 
@@ -643,8 +842,119 @@ def _validate_ndarray(arr: NdArray, path: str, issues: list[Issue]) -> None:
 _TEMPLATE_VARIABLE = re.compile(r"\{([^{}]+)\}")
 
 
-def _validate_tiled_ndarray(arr: TiledNdArray, path: str, issues: list[Issue]) -> None:
-    """Check a `TiledNdArray`'s tile sets against the spec, appending any issues.
+def _tile_set_issues(
+    arr: TiledNdArray, ts: int, tile_set: TileSet, path: str, *, rank_ok: bool
+) -> Iterator[Issue]:
+    """Yield one tile set's issues: out-of-range tile sizes and template variables.
+
+    The per-tile-set rules (see `_validate_tiled_ndarray` for the full set): each
+    non-null ``tileShape`` element must be a positive integer
+    (``tiled-ndarray.tile-shape-not-positive``) not exceeding its ``shape`` element
+    (``tiled-ndarray.tile-shape-too-large``); the ``urlTemplate`` must carry a
+    variable for each subdivided axis (``tiled-ndarray.url-template-missing-variable``)
+    and, when ``rank_ok``, must not name a non-subdivided axis
+    (``tiled-ndarray.url-template-unknown-variable``).
+
+    Parameters
+    ----------
+    arr
+        The tiled array the tile set belongs to (for its ``shape`` / ``axisNames``).
+    ts
+        The tile set's index, for the JSON Pointer.
+    tile_set
+        The tile set to check.
+    path
+        The JSON Pointer to ``arr``, extended via `_ptr` for each issue.
+    rank_ok
+        Whether ``axisNames`` rank-matches ``shape``; the unknown-variable check
+        is skipped when it does not (the axis/tile alignment is then unreliable,
+        so the membership test would yield false positives).
+
+    Yields
+    ------
+    Issue
+        This tile set's rule violations, in check order.
+
+    Examples
+    --------
+    >>> from covjson_msgspec.range import TileSet
+    >>> arr = TiledNdArray(
+    ...     data_type="float",
+    ...     axis_names=("t", "x"),
+    ...     shape=(4, 2),
+    ...     tile_sets=(TileSet(tile_shape=(5, None), url_template="{t}.cov"),),
+    ... )
+    >>> tile_set = arr.tile_sets[0]
+    >>> [i.code for i in _tile_set_issues(arr, 0, tile_set, "#", rank_ok=True)]
+    ['tiled-ndarray.tile-shape-too-large']
+    """
+    # __post_init__ guarantees tileShape rank-matches shape, so this zip is exact.
+    # A non-null tile size must be a positive integer (the tile layout divides each
+    # axis by it) not exceeding the corresponding axis.
+    yield from (
+        Issue(
+            code="tiled-ndarray.tile-shape-too-large",
+            message=f"tileShape element {tile_dim} exceeds shape element {dim}",
+            path=_ptr(path, "tileSets", ts, "tileShape", i),
+        )
+        for i, (tile_dim, dim) in enumerate(
+            zip(tile_set.tile_shape, arr.shape, strict=True)
+        )
+        if tile_dim is not None and tile_dim > dim
+    )
+
+    yield from (
+        Issue(
+            code="tiled-ndarray.tile-shape-not-positive",
+            message=f"tileShape element {tile_dim} must be a positive integer",
+            path=_ptr(path, "tileSets", ts, "tileShape", i),
+        )
+        for i, tile_dim in enumerate(tile_set.tile_shape)
+        if tile_dim is not None and tile_dim < 1
+    )
+
+    present_names = _TEMPLATE_VARIABLE.findall(tile_set.url_template)
+    present = set(present_names)
+
+    # A subdivided axis (non-null tileShape) MUST have a template variable. When
+    # axisNames does not rank-match shape, this zip is intentionally non-strict so
+    # it cannot raise -- validate() reports issues rather than raising.
+    yield from (
+        Issue(
+            code="tiled-ndarray.url-template-missing-variable",
+            message=(
+                f"urlTemplate must contain a variable for the subdivided {name!r} axis"
+            ),
+            path=_ptr(path, "tileSets", ts, "urlTemplate"),
+        )
+        for name, tile_dim in zip(arr.axis_names, tile_set.tile_shape, strict=False)
+        if tile_dim is not None and name not in present
+    )
+
+    # The reverse: a template variable that names no subdivided axis cannot be
+    # expanded, so `assemble` would raise on it. Skipped on a rank mismatch, where
+    # the set of subdivided axes is unreliable (see ``rank_ok``).
+    if rank_ok:
+        subdivided = {
+            name
+            for name, tile_dim in zip(arr.axis_names, tile_set.tile_shape, strict=True)
+            if tile_dim is not None
+        }
+        yield from (
+            Issue(
+                code="tiled-ndarray.url-template-unknown-variable",
+                message=(
+                    f"urlTemplate references {name!r}, which is not a subdivided axis"
+                ),
+                path=_ptr(path, "tileSets", ts, "urlTemplate"),
+            )
+            for name in dict.fromkeys(present_names)
+            if name not in subdivided
+        )
+
+
+def _validate_tiled_ndarray(arr: TiledNdArray, path: str) -> Iterator[Issue]:
+    """Yield a `TiledNdArray`'s tile-set issues against the spec.
 
     Several rules from the TiledNdArray spec, all error-severity (``tileShape``
     rank-matching ``shape`` is a separate hard structural error raised in
@@ -672,8 +982,11 @@ def _validate_tiled_ndarray(arr: TiledNdArray, path: str, issues: list[Issue]) -
         The tiled array to check.
     path
         The JSON Pointer to ``arr``, extended via `_ptr` for each issue.
-    issues
-        The accumulator that findings are appended to (mutated in place).
+
+    Yields
+    ------
+    Issue
+        Each tile-set rule violation, in document order across tile sets.
 
     Examples
     --------
@@ -687,9 +1000,7 @@ def _validate_tiled_ndarray(arr: TiledNdArray, path: str, issues: list[Issue]) -
     ...     shape=(4, 2),
     ...     tile_sets=(TileSet(tile_shape=(5, None), url_template="{t}.covjson"),),
     ... )
-    >>> issues = []
-    >>> _validate_tiled_ndarray(arr, "#", issues)
-    >>> [(i.code, i.path) for i in issues]
+    >>> [(i.code, i.path) for i in _validate_tiled_ndarray(arr, "#")]
     [('tiled-ndarray.tile-shape-too-large', '#/tileSets/0/tileShape/0')]
 
     A subdivided axis whose ordinal the template omits is flagged:
@@ -700,9 +1011,7 @@ def _validate_tiled_ndarray(arr: TiledNdArray, path: str, issues: list[Issue]) -
     ...     shape=(4, 2),
     ...     tile_sets=(TileSet(tile_shape=(1, None), url_template="tile.covjson"),),
     ... )
-    >>> issues = []
-    >>> _validate_tiled_ndarray(arr, "#", issues)
-    >>> [(i.code, i.path) for i in issues]
+    >>> [(i.code, i.path) for i in _validate_tiled_ndarray(arr, "#")]
     [('tiled-ndarray.url-template-missing-variable', '#/tileSets/0/urlTemplate')]
 
     A template variable that names no subdivided axis is flagged too:
@@ -713,106 +1022,102 @@ def _validate_tiled_ndarray(arr: TiledNdArray, path: str, issues: list[Issue]) -
     ...     shape=(4, 2),
     ...     tile_sets=(TileSet(tile_shape=(1, None), url_template="{t}-{z}.cov"),),
     ... )
-    >>> issues = []
-    >>> _validate_tiled_ndarray(arr, "#", issues)
-    >>> [(i.code, i.path) for i in issues]
+    >>> [(i.code, i.path) for i in _validate_tiled_ndarray(arr, "#")]
     [('tiled-ndarray.url-template-unknown-variable', '#/tileSets/0/urlTemplate')]
     """
-    # As for NdArray, axisNames and shape must rank-match. __post_init__ pins each
-    # tileShape to shape's rank but not axisNames, so a mismatch surfaces here.
     rank_ok = len(arr.axis_names) == len(arr.shape)
 
-    if not rank_ok:
-        issues.append(
+    # axisNames and shape must rank-match (as for NdArray). __post_init__ pins each
+    # tileShape to shape's rank but not axisNames, so a mismatch surfaces here. The
+    # per-tile-set rules are delegated to `_tile_set_issues`.
+    shape_rank: tuple[Issue, ...] = (
+        ()
+        if rank_ok
+        else (
             Issue(
                 code="tiled-ndarray.shape-rank",
                 message="shape and axisNames must have the same length",
                 path=_ptr(path, "shape"),
-            )
+            ),
+        )
+    )
+
+    return chain(
+        shape_rank,
+        chain.from_iterable(
+            _tile_set_issues(arr, ts, tile_set, path, rank_ok=rank_ok)
+            for ts, tile_set in enumerate(arr.tile_sets)
+        ),
+    )
+
+
+def _range_axis_issue(
+    arr: NdArray, domain: Domain, index: int, name: str, path: str
+) -> Issue | None:
+    """Return the at-most-one issue for one of a range's axes, else ``None``.
+
+    The range axis ``name`` (at position ``index``) must be a real domain axis
+    (else ``coverage.range-axis-not-in-domain``); when it is, the range's size
+    along it must equal the domain axis's length from `_axis_length` (else
+    ``coverage.range-shape-mismatch``).
+
+    Parameters
+    ----------
+    arr
+        The inline range to check.
+    domain
+        The coverage's (inline) domain.
+    index
+        The axis's position in the range's ``axisNames`` / ``shape``.
+    name
+        The axis name at ``index``.
+    path
+        The JSON Pointer to ``arr``, extended via `_ptr` for the issue.
+
+    Returns
+    -------
+    Issue or None
+        The single issue for this axis, or ``None`` when it lines up.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain, NdArray
+    >>> dom = Domain.grid(x=Axis.regular(0.0, 10.0, 3), y=Axis.regular(0.0, 10.0, 2))
+    >>> arr = NdArray(data_type="float", values=(1.0,), shape=(9,), axis_names=("x",))
+    >>> _range_axis_issue(arr, dom, 0, "x", "#/ranges/v").code
+    'coverage.range-shape-mismatch'
+    """
+    if name not in domain.axes:
+        return Issue(
+            code="coverage.range-axis-not-in-domain",
+            message=f"range axis {name!r} is not a domain axis",
+            path=_ptr(path, "axisNames", index),
         )
 
-    for ts, tile_set in enumerate(arr.tile_sets):
-        # __post_init__ guarantees tileShape rank-matches shape, so this zip is
-        # exact. A non-null tile size must be a positive integer (the tile layout
-        # divides each axis by it) not exceeding the corresponding axis.
-        issues.extend(
-            Issue(
-                code="tiled-ndarray.tile-shape-too-large",
-                message=f"tileShape element {tile_dim} exceeds shape element {dim}",
-                path=_ptr(path, "tileSets", ts, "tileShape", i),
-            )
-            for i, (tile_dim, dim) in enumerate(
-                zip(tile_set.tile_shape, arr.shape, strict=True)
-            )
-            if tile_dim is not None and tile_dim > dim
-        )
+    if index < len(arr.shape):
+        axis_len = _axis_length(domain.axes[name])
 
-        issues.extend(
-            Issue(
-                code="tiled-ndarray.tile-shape-not-positive",
-                message=f"tileShape element {tile_dim} must be a positive integer",
-                path=_ptr(path, "tileSets", ts, "tileShape", i),
-            )
-            for i, tile_dim in enumerate(tile_set.tile_shape)
-            if tile_dim is not None and tile_dim < 1
-        )
-
-        present_names = _TEMPLATE_VARIABLE.findall(tile_set.url_template)
-        present = set(present_names)
-
-        # A subdivided axis (non-null tileShape) MUST have a template variable.
-        # When axisNames does not rank-match shape (flagged above), this zip is
-        # intentionally non-strict so it cannot raise -- validate() reports issues
-        # rather than raising.
-        issues.extend(
-            Issue(
-                code="tiled-ndarray.url-template-missing-variable",
+        if arr.shape[index] != axis_len:
+            return Issue(
+                code="coverage.range-shape-mismatch",
                 message=(
-                    "urlTemplate must contain a variable for the subdivided "
-                    f"{name!r} axis"
+                    f"range axis {name!r} has size {arr.shape[index]} but the "
+                    f"domain axis has {axis_len}"
                 ),
-                path=_ptr(path, "tileSets", ts, "urlTemplate"),
+                path=_ptr(path, "shape", index),
             )
-            for name, tile_dim in zip(arr.axis_names, tile_set.tile_shape, strict=False)
-            if tile_dim is not None and name not in present
-        )
 
-        # The reverse: a template variable that names no subdivided axis cannot be
-        # expanded, so `assemble` would raise on it. Skipped on a rank mismatch,
-        # where the axis/tile alignment -- and so the set of subdivided axes -- is
-        # unreliable and the membership test would yield false positives.
-        if rank_ok:
-            subdivided = {
-                name
-                for name, tile_dim in zip(
-                    arr.axis_names, tile_set.tile_shape, strict=True
-                )
-                if tile_dim is not None
-            }
-            issues.extend(
-                Issue(
-                    code="tiled-ndarray.url-template-unknown-variable",
-                    message=(
-                        f"urlTemplate references {name!r}, "
-                        "which is not a subdivided axis"
-                    ),
-                    path=_ptr(path, "tileSets", ts, "urlTemplate"),
-                )
-                for name in dict.fromkeys(present_names)
-                if name not in subdivided
-            )
+    return None
 
 
 def _check_range_against_domain(
-    arr: NdArray, domain: Domain, path: str, issues: list[Issue]
-) -> None:
-    """Check a range's axes line up with the domain's, appending any issues.
+    arr: NdArray, domain: Domain, path: str
+) -> Iterator[Issue]:
+    """Yield where a range's axes fail to line up with the domain's.
 
-    For each of the range's ``axisNames``: the name must be a real domain axis
-    (else ``coverage.range-axis-not-in-domain``), and the range's size along that
-    axis must equal the domain axis's length from `_axis_length` (else
-    ``coverage.range-shape-mismatch``). Only callable with an inline `Domain`; a
-    URL-reference domain skips this (its axes are unfetched).
+    Maps `_range_axis_issue` over each of the range's ``axisNames`` and keeps the
+    non-``None`` results. Only meaningful with an inline `Domain`; a URL-reference
+    domain skips this (its axes are unfetched).
 
     Parameters
     ----------
@@ -822,45 +1127,40 @@ def _check_range_against_domain(
         The coverage's (inline) domain.
     path
         The JSON Pointer to ``arr``, extended via `_ptr` for each issue.
-    issues
-        The accumulator that findings are appended to (mutated in place).
-    """
-    for i, name in enumerate(arr.axis_names):
-        if name not in domain.axes:
-            issues.append(
-                Issue(
-                    code="coverage.range-axis-not-in-domain",
-                    message=f"range axis {name!r} is not a domain axis",
-                    path=_ptr(path, "axisNames", i),
-                )
-            )
-        elif i < len(arr.shape):
-            axis_len = _axis_length(domain.axes[name])
 
-            if arr.shape[i] != axis_len:
-                issues.append(
-                    Issue(
-                        code="coverage.range-shape-mismatch",
-                        message=(
-                            f"range axis {name!r} has size {arr.shape[i]} but the "
-                            f"domain axis has {axis_len}"
-                        ),
-                        path=_ptr(path, "shape", i),
-                    )
-                )
+    Yields
+    ------
+    Issue
+        One issue per misaligned range axis, in ``axisNames`` order.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain, NdArray
+    >>> dom = Domain.grid(x=Axis.regular(0.0, 10.0, 2), y=Axis.regular(0.0, 10.0, 2))
+    >>> arr = NdArray(
+    ...     data_type="float", values=(1.0, 2.0), shape=(2,), axis_names=("q",)
+    ... )
+    >>> [i.code for i in _check_range_against_domain(arr, dom, "#/ranges/v")]
+    ['coverage.range-axis-not-in-domain']
+    """
+    return (
+        issue
+        for index, name in enumerate(arr.axis_names)
+        if (issue := _range_axis_issue(arr, domain, index, name, path)) is not None
+    )
 
 
 def _check_categorical_codes(
-    arr: NdArray, param: Parameter | None, path: str, issues: list[Issue]
-) -> None:
-    """Check a categorical range's values are defined codes, appending any issues.
+    arr: NdArray, param: Parameter | None, path: str
+) -> Iterator[Issue]:
+    """Yield a categorical range's values that are not defined codes.
 
     Only applies when the parameter is categorical (its observed property has
-    ``categories``) and carries a ``category_encoding``; otherwise it is a no-op.
-    The encoding's values (each a single code or a tuple of codes) are flattened
-    into the set of valid codes, and every non-null range value must be an integer
-    in that set (else ``range.invalid-category-code``). This is one of the value-
-    scanning checks gated behind ``check_values=True``.
+    ``categories``) and carries a ``category_encoding``; otherwise it yields
+    nothing. The encoding's values (each a single code or a tuple of codes) are
+    flattened into the set of valid codes, and every non-null range value must be
+    an integer in that set (else ``range.invalid-category-code``). This is one of
+    the value-scanning checks gated behind ``check_values=True``.
 
     Parameters
     ----------
@@ -870,8 +1170,11 @@ def _check_categorical_codes(
         The parameter the range belongs to, or ``None`` when unknown (skips).
     path
         The JSON Pointer to ``arr``, extended via `_ptr` for each issue.
-    issues
-        The accumulator that findings are appended to (mutated in place).
+
+    Yields
+    ------
+    Issue
+        One ``range.invalid-category-code`` per undefined code, in value order.
     """
     if param is None or param.observed_property.categories is None:
         return
@@ -887,7 +1190,7 @@ def _check_categorical_codes(
         for code in (entry if isinstance(entry, tuple) else (entry,))
     }
 
-    issues.extend(
+    yield from (
         Issue(
             code="range.invalid-category-code",
             message=f"value {value!r} is not a defined category code",
@@ -898,23 +1201,55 @@ def _check_categorical_codes(
     )
 
 
-def _check_value_data_types(arr: NdArray, path: str, issues: list[Issue]) -> None:
-    """Check each value matches the declared ``dataType``, appending any issues.
+def _matches_data_type(value: float | int | str, data_type: str) -> bool:
+    """Whether a non-null range value is valid for a CoverageJSON ``dataType``.
+
+    * ``"float"``: a real number, so a Python ``int`` or ``float`` (a JSON
+      integer like ``5`` is a valid float value and decodes to a Python ``int``,
+      so requiring ``float`` would reject spec-valid data); ``bool`` excluded.
+    * ``"integer"``: a Python ``int``, with ``bool`` excluded. A whole-valued
+      float like ``1.0`` is rejected: its type is ``float``.
+    * ``"string"``: a Python ``str``.
+
+    Parameters
+    ----------
+    value
+        A non-null range value.
+    data_type
+        The range's ``dataType``.
+
+    Returns
+    -------
+    bool
+        Whether ``value`` is a valid instance of ``data_type``.
+
+    Examples
+    --------
+    >>> _matches_data_type(1.5, "integer")
+    False
+    >>> _matches_data_type(5, "float")  # a JSON integer is a valid float value
+    True
+    >>> _matches_data_type("a", "string")
+    True
+    """
+    if data_type == "float":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+    if data_type == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+
+    return isinstance(value, str)  # "string"
+
+
+def _check_value_data_types(arr: NdArray, path: str) -> Iterator[Issue]:
+    """Yield each value that does not match the declared ``dataType``.
 
     The spec requires an `NdArray`'s ``values`` to match its ``dataType``, but
     decoding does not reliably enforce this: a parameterized decode (e.g.
     ``NdArray[int]``) can silently accept an out-of-type value because msgspec's
     generic resolution is order-sensitive (see the Notes on
-    `~covjson_msgspec.range.NdArray`). So the check is done here, deterministically.
-    ``None`` is always allowed (missing data). The rules per ``dataType`` are:
-
-    * ``"float"``: a real number, so a Python ``int`` or ``float`` (a JSON
-      integer like ``5`` is a valid float value and decodes to a Python ``int``,
-      so requiring ``float`` here would reject spec-valid data). ``bool`` excluded.
-    * ``"integer"``: a Python ``int``, with ``bool`` excluded. A whole-valued
-      float like ``1.0`` is rejected: its type is ``float`` and the ``dataType``
-      declares integers.
-    * ``"string"``: a Python ``str``.
+    `~covjson_msgspec.range.NdArray`). So the check is done here, deterministically,
+    via `_matches_data_type` (``None`` is always allowed: missing data).
 
     This is one of the value-scanning checks gated behind ``check_values=True``;
     it is O(number of values). An offending value yields one
@@ -926,8 +1261,11 @@ def _check_value_data_types(arr: NdArray, path: str, issues: list[Issue]) -> Non
         The inline range whose values are scanned.
     path
         The JSON Pointer to ``arr``, extended via `_ptr` for each issue.
-    issues
-        The accumulator that findings are appended to (mutated in place).
+
+    Yields
+    ------
+    Issue
+        One ``range.value-type-mismatch`` per offending value, in value order.
 
     Examples
     --------
@@ -935,49 +1273,32 @@ def _check_value_data_types(arr: NdArray, path: str, issues: list[Issue]) -> Non
     the JSON Pointer:
 
     >>> arr = NdArray(data_type="integer", values=(1, 1.5, None))
-    >>> issues = []
-    >>> _check_value_data_types(arr, "#/ranges/v", issues)
-    >>> [(i.code, i.path) for i in issues]
+    >>> [(i.code, i.path) for i in _check_value_data_types(arr, "#/ranges/v")]
     [('range.value-type-mismatch', '#/ranges/v/values/1')]
 
     A ``"float"`` range accepts integer-written values (no issues):
 
     >>> floats = NdArray(data_type="float", values=(5, 5.0))
-    >>> issues = []
-    >>> _check_value_data_types(floats, "#", issues)
-    >>> issues
+    >>> list(_check_value_data_types(floats, "#"))
     []
     """
     data_type = arr.data_type
 
-    for i, value in enumerate(arr.values):
-        if value is None:
-            continue
-
-        if data_type == "float":
-            ok = isinstance(value, (int, float)) and not isinstance(value, bool)
-        elif data_type == "integer":
-            ok = isinstance(value, int) and not isinstance(value, bool)
-        else:  # "string"
-            ok = isinstance(value, str)
-
-        if not ok:
-            issues.append(
-                Issue(
-                    code="range.value-type-mismatch",
-                    message=f"value {value!r} is not a valid {data_type} value",
-                    path=_ptr(path, "values", i),
-                )
-            )
+    return (
+        Issue(
+            code="range.value-type-mismatch",
+            message=f"value {value!r} is not a valid {data_type} value",
+            path=_ptr(path, "values", i),
+        )
+        for i, value in enumerate(arr.values)
+        if value is not None and not _matches_data_type(value, data_type)
+    )
 
 
 def _validate_parameter_groups(
-    coverage: Coverage,
-    parameters: dict[str, Parameter],
-    path: str,
-    issues: list[Issue],
-) -> None:
-    """Check each parameter group references only known members, appending issues.
+    coverage: Coverage, parameters: dict[str, Parameter], path: str
+) -> Iterator[Issue]:
+    """Yield each parameter group's references to unknown members.
 
     A parameter group bundles the keys of parameters it groups together; any
     member not present in the coverage's ``parameters`` is reported
@@ -992,11 +1313,14 @@ def _validate_parameter_groups(
         The coverage's parameters (the set of valid member keys).
     path
         The JSON Pointer to ``coverage``, extended via `_ptr` per group.
-    issues
-        The accumulator that findings are appended to (mutated in place).
+
+    Yields
+    ------
+    Issue
+        One issue per unknown member, in group then member order.
     """
     for i, group in enumerate(coverage.parameter_groups or ()):
-        issues.extend(
+        yield from (
             Issue(
                 code="parameter-group.unknown-member",
                 message=f"parameter group references unknown member {member!r}",
@@ -1012,17 +1336,17 @@ def _validate_ranges(
     domain: Domain | str,
     parameters: dict[str, Parameter] | None,
     path: str,
-    issues: list[Issue],
     check_values: bool,
-) -> None:
-    """Validate each of a coverage's ranges, appending any issues.
+) -> Iterator[Issue]:
+    """Yield each of a coverage's range issues.
 
     For each range: flag an error when it has no matching parameter in scope
-    (``coverage.range-without-parameter``); and, for an inline `NdArray`, check
-    its shape is self-consistent (`_validate_ndarray`), it aligns with an inline
+    (``coverage.range-without-parameter``); for an inline `NdArray`, check its
+    shape is self-consistent (`_validate_ndarray`), it aligns with an inline
     domain (`_check_range_against_domain`), and, when ``check_values``, its values
     match its ``dataType`` (`_check_value_data_types`) and its categorical codes
-    are defined (`_check_categorical_codes`). The ``dataType`` check needs no
+    are defined (`_check_categorical_codes`); for an inline `TiledNdArray`, check
+    its tile sets (`_validate_tiled_ndarray`). The ``dataType`` check needs no
     parameter, so it runs for every range; the categorical check runs only when
     ``parameters`` is set.
 
@@ -1037,50 +1361,52 @@ def _validate_ranges(
         The coverage's parameters, or ``None`` when undescribed.
     path
         The JSON Pointer to ``coverage``, extended via `_ptr` per range.
-    issues
-        The accumulator that findings are appended to (mutated in place).
     check_values
         Whether to run the value-scanning checks (value ``dataType`` match and
         categorical codes).
+
+    Yields
+    ------
+    Issue
+        Each range's issues, in range then check order.
     """
     for key, range_ in coverage.ranges.items():
         range_path = _ptr(path, "ranges", key)
 
         if parameters is not None and key not in parameters:
-            issues.append(
-                Issue(
-                    code="coverage.range-without-parameter",
-                    message=f"range {key!r} has no matching parameter",
-                    path=range_path,
-                )
+            yield Issue(
+                code="coverage.range-without-parameter",
+                message=f"range {key!r} has no matching parameter",
+                path=range_path,
             )
 
         if isinstance(range_, NdArray):
-            _validate_ndarray(range_, range_path, issues)
+            yield from _validate_ndarray(range_, range_path)
 
             if isinstance(domain, Domain):
-                _check_range_against_domain(range_, domain, range_path, issues)
+                yield from _check_range_against_domain(range_, domain, range_path)
 
             if check_values:
-                _check_value_data_types(range_, range_path, issues)
+                yield from _check_value_data_types(range_, range_path)
 
                 if parameters is not None:
-                    _check_categorical_codes(
-                        range_, parameters.get(key), range_path, issues
+                    yield from _check_categorical_codes(
+                        range_, parameters.get(key), range_path
                     )
         elif isinstance(range_, TiledNdArray):
-            _validate_tiled_ndarray(range_, range_path, issues)
+            yield from _validate_tiled_ndarray(range_, range_path)
 
 
 def _validate_coverage(
-    coverage: Coverage, path: str, issues: list[Issue], check_values: bool
-) -> None:
-    """Validate one coverage end to end, appending any issues.
+    coverage: Coverage, path: str, check_values: bool
+) -> Iterator[Issue]:
+    """Yield one coverage's issues end to end.
 
-    Orchestrates the per-coverage rules: validates an inline domain
-    (`_validate_domain`), checks each parameter group's members
-    (`_validate_parameter_groups`), and checks every range (`_validate_ranges`).
-    A URL-reference domain skips the domain and range-vs-domain checks silently
+    Composes the per-coverage rules: an inline domain's issues
+    (`_validate_domain`), the coverage's ``parameters`` presence (a
+    ``coverage.missing-parameters`` issue) or its parameter groups
+    (`_validate_parameter_groups`), and every range (`_validate_ranges`). A
+    URL-reference domain contributes no domain or range-vs-domain issues silently
     (it is unfetched yet spec-valid; see `validate`'s Notes).
 
     Parameters
@@ -1089,48 +1415,54 @@ def _validate_coverage(
         The coverage to validate.
     path
         The JSON Pointer to ``coverage``, extended via `_ptr` for each issue.
-    issues
-        The accumulator that findings are appended to (mutated in place).
     check_values
         Whether to run the value-scanning checks (categorical codes).
+
+    Yields
+    ------
+    Issue
+        The coverage's issues, in document order: domain, parameters, ranges.
     """
     domain = coverage.domain
     parameters = coverage.parameters
 
-    if isinstance(domain, Domain):
-        _validate_domain(
-            domain, coverage.effective_domain_type, _ptr(path, "domain"), issues
-        )
+    domain_issues: Iterable[Issue] = (
+        _validate_domain(domain, coverage.effective_domain_type, _ptr(path, "domain"))
+        if isinstance(domain, Domain)
+        else ()
+    )
 
     # Spec 6.4: a coverage MUST carry `parameters` unless it is a member of a
     # collection that supplies them. `_validate_collection` resolves each member
     # first (inheriting the collection's parameters), so a `None` here means none
     # is in scope. Unlike referencing, this does not depend on the domain form: a
     # URL-reference domain still needs the coverage's own parameters.
-    if parameters is None:
-        issues.append(
+    parameter_issues: Iterable[Issue] = (
+        (
             Issue(
                 code="coverage.missing-parameters",
                 message="coverage must have a 'parameters' member",
                 path=_ptr(path, "parameters"),
-            )
+            ),
         )
-    else:
-        _validate_parameter_groups(coverage, parameters, path, issues)
+        if parameters is None
+        else _validate_parameter_groups(coverage, parameters, path)
+    )
 
-    _validate_ranges(coverage, domain, parameters, path, issues, check_values)
+    return chain(
+        domain_issues,
+        parameter_issues,
+        _validate_ranges(coverage, domain, parameters, path, check_values),
+    )
 
 
 def _validate_collection(
-    collection: CoverageCollection,
-    path: str,
-    issues: list[Issue],
-    check_values: bool,
-) -> None:
-    """Validate every member of a collection, appending any issues.
+    collection: CoverageCollection, path: str, check_values: bool
+) -> Iterator[Issue]:
+    """Yield every member's issues.
 
     Resolves the collection first so each member inherits the collection's
-    parameters and ``domainType``, then runs `_validate_coverage` on each at a
+    parameters and ``domainType``, then chains `_validate_coverage` over each at a
     ``coverages/<i>`` path.
 
     Parameters
@@ -1139,11 +1471,16 @@ def _validate_collection(
         The collection to validate.
     path
         The JSON Pointer to ``collection``, extended via `_ptr` per member.
-    issues
-        The accumulator that findings are appended to (mutated in place).
     check_values
         Whether to run the value-scanning checks (passed through to each member).
+
+    Yields
+    ------
+    Issue
+        Each member's issues, in member order.
     """
     # Resolve first so inherited parameters / domainType apply to each member.
-    for i, coverage in enumerate(collection.resolved_coverages()):
-        _validate_coverage(coverage, _ptr(path, "coverages", i), issues, check_values)
+    return chain.from_iterable(
+        _validate_coverage(coverage, _ptr(path, "coverages", i), check_values)
+        for i, coverage in enumerate(collection.resolved_coverages())
+    )
