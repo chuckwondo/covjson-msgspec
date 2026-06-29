@@ -74,7 +74,7 @@ codes = ["domain.missing-axis"]
 
 [[validate_reject]]
 file = "polygon-domain-no-composite.json"
-codes = ["domain.missing-axis"]
+codes = ["domain.missing-axis", "domain.missing-referencing"]
 
 [[validate_reject]]
 file = "point-series-domain-more-z.json"
@@ -82,7 +82,7 @@ codes = ["domain.axis-not-single"]
 
 [[validate_reject]]
 file = "polygon-domain-too-many-t.json"
-codes = ["domain.axis-not-single"]
+codes = ["domain.axis-not-single", "domain.missing-referencing"]
 
 # Mixed-type values: a string/float in a "float"/"integer" range. The shape-rank
 # mismatch is independent; check_values adds the value-type-mismatch.
@@ -97,3 +97,65 @@ codes = ["ndarray.shape-rank", "range.value-type-mismatch"]
 [[validate_reject]]
 file = "mixed-type-ndarray-3.json"
 codes = ["ndarray.shape-rank", "range.value-type-mismatch"]
+
+# Illustrative spec/example documents that omit the spec-required "referencing"
+# (and, for example_py.json, "parameters"). The spec permits omitting these only
+# when a parent coverage collection supplies them; standalone they are MUST
+# violations, so validate() flags them. These are minimal teaching snippets, not
+# full conformant documents; the playground corpus carries the positive
+# happy-path coverage for full domains with referencing.
+[[validate_reject]]
+file = "coverage-json.json"
+codes = ["domain.missing-referencing"]
+
+[[validate_reject]]
+file = "coverage-mixed-type-ndarray.json"
+codes = ["domain.missing-referencing"]
+
+[[validate_reject]]
+file = "example_py.json"
+codes = ["coverage.missing-parameters", "domain.missing-referencing"]
+
+[[validate_reject]]
+file = "spec-domain-grid.json"
+codes = ["domain.missing-referencing"]
+
+[[validate_reject]]
+file = "spec-domain-point.json"
+codes = ["domain.missing-referencing"]
+
+[[validate_reject]]
+file = "spec-domain-point-compact.json"
+codes = ["domain.missing-referencing"]
+
+[[validate_reject]]
+file = "spec-domain-point-series.json"
+codes = ["domain.missing-referencing"]
+
+[[validate_reject]]
+file = "spec-domain-vertical-profile.json"
+codes = ["domain.missing-referencing"]
+
+[[validate_reject]]
+file = "spec-domain-multipoint.json"
+codes = ["domain.missing-referencing"]
+
+[[validate_reject]]
+file = "spec-domain-multipoint-series.json"
+codes = ["domain.missing-referencing"]
+
+[[validate_reject]]
+file = "spec-domain-trajectory.json"
+codes = ["domain.missing-referencing"]
+
+[[validate_reject]]
+file = "spec-domain-polygon.json"
+codes = ["domain.missing-referencing"]
+
+[[validate_reject]]
+file = "spec-domain-polygon-no-t.json"
+codes = ["domain.missing-referencing"]
+
+[[validate_reject]]
+file = "spec-domain-polygon-series.json"
+codes = ["domain.missing-referencing"]

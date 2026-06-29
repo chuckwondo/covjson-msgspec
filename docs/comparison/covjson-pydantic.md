@@ -9,8 +9,6 @@ restructured when #22 is written and the docs toolchain (#19) is chosen.
 on work that is in flight. When those issues close, revisit the affected
 sections rather than trusting these notes:
 
-- **#36** (close MUST-coverage gaps) -- adds the `num == 1` => `start == stop`
-  check, removing one row where covjson-pydantic is currently more correct.
 - **#21** / typed-projection idiom -- if we add an opt-in typed projection for
   axis values, it narrows the "static type precision" gap that today favors
   covjson-pydantic.
@@ -61,7 +59,7 @@ Versions compared: covjson-pydantic `domain.py` / `base_models.py` as of
 | Static element-type precision | `axes.t.values` is typed `List[datetime]`; precise per slot | `axes["t"]` is a form-agnostic `Axis`; the caller narrows | covjson-pydantic |
 | Discoverability | named `Axes` fields are self-documenting | a dict is opaque to the type system | covjson-pydantic |
 | Per-form rules | `CompactAxis.single_value_case` reads cleanly in isolation | all forms share one `__post_init__` | slight edge to covjson-pydantic |
-| Regular `num == 1` => `start == stop` | enforced in `CompactAxis.single_value_case` | not checked today; `coordinate_values` silently drops `stop` (tracked in #36) | covjson-pydantic (until #36) |
+| Regular `num == 1` => `start == stop` | enforced in `CompactAxis.single_value_case` | enforced in `Axis.__post_init__` (#36) | parity |
 
 ### Verdict
 
@@ -84,8 +82,9 @@ claim parity on ergonomics unless and until that projection exists.
 
 ### Notes for the published comparison (#22)
 
-- **Adopt, not just contrast:** the `num == 1` => `start == stop` MUST check.
-  covjson-pydantic is simply more correct here; tracked in #36.
+- **Adopted (#36):** the `num == 1` => `start == stop` MUST check, now enforced
+  in `Axis.__post_init__`. This started as a row where covjson-pydantic was more
+  correct; the published doc can cite it as an example of adopting a good idea.
 - **Deliberate divergences, one subsection each:** open dict vs fixed `Axes`;
   raw-string vs parsed temporal; opt-in `validate()` vs construction-time raise;
   one permissive struct vs class-per-form plus a generic; full composite

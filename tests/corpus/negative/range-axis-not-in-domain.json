@@ -15,7 +15,10 @@
         ]
       }
     },
-    "domainType": "Grid"
+    "domainType": "Grid",
+    "referencing": [
+      { "coordinates": ["x", "y"], "system": { "type": "GeographicCRS" } }
+    ]
   },
   "ranges": {
     "v": {
@@ -30,6 +33,19 @@
       "axisNames": [
         "z"
       ]
+    }
+  },
+  "parameters": {
+    "v": {
+      "type": "Parameter",
+      "observedProperty": {
+        "label": {
+          "en": "V"
+        }
+      },
+      "unit": {
+        "symbol": "1"
+      }
     }
   }
 }

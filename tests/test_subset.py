@@ -8,21 +8,35 @@ from covjson_msgspec import (
     Axis,
     Coverage,
     Domain,
+    GeographicCRS,
     NdArray,
+    ObservedProperty,
+    Parameter,
+    ReferenceSystemConnection,
     TiledNdArray,
     TileSet,
+    Unit,
+    i18n,
     isel,
     sel,
     validate,
 )
 
+_REF = (ReferenceSystemConnection(coordinates=("x", "y"), system=GeographicCRS()),)
+
 
 def _grid() -> Coverage:
-    """A 2 (y) x 4 (x) grid whose single range holds 0..7 in row-major order."""
+    """A 2 (y) x 4 (x) grid whose single range holds 0..7 in row-major order.
+
+    Fully spec-valid (carries referencing and a matching parameter) so that
+    `test_isel_result_is_valid` can assert a subset of a valid coverage stays
+    valid.
+    """
     return Coverage(
         domain=Domain.grid(
             x=Axis.regular(0.0, 30.0, 4),
             y=Axis.regular(0.0, 10.0, 2),
+            referencing=_REF,
         ),
         ranges={
             "v": NdArray(
@@ -30,6 +44,11 @@ def _grid() -> Coverage:
                 values=tuple(float(i) for i in range(8)),
                 shape=(2, 4),
                 axis_names=("y", "x"),
+            )
+        },
+        parameters={
+            "v": Parameter.continuous(
+                ObservedProperty(label=i18n("Value")), Unit(symbol="1")
             )
         },
     )

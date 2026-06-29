@@ -76,6 +76,13 @@ class Axis(CovJSONStruct, frozen=True):
         ...
     ValueError: Axis requires exactly one of `values` or `start`/`stop`/`num`
 
+    A single-coordinate regular axis (``num`` of 1) must have ``start == stop``:
+
+    >>> Axis(start=0.0, stop=10.0, num=1)
+    Traceback (most recent call last):
+        ...
+    ValueError: Axis with `num` of 1 requires equal `start` and `stop`
+
     A regular axis decodes from the compact start/stop/num form (camelCase wire
     names map to snake_case attributes):
 
@@ -124,6 +131,16 @@ class Axis(CovJSONStruct, frozen=True):
             msg = "Axis `num` must be a positive integer"
             raise ValueError(msg)
 
+        # Spec 6.1.1: "If the value of `num` is 1, then `start` and `stop` MUST
+        # have identical values." A single-coordinate regular axis is one point,
+        # so its bounds cannot differ. Local and O(1), so it belongs here rather
+        # than in validate(). Gated on the regular form actually being in use, so
+        # a value-listing axis carrying a stray `start`/`num` is not misdiagnosed
+        # here (the XOR check above owns that malformation).
+        if has_regular and self.num == 1 and self.start != self.stop:
+            msg = "Axis with `num` of 1 requires equal `start` and `stop`"
+            raise ValueError(msg)
+
         if self.data_type in ("tuple", "polygon") and self.coordinates is None:
             msg = f"a {self.data_type!r} axis requires `coordinates`"
             raise ValueError(msg)
@@ -142,8 +159,8 @@ class Axis(CovJSONStruct, frozen=True):
         --------
         >>> Axis.listed((10, 20, 30)).coordinate_values
         (10, 20, 30)
-        >>> Axis.regular(0.0, 1.0, 1).coordinate_values
-        (0.0,)
+        >>> Axis.regular(5.0, 5.0, 1).coordinate_values  # num 1: start == stop
+        (5.0,)
         """
         if self.values is not None:
             return self.values

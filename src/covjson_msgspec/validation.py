@@ -25,13 +25,16 @@ The per-domain-type axis rules live in the `DOMAIN_TYPE_RULES` registry, keyed b
 `DomainType`. The registry is a plain dict: add or replace an entry to teach
 `validate` about a custom domain type or to override a built-in rule.
 
-Spec: [Common Domain Types](https://github.com/covjson/specification/blob/master/domain-types.md).
+Spec: [CoverageJSON](https://github.com/covjson/specification/blob/master/spec.md)
+(section references in this module, e.g. "Spec 6.1", point here) and
+[Common Domain Types](https://github.com/covjson/specification/blob/master/domain-types.md).
 """
 
 from __future__ import annotations
 
 import enum
 import math
+import re
 from collections.abc import Iterator
 from typing import Literal, assert_never
 
@@ -223,10 +226,13 @@ def validate(
     `validate` adds the rules that span several fields or objects and so cannot be
     expressed at decode time: a domain's axes satisfy its ``domainType``'s
     requirements, each range lines up with the domain (axis names, shapes),
-    parameter groups reference known members, and (with ``check_values=True``)
-    every value matches its range's ``dataType`` and categorical codes are
-    defined. Reach for it when you need those spec-conformance guarantees, e.g.
-    before publishing a document or when ingesting one from an untrusted source.
+    parameter groups reference known members, a coverage and domain carry the
+    ``parameters`` / ``referencing`` the spec requires (resolving collection-level
+    inheritance first), a `TiledNdArray`'s tile sets are well-formed, and (with
+    ``check_values=True``) every value matches its range's ``dataType`` and
+    categorical codes are defined. Reach for it when you need those
+    spec-conformance guarantees, e.g. before publishing a document or when
+    ingesting one from an untrusted source.
 
     Parameters
     ----------
@@ -265,14 +271,29 @@ def validate(
 
     Examples
     --------
-    >>> from covjson_msgspec import Axis, Domain
-    >>> grid = Domain.grid(x=Axis.regular(0, 10, 3), y=Axis.regular(0, 10, 3))
+    >>> from covjson_msgspec import (
+    ...     Axis, Coverage, Domain, GeographicCRS, NdArray, ReferenceSystemConnection
+    ... )
+    >>> ref = ReferenceSystemConnection(
+    ...     coordinates=("x", "y"), system=GeographicCRS()
+    ... )
+    >>> grid = Domain.grid(
+    ...     x=Axis.regular(0, 10, 3), y=Axis.regular(0, 10, 3), referencing=[ref]
+    ... )
     >>> validate(grid)
     []
 
+    A domain with no ``referencing`` in scope is a spec violation (an error):
+
+    >>> bare = Domain.grid(x=Axis.regular(0, 10, 3), y=Axis.regular(0, 10, 3))
+    >>> validate(bare)[0].code
+    'domain.missing-referencing'
+
     A Grid domain missing its ``y`` axis yields an error issue:
 
-    >>> incomplete = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
+    >>> incomplete = Domain(
+    ...     axes={"x": Axis.listed((1.0,))}, domain_type="Grid", referencing=[ref]
+    ... )
     >>> issue = validate(incomplete)[0]
     >>> issue.code
     'domain.missing-axis'
@@ -289,15 +310,22 @@ def validate(
     A range whose name matches no parameter in scope has no parameter at all, a
     MUST violation, so it is an error:
 
-    >>> from covjson_msgspec import Coverage, NdArray
+    >>> point = Domain.point(
+    ...     x=Axis.listed((1.0,)), y=Axis.listed((2.0,)), referencing=[ref]
+    ... )
     >>> cov = Coverage(
-    ...     domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+    ...     domain=point,
     ...     ranges={"v": NdArray(data_type="float", values=(280.0,))},
     ...     parameters={},
     ... )
     >>> issue = validate(cov)[0]
     >>> (issue.code, issue.severity.value)
     ('coverage.range-without-parameter', 'error')
+
+    A coverage with no ``parameters`` member at all is likewise an error:
+
+    >>> validate(Coverage(domain=point, ranges={}))[0].code
+    'coverage.missing-parameters'
     """
     issues: list[Issue] = []
 
@@ -313,9 +341,7 @@ def validate(
             if check_values:
                 _check_value_data_types(obj, "", issues)
         case TiledNdArray():
-            # Its only document-level rule (tileShape rank) is already enforced
-            # in __post_init__, so there is nothing extra to check here.
-            pass
+            _validate_tiled_ndarray(obj, "", issues)
         case _:
             # Exhaustiveness: a new CoverageJSON member would fail type checking
             # here until it is handled above.
@@ -518,12 +544,31 @@ def _validate_domain(
     issues
         The accumulator that findings are appended to (mutated in place).
     """
-    # The effective domain type may come from the Domain itself or, inside a
-    # coverage, from the coverage's own domainType (passed in by the caller).
-    if domain_type is None or (rule := DOMAIN_TYPE_RULES.get(domain_type)) is None:
-        return
+    # Axis-rule issues are emitted before the referencing check so issues come
+    # out in document order (`axes` precedes `referencing` on the wire). The
+    # effective domain type may come from the Domain itself or, inside a coverage,
+    # from the coverage's own domainType (passed in by the caller); an absent or
+    # unrecognized one carries no rules.
+    if (
+        domain_type is not None
+        and (rule := DOMAIN_TYPE_RULES.get(domain_type)) is not None
+    ):
+        issues.extend(_domain_issues(domain, domain_type, rule, path))
 
-    issues.extend(_domain_issues(domain, domain_type, rule, path))
+    # Spec 6.1: a domain MUST carry `referencing` unless it is a member of a
+    # collection that supplies it. `_validate_collection` resolves each member
+    # first, pushing the collection's referencing into an inline domain that has
+    # none, so by the time we get here an empty `referencing` means none is in
+    # scope. A URL-reference domain never reaches this function (it is unfetched),
+    # so the check applies only where a referencing array could actually exist.
+    if not domain.referencing:
+        issues.append(
+            Issue(
+                code="domain.missing-referencing",
+                message="domain must have a 'referencing' member",
+                path=_ptr(path, "referencing"),
+            )
+        )
 
 
 def _validate_ndarray(arr: NdArray, path: str, issues: list[Issue]) -> None:
@@ -589,6 +634,125 @@ def _validate_ndarray(arr: NdArray, path: str, issues: list[Issue]) -> None:
                 ),
                 path=_ptr(path, "values"),
             )
+        )
+
+
+# A single Level 1 RFC 6570 expression (e.g. ``{t}``) in a tile url template.
+# Mirrors `covjson_msgspec.range._TEMPLATE_VARIABLE`; kept local so validation
+# owns its own template parsing rather than importing another module's private.
+_TEMPLATE_VARIABLE = re.compile(r"\{([^{}]+)\}")
+
+
+def _validate_tiled_ndarray(arr: TiledNdArray, path: str, issues: list[Issue]) -> None:
+    """Check a `TiledNdArray`'s tile sets against the spec, appending any issues.
+
+    Several rules from the TiledNdArray spec, all error-severity (``tileShape``
+    rank-matching ``shape`` is a separate hard structural error raised in
+    `~covjson_msgspec.range.TiledNdArray.__post_init__`, so each ``tileShape``
+    here already aligns with ``shape``):
+
+    * ``shape`` and ``axisNames`` must have the same length, as for `NdArray`
+      (else ``tiled-ndarray.shape-rank``);
+    * each non-null ``tileShape`` element must be a positive integer (else
+      ``tiled-ndarray.tile-shape-not-positive``) not exceeding the corresponding
+      ``shape`` element (else ``tiled-ndarray.tile-shape-too-large``); and
+    * the ``urlTemplate`` must contain a variable for each axis whose
+      ``tileShape`` element is non-null -- the subdivided axes whose per-tile
+      ordinals the template interpolates (else
+      ``tiled-ndarray.url-template-missing-variable``).
+
+    Parameters
+    ----------
+    arr
+        The tiled array to check.
+    path
+        The JSON Pointer to ``arr``, extended via `_ptr` for each issue.
+    issues
+        The accumulator that findings are appended to (mutated in place).
+
+    Examples
+    --------
+    A tile larger than the array along an axis is flagged, with the offending
+    tile set and axis in the JSON Pointer:
+
+    >>> from covjson_msgspec.range import TileSet
+    >>> arr = TiledNdArray(
+    ...     data_type="float",
+    ...     axis_names=("t", "x"),
+    ...     shape=(4, 2),
+    ...     tile_sets=(TileSet(tile_shape=(5, None), url_template="{t}.covjson"),),
+    ... )
+    >>> issues = []
+    >>> _validate_tiled_ndarray(arr, "#", issues)
+    >>> [(i.code, i.path) for i in issues]
+    [('tiled-ndarray.tile-shape-too-large', '#/tileSets/0/tileShape/0')]
+
+    A subdivided axis whose ordinal the template omits is flagged:
+
+    >>> arr = TiledNdArray(
+    ...     data_type="float",
+    ...     axis_names=("t", "x"),
+    ...     shape=(4, 2),
+    ...     tile_sets=(TileSet(tile_shape=(1, None), url_template="tile.covjson"),),
+    ... )
+    >>> issues = []
+    >>> _validate_tiled_ndarray(arr, "#", issues)
+    >>> [(i.code, i.path) for i in issues]
+    [('tiled-ndarray.url-template-missing-variable', '#/tileSets/0/urlTemplate')]
+    """
+    # As for NdArray, axisNames and shape must rank-match. __post_init__ pins each
+    # tileShape to shape's rank but not axisNames, so a mismatch surfaces here.
+    if len(arr.axis_names) != len(arr.shape):
+        issues.append(
+            Issue(
+                code="tiled-ndarray.shape-rank",
+                message="shape and axisNames must have the same length",
+                path=_ptr(path, "shape"),
+            )
+        )
+
+    for ts, tile_set in enumerate(arr.tile_sets):
+        # __post_init__ guarantees tileShape rank-matches shape, so this zip is
+        # exact. A non-null tile size must be a positive integer (the tile layout
+        # divides each axis by it) not exceeding the corresponding axis.
+        issues.extend(
+            Issue(
+                code="tiled-ndarray.tile-shape-too-large",
+                message=f"tileShape element {tile_dim} exceeds shape element {dim}",
+                path=_ptr(path, "tileSets", ts, "tileShape", i),
+            )
+            for i, (tile_dim, dim) in enumerate(
+                zip(tile_set.tile_shape, arr.shape, strict=True)
+            )
+            if tile_dim is not None and tile_dim > dim
+        )
+
+        issues.extend(
+            Issue(
+                code="tiled-ndarray.tile-shape-not-positive",
+                message=f"tileShape element {tile_dim} must be a positive integer",
+                path=_ptr(path, "tileSets", ts, "tileShape", i),
+            )
+            for i, tile_dim in enumerate(tile_set.tile_shape)
+            if tile_dim is not None and tile_dim < 1
+        )
+
+        present = set(_TEMPLATE_VARIABLE.findall(tile_set.url_template))
+
+        # Pair axis names with their tile sizes. When axisNames does not rank-match
+        # shape (flagged above), this zip is intentionally non-strict so it cannot
+        # raise -- validate() reports issues rather than raising.
+        issues.extend(
+            Issue(
+                code="tiled-ndarray.url-template-missing-variable",
+                message=(
+                    "urlTemplate must contain a variable for the subdivided "
+                    f"{name!r} axis"
+                ),
+                path=_ptr(path, "tileSets", ts, "urlTemplate"),
+            )
+            for name, tile_dim in zip(arr.axis_names, tile_set.tile_shape, strict=False)
+            if tile_dim is not None and name not in present
         )
 
 
@@ -857,6 +1021,8 @@ def _validate_ranges(
                     _check_categorical_codes(
                         range_, parameters.get(key), range_path, issues
                     )
+        elif isinstance(range_, TiledNdArray):
+            _validate_tiled_ndarray(range_, range_path, issues)
 
 
 def _validate_coverage(
@@ -889,7 +1055,20 @@ def _validate_coverage(
             domain, coverage.effective_domain_type, _ptr(path, "domain"), issues
         )
 
-    if parameters is not None:
+    # Spec 6.4: a coverage MUST carry `parameters` unless it is a member of a
+    # collection that supplies them. `_validate_collection` resolves each member
+    # first (inheriting the collection's parameters), so a `None` here means none
+    # is in scope. Unlike referencing, this does not depend on the domain form: a
+    # URL-reference domain still needs the coverage's own parameters.
+    if parameters is None:
+        issues.append(
+            Issue(
+                code="coverage.missing-parameters",
+                message="coverage must have a 'parameters' member",
+                path=_ptr(path, "parameters"),
+            )
+        )
+    else:
         _validate_parameter_groups(coverage, parameters, path, issues)
 
     _validate_ranges(coverage, domain, parameters, path, issues, check_values)

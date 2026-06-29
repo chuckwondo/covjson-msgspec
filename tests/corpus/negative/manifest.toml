@@ -36,3 +36,29 @@ issues = [{ code = "domain.extra-axis-not-single", severity = "error" }]
 [[case]]
 file = "coverage-range-without-parameter.json"
 issues = [{ code = "coverage.range-without-parameter", severity = "error" }]
+
+[[case]]
+file = "coverage-missing-parameters.json"
+issues = [{ code = "coverage.missing-parameters", severity = "error" }]
+
+[[case]]
+file = "domain-missing-referencing.json"
+issues = [{ code = "domain.missing-referencing", severity = "error" }]
+
+[[case]]
+file = "tiled-ndarray-tile-shape-too-large.json"
+issues = [{ code = "tiled-ndarray.tile-shape-too-large", severity = "error" }]
+
+[[case]]
+file = "tiled-ndarray-url-template-missing-variable.json"
+issues = [
+  { code = "tiled-ndarray.url-template-missing-variable", severity = "error" },
+]
+
+[[case]]
+file = "tiled-ndarray-shape-rank.json"
+issues = [{ code = "tiled-ndarray.shape-rank", severity = "error" }]
+
+[[case]]
+file = "tiled-ndarray-tile-shape-not-positive.json"
+issues = [{ code = "tiled-ndarray.tile-shape-not-positive", severity = "error" }]
