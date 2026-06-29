@@ -286,8 +286,8 @@ def validate(
         ...
     covjson_msgspec.validation.CovJSONValidationError: Grid domain requires a 'y' axis
 
-    Not every issue is an error. Here a range has no matching parameter, which is
-    a warning; ``"collect"`` mode returns it and ``"raise"`` mode would not raise:
+    A range whose name matches no parameter in scope has no parameter at all, a
+    MUST violation, so it is an error:
 
     >>> from covjson_msgspec import Coverage, NdArray
     >>> cov = Coverage(
@@ -297,7 +297,7 @@ def validate(
     ... )
     >>> issue = validate(cov)[0]
     >>> (issue.code, issue.severity.value)
-    ('coverage.range-without-parameter', 'warning')
+    ('coverage.range-without-parameter', 'error')
     """
     issues: list[Issue] = []
 
@@ -411,10 +411,11 @@ def _domain_issues(
     """Yield every axis-rule violation for a domain of a known type.
 
     The four checks `_validate_domain` applies once it has resolved a
-    `DomainTypeRule`: a missing required axis (ERROR), a single-valued axis that
-    carries more than one value (ERROR), a ``composite`` axis with the wrong
-    ``data_type`` (ERROR), and any axis outside the required-or-optional set
-    (WARNING).
+    `DomainTypeRule`, all error-severity: a missing required axis, a
+    single-valued axis that carries more than one value, a ``composite`` axis
+    with the wrong ``data_type``, and a surplus axis (one outside the
+    required-or-optional set) that carries more than one value. A surplus
+    single-valued axis is spec-conformant and yields nothing.
 
     Parameters
     ----------
@@ -470,15 +471,29 @@ def _domain_issues(
 
     allowed = set(rule.required_axes) | set(rule.optional_axes)
 
+    # The spec permits surplus axes, but only single-valued ones: "A domain that
+    # states conformance to one of the domain types in this specification MAY
+    # have any number of additional one-coordinate axes not defined here." The
+    # spec states this rule without a rationale; the reason is structural. An
+    # axis's length is a factor in the range-array shape (see
+    # `_check_range_against_domain`), so a length-1 axis adds no dimension: it is
+    # pure positioning (a scalar coordinate, e.g. the fixed time or elevation of
+    # a 2-D snapshot) and is transparent to the contract the domainType promises.
+    # A multi-valued surplus axis adds a real dimension, silently redefining that
+    # structure; the spec steers such data to a different domain type (or none).
+    # So a surplus single-valued axis is conformant (no issue); a surplus
+    # multi-valued one is a MUST violation (error).
     yield from (
         Issue(
-            code="domain.unexpected-axis",
-            message=f"{domain_type} domain has an unexpected {name!r} axis",
+            code="domain.extra-axis-not-single",
+            message=(
+                f"{domain_type} domain may only add single-valued axes, "
+                f"but {name!r} has multiple values"
+            ),
             path=_ptr(path, "axes", name),
-            severity=Severity.WARNING,
         )
         for name in axes
-        if name not in allowed
+        if name not in allowed and _axis_length(axes[name]) != 1
     )
 
 
@@ -791,7 +806,7 @@ def _validate_ranges(
 ) -> None:
     """Validate each of a coverage's ranges, appending any issues.
 
-    For each range: warn when it has no matching parameter
+    For each range: flag an error when it has no matching parameter in scope
     (``coverage.range-without-parameter``); and, for an inline `NdArray`, check
     its shape is self-consistent (`_validate_ndarray`), it aligns with an inline
     domain (`_check_range_against_domain`), and, when ``check_values``, its values
@@ -826,7 +841,6 @@ def _validate_ranges(
                     code="coverage.range-without-parameter",
                     message=f"range {key!r} has no matching parameter",
                     path=range_path,
-                    severity=Severity.WARNING,
                 )
             )
 
