@@ -30,9 +30,9 @@ file = "range-invalid-category-code.json"
 issues = [{ code = "range.invalid-category-code", severity = "error" }]
 
 [[case]]
-file = "domain-unexpected-axis.json"
-issues = [{ code = "domain.unexpected-axis", severity = "warning" }]
+file = "domain-extra-axis-not-single.json"
+issues = [{ code = "domain.extra-axis-not-single", severity = "error" }]
 
 [[case]]
 file = "coverage-range-without-parameter.json"
-issues = [{ code = "coverage.range-without-parameter", severity = "warning" }]
+issues = [{ code = "coverage.range-without-parameter", severity = "error" }]

@@ -58,20 +58,34 @@ def test_composite_data_type_mismatch() -> None:
     assert "domain.composite-data-type" in codes
 
 
-def test_unexpected_axis_is_a_warning() -> None:
+def test_surplus_multi_valued_axis_is_an_error() -> None:
     domain = Domain(
         axes={
             "x": Axis.regular(0, 1, 2),
             "y": Axis.regular(0, 1, 2),
-            "bogus": Axis.listed((1.0,)),
+            "bogus": Axis.listed((1.0, 2.0)),
         },
         domain_type="Grid",
     )
     (issue,) = validate(domain)
 
-    assert issue.code == "domain.unexpected-axis"
-    assert issue.severity is Severity.WARNING
+    assert issue.code == "domain.extra-axis-not-single"
+    assert issue.severity is Severity.ERROR
     assert issue.path == "/axes/bogus"
+
+
+def test_surplus_single_valued_axis_is_conformant() -> None:
+    # The spec permits any number of additional one-coordinate axes.
+    domain = Domain(
+        axes={
+            "x": Axis.regular(0, 1, 2),
+            "y": Axis.regular(0, 1, 2),
+            "extra": Axis.listed((1.0,)),
+        },
+        domain_type="Grid",
+    )
+
+    assert validate(domain) == []
 
 
 def test_unknown_domain_type_is_not_checked() -> None:
@@ -131,7 +145,7 @@ def test_range_axis_not_in_domain() -> None:
     assert any(i.code == "coverage.range-axis-not-in-domain" for i in issues)
 
 
-def test_range_without_parameter_is_a_warning() -> None:
+def test_range_without_parameter_is_an_error() -> None:
     temp = Parameter.continuous(
         ObservedProperty(label=i18n("Air temperature")), Unit(symbol="K")
     )
@@ -140,9 +154,9 @@ def test_range_without_parameter_is_a_warning() -> None:
         ranges={"unknown": NdArray(data_type="float", values=(1.0,))},
         parameters={"t": temp},
     )
-    warnings = [i for i in validate(cov) if i.severity is Severity.WARNING]
+    errors = [i for i in validate(cov) if i.severity is Severity.ERROR]
 
-    assert any(i.code == "coverage.range-without-parameter" for i in warnings)
+    assert any(i.code == "coverage.range-without-parameter" for i in errors)
 
 
 def test_parameter_group_unknown_member() -> None:
@@ -288,15 +302,6 @@ def test_raise_mode_raises_on_error() -> None:
     assert excinfo.value.issues[0].code == "domain.missing-axis"
 
 
-def test_raise_mode_returns_warnings_without_raising() -> None:
-    domain = Domain(
-        axes={
-            "x": Axis.regular(0, 1, 2),
-            "y": Axis.regular(0, 1, 2),
-            "bogus": Axis.listed((1.0,)),
-        },
-        domain_type="Grid",
-    )
-    issues = validate(domain, mode="raise")
-
-    assert [i.severity for i in issues] == [Severity.WARNING]
+# A test that ``mode="raise"`` returns warning-only issues without raising
+# returns with #37, which reintroduces SHOULD-level (warning) checks. After #35
+# the warning tier has no producer, so no real document can exercise that path.
