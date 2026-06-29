@@ -86,7 +86,6 @@ build-backend = "uv_build"
 
 [tool.ruff]
 line-length = 88
-target-version = "py311"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
@@ -114,7 +113,6 @@ ban-relative-imports = "all"
 
 [tool.mypy]
 files = ["src", "tests"]
-python_version = "3.11"
 strict = true
 warn_unreachable = true
 enable_error_code = ["redundant-expr", "truthy-bool", "ignore-without-code"]
@@ -130,7 +128,6 @@ ignore_missing_imports = true
 [tool.basedpyright]
 include = ["src", "tests"]
 typeCheckingMode = "strict"
-pythonVersion = "3.11"
 
 # ty is an informational (non-blocking) checker. Two negative tests deliberately
 # pass a wrong-typed argument to a public function, guarded by mypy's precise
