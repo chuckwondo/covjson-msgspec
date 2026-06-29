@@ -27,7 +27,13 @@ Core model (`src/covjson_msgspec/`):
 - `_base.py` - `CovJSONStruct`, the shared base: `frozen=True`,
   `omit_defaults=True`, `rename="camel"` (snake_case attributes map to
   CoverageJSON's lowerCamelCase wire names). `frozen` is not inherited, so every
-  concrete struct restates it.
+  concrete struct restates it. This base is the signal for a wire/codec type:
+  subclass it only for types that cross the CoverageJSON wire. Internal value
+  types that never serialize as CoverageJSON (`Issue`, `DomainTypeRule`)
+  subclass bare `msgspec.Struct(frozen=True)` instead -- still a Struct (one
+  immutable-record system, and the core already depends only on msgspec), but
+  without the wire-facing `rename`/`omit_defaults`. Reserve plain `@dataclass`
+  for cases that need to avoid msgspec entirely; we have none today.
 - Spec structs: `axis.py`, `domain.py`, `range.py` (NdArray / TileSet /
   TiledNdArray + the numpy bridge methods), `coverage.py` (Coverage /
   CoverageCollection + the codec helpers), `referencing.py`, `parameter.py`,

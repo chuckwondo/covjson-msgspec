@@ -160,7 +160,7 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
     against the declared ``dataType`` (pass ``check_values=True``). A correctly
     typed array reports nothing:
 
-    >>> from covjson_msgspec import NdArray, validate
+    >>> from covjson_msgspec import IssueCode, NdArray, validate
     >>> blob = b'''
     ... {
     ...   "type": "NdArray",
@@ -185,8 +185,10 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
     ... }
     ... '''
     >>> bad = msgspec.json.decode(blob, type=NdArray)
-    >>> [issue.code for issue in validate(bad, check_values=True)]
-    ['range.value-type-mismatch']
+    >>> [issue.code for issue in validate(bad, check_values=True)] == [
+    ...     IssueCode.RANGE_VALUE_TYPE_MISMATCH
+    ... ]
+    True
     """
 
     data_type: Literal["float", "integer", "string"]

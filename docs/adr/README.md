@@ -36,6 +36,8 @@ CLAUDE.md.
 - [ADR-0001](0001-python-3-11-floor.md) -- Python 3.11 floor, coupled to titiler
 - [ADR-0002](0002-opt-in-tiered-validation.md) -- Cross-cutting checks live in
   opt-in `validate()`, not `__post_init__`
+- [ADR-0003](0003-issue-code-enum.md) -- `IssueCode` enum, closed because the
+  library owns the codes; category matching deferred
 
 Some decisions are recorded in ADRs that land with their implementation rather
 than here; see the issue tracker for the in-flight set.

@@ -11,6 +11,7 @@ from covjson_msgspec import (
     Domain,
     GeographicCRS,
     Issue,
+    IssueCode,
     NdArray,
     ObservedProperty,
     Parameter,
@@ -522,3 +523,31 @@ def test_raise_mode_raises_on_error() -> None:
 # A test that ``mode="raise"`` returns warning-only issues without raising
 # returns with #37, which reintroduces SHOULD-level (warning) checks. After #35
 # the warning tier has no producer, so no real document can exercise that path.
+
+
+def test_builtin_checks_emit_issue_code_members() -> None:
+    # Every issue a built-in check produces carries an IssueCode member, not a
+    # bare string. This broken Grid trips two checks (missing y axis, missing
+    # referencing); msgspec does not enforce field types on direct construction,
+    # so this verifies the checks emit members rather than bare strings.
+    domain = Domain(axes={"x": Axis.listed((1.0, 2.0))}, domain_type="Grid")
+    issues = validate(domain)
+
+    assert issues  # guard against a vacuous all()
+    assert all(isinstance(issue.code, IssueCode) for issue in issues)
+
+
+def test_issue_code_member_matches_both_member_and_string() -> None:
+    # Issue.code is typed IssueCode, but a StrEnum member is a str, so consumers
+    # may still match on either the member or its plain-string literal.
+    domain = Domain(
+        axes={"x": Axis.listed((1.0,))}, domain_type="Grid", referencing=_REF
+    )
+    (issue,) = validate(domain)
+
+    # The string comparison comes first: an `== member` assert narrows
+    # issue.code to that member literal, after which mypy would (correctly) flag
+    # `== "<other literal>"` as non-overlapping.
+    assert issue.code == "domain.missing-axis"
+    assert issue.code == IssueCode.DOMAIN_MISSING_AXIS
+    assert IssueCode.DOMAIN_MISSING_AXIS.value == "domain.missing-axis"

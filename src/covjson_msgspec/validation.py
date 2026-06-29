@@ -59,13 +59,66 @@ class Severity(enum.StrEnum):
     WARNING = "warning"
 
 
+class IssueCode(enum.StrEnum):
+    """The stable codes emitted by this library's validation checks.
+
+    This library is the sole producer of validation codes -- there is no seam
+    for an external check to emit one (the `DOMAIN_TYPE_RULES` registry only
+    supplies axis-constraint *data*, which the built-in checks turn into these
+    same codes). So the set is closed, and `Issue.code` is typed `IssueCode`
+    rather than a bare ``str``. This is the opposite of `DomainType`, which
+    stays a bare ``str`` on `Domain.domain_type` because the spec forces that
+    field open (documents may carry custom domain-type URIs). A ``StrEnum``
+    member is a ``str``, so consumers may still match a code with ``==`` against
+    either the member or its plain-string literal.
+
+    Each member name is its ``category.key`` value uppercased, with ``.`` and
+    ``-`` replaced by ``_`` (so ``parameter-group.unknown-member`` becomes
+    `PARAMETER_GROUP_UNKNOWN_MEMBER`).
+    The leading ``category`` segment is a loose producer-side grouping, not a
+    stable taxonomy: range-related findings currently live under both
+    ``range.*`` (`RANGE_VALUE_TYPE_MISMATCH`, `RANGE_INVALID_CATEGORY_CODE`) and
+    ``coverage.range-*`` (`COVERAGE_RANGE_WITHOUT_PARAMETER`,
+    `COVERAGE_RANGE_SHAPE_MISMATCH`, `COVERAGE_RANGE_AXIS_NOT_IN_DOMAIN`).
+    Match on a whole code; broad category matching is intentionally not offered
+    until that overlap is reconciled (see ADR-0003). Use `Issue.path` for
+    locality-based matching.
+    """
+
+    DOMAIN_MISSING_AXIS = "domain.missing-axis"
+    DOMAIN_AXIS_NOT_SINGLE = "domain.axis-not-single"
+    DOMAIN_COMPOSITE_DATA_TYPE = "domain.composite-data-type"
+    DOMAIN_EXTRA_AXIS_NOT_SINGLE = "domain.extra-axis-not-single"
+    DOMAIN_MISSING_REFERENCING = "domain.missing-referencing"
+    NDARRAY_SHAPE_RANK = "ndarray.shape-rank"
+    NDARRAY_VALUE_COUNT = "ndarray.value-count"
+    TILED_NDARRAY_SHAPE_RANK = "tiled-ndarray.shape-rank"
+    TILED_NDARRAY_TILE_SHAPE_TOO_LARGE = "tiled-ndarray.tile-shape-too-large"
+    TILED_NDARRAY_TILE_SHAPE_NOT_POSITIVE = "tiled-ndarray.tile-shape-not-positive"
+    TILED_NDARRAY_URL_TEMPLATE_MISSING_VARIABLE = (
+        "tiled-ndarray.url-template-missing-variable"
+    )
+    TILED_NDARRAY_URL_TEMPLATE_UNKNOWN_VARIABLE = (
+        "tiled-ndarray.url-template-unknown-variable"
+    )
+    COVERAGE_MISSING_PARAMETERS = "coverage.missing-parameters"
+    COVERAGE_RANGE_WITHOUT_PARAMETER = "coverage.range-without-parameter"
+    COVERAGE_RANGE_AXIS_NOT_IN_DOMAIN = "coverage.range-axis-not-in-domain"
+    COVERAGE_RANGE_SHAPE_MISMATCH = "coverage.range-shape-mismatch"
+    RANGE_VALUE_TYPE_MISMATCH = "range.value-type-mismatch"
+    RANGE_INVALID_CATEGORY_CODE = "range.invalid-category-code"
+    PARAMETER_GROUP_UNKNOWN_MEMBER = "parameter-group.unknown-member"
+
+
 class Issue(msgspec.Struct, frozen=True):
     """One validation finding.
 
     Attributes
     ----------
     code
-        A stable, machine-readable identifier (e.g. ``"domain.missing-axis"``).
+        A stable, machine-readable `IssueCode` (e.g.
+        `IssueCode.DOMAIN_MISSING_AXIS`). A member is a ``str``, so it also
+        compares ``==`` to its plain-string literal (``"domain.missing-axis"``).
     message
         A human-readable description.
     path
@@ -74,7 +127,7 @@ class Issue(msgspec.Struct, frozen=True):
         `Severity.ERROR` (the default) or `Severity.WARNING`.
     """
 
-    code: str
+    code: IssueCode
     message: str
     path: str
     severity: Severity = Severity.ERROR
@@ -288,16 +341,19 @@ def validate(
 
     >>> bare = Domain.grid(x=Axis.regular(0, 10, 3), y=Axis.regular(0, 10, 3))
     >>> validate(bare)[0].code
-    'domain.missing-referencing'
+    <IssueCode.DOMAIN_MISSING_REFERENCING: 'domain.missing-referencing'>
 
-    A Grid domain missing its ``y`` axis yields an error issue:
+    A Grid domain missing its ``y`` axis yields an error issue. Built-in checks
+    emit `IssueCode` members; a member is a ``str``, so match on either form:
 
     >>> incomplete = Domain(
     ...     axes={"x": Axis.listed((1.0,))}, domain_type="Grid", referencing=[ref]
     ... )
     >>> issue = validate(incomplete)[0]
-    >>> issue.code
-    'domain.missing-axis'
+    >>> issue.code == IssueCode.DOMAIN_MISSING_AXIS
+    True
+    >>> issue.code == "domain.missing-axis"
+    True
     >>> issue.path
     '/axes/y'
 
@@ -320,13 +376,15 @@ def validate(
     ...     parameters={},
     ... )
     >>> issue = validate(cov)[0]
-    >>> (issue.code, issue.severity.value)
-    ('coverage.range-without-parameter', 'error')
+    >>> issue.code == IssueCode.COVERAGE_RANGE_WITHOUT_PARAMETER
+    True
+    >>> issue.severity.value
+    'error'
 
     A coverage with no ``parameters`` member at all is likewise an error:
 
     >>> validate(Coverage(domain=point, ranges={}))[0].code
-    'coverage.missing-parameters'
+    <IssueCode.COVERAGE_MISSING_PARAMETERS: 'coverage.missing-parameters'>
     """
     issues = list(_issues(obj, check_values))
 
@@ -363,8 +421,11 @@ def _issues(obj: CoverageJSON, check_values: bool) -> Iterator[Issue]:
     --------
     >>> from covjson_msgspec import Axis, Domain
     >>> dom = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
-    >>> [issue.code for issue in _issues(dom, False)]
-    ['domain.missing-axis', 'domain.missing-referencing']
+    >>> [issue.code for issue in _issues(dom, False)] == [
+    ...     IssueCode.DOMAIN_MISSING_AXIS,
+    ...     IssueCode.DOMAIN_MISSING_REFERENCING,
+    ... ]
+    True
     """
     match obj:
         case Domain():
@@ -493,7 +554,7 @@ def _missing_axis_issues(
     """
     return (
         Issue(
-            code="domain.missing-axis",
+            code=IssueCode.DOMAIN_MISSING_AXIS,
             message=f"{domain_type} domain requires a {name!r} axis",
             path=_ptr(path, "axes", name),
         )
@@ -540,7 +601,7 @@ def _non_single_axis_issues(
     """
     return (
         Issue(
-            code="domain.axis-not-single",
+            code=IssueCode.DOMAIN_AXIS_NOT_SINGLE,
             message=f"{domain_type} domain requires a single {name!r} value",
             path=_ptr(path, "axes", name),
         )
@@ -584,7 +645,7 @@ def _composite_data_type_issue(
     ... )
     >>> dom = Domain(axes={"composite": composite}, domain_type="Trajectory")
     >>> _composite_data_type_issue(dom, "Trajectory", rule, "").code
-    'domain.composite-data-type'
+    <IssueCode.DOMAIN_COMPOSITE_DATA_TYPE: 'domain.composite-data-type'>
     """
     composite = domain.axes.get("composite")
 
@@ -594,7 +655,7 @@ def _composite_data_type_issue(
         and composite.data_type != rule.composite_data_type
     ):
         return Issue(
-            code="domain.composite-data-type",
+            code=IssueCode.DOMAIN_COMPOSITE_DATA_TYPE,
             message=(
                 f"{domain_type} domain requires a "
                 f"{rule.composite_data_type!r} composite axis"
@@ -660,7 +721,7 @@ def _unexpected_axis_issues(
     # multi-valued one is a MUST violation (error).
     return (
         Issue(
-            code="domain.extra-axis-not-single",
+            code=IssueCode.DOMAIN_EXTRA_AXIS_NOT_SINGLE,
             message=(
                 f"{domain_type} domain may only add single-valued axes, "
                 f"but {name!r} has multiple values"
@@ -704,8 +765,10 @@ def _domain_issues(
     >>> from covjson_msgspec import Axis, Domain
     >>> rule = DOMAIN_TYPE_RULES["Grid"]
     >>> dom = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
-    >>> [issue.code for issue in _domain_issues(dom, "Grid", rule, "")]
-    ['domain.missing-axis']
+    >>> [issue.code for issue in _domain_issues(dom, "Grid", rule, "")] == [
+    ...     IssueCode.DOMAIN_MISSING_AXIS
+    ... ]
+    True
     """
     composite = _composite_data_type_issue(domain, domain_type, rule, path)
 
@@ -748,8 +811,11 @@ def _validate_domain(
     --------
     >>> from covjson_msgspec import Axis, Domain
     >>> dom = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
-    >>> [issue.code for issue in _validate_domain(dom, "Grid", "")]
-    ['domain.missing-axis', 'domain.missing-referencing']
+    >>> [issue.code for issue in _validate_domain(dom, "Grid", "")] == [
+    ...     IssueCode.DOMAIN_MISSING_AXIS,
+    ...     IssueCode.DOMAIN_MISSING_REFERENCING,
+    ... ]
+    True
     """
     # Axis-rule issues come before the referencing check so issues stay in
     # document order (`axes` precedes `referencing` on the wire). The effective
@@ -770,7 +836,7 @@ def _validate_domain(
     # so the check applies only where a referencing array could actually exist.
     if not domain.referencing:
         yield Issue(
-            code="domain.missing-referencing",
+            code=IssueCode.DOMAIN_MISSING_REFERENCING,
             message="domain must have a 'referencing' member",
             path=_ptr(path, "referencing"),
         )
@@ -804,8 +870,10 @@ def _validate_ndarray(arr: NdArray, path: str) -> Iterator[Issue]:
     >>> arr = NdArray(
     ...     data_type="float", values=(1.0, 2.0), shape=(3,), axis_names=("x",)
     ... )
-    >>> [issue.code for issue in _validate_ndarray(arr, "#/ranges/v")]
-    ['ndarray.value-count']
+    >>> [issue.code for issue in _validate_ndarray(arr, "#/ranges/v")] == [
+    ...     IssueCode.NDARRAY_VALUE_COUNT
+    ... ]
+    True
 
     A consistent array yields nothing:
 
@@ -817,7 +885,7 @@ def _validate_ndarray(arr: NdArray, path: str) -> Iterator[Issue]:
     """
     if len(arr.axis_names) != len(arr.shape):
         yield Issue(
-            code="ndarray.shape-rank",
+            code=IssueCode.NDARRAY_SHAPE_RANK,
             message="shape and axisNames must have the same length",
             path=_ptr(path, "shape"),
         )
@@ -827,7 +895,7 @@ def _validate_ndarray(arr: NdArray, path: str) -> Iterator[Issue]:
 
     if len(arr.values) != expected:
         yield Issue(
-            code="ndarray.value-count",
+            code=IssueCode.NDARRAY_VALUE_COUNT,
             message=(
                 f"expected {expected} value(s) for shape {tuple(arr.shape)}, "
                 f"got {len(arr.values)}"
@@ -885,15 +953,17 @@ def _tile_set_issues(
     ...     tile_sets=(TileSet(tile_shape=(5, None), url_template="{t}.cov"),),
     ... )
     >>> tile_set = arr.tile_sets[0]
-    >>> [i.code for i in _tile_set_issues(arr, 0, tile_set, "#", rank_ok=True)]
-    ['tiled-ndarray.tile-shape-too-large']
+    >>> [i.code for i in _tile_set_issues(arr, 0, tile_set, "#", rank_ok=True)] == [
+    ...     IssueCode.TILED_NDARRAY_TILE_SHAPE_TOO_LARGE
+    ... ]
+    True
     """
     # __post_init__ guarantees tileShape rank-matches shape, so this zip is exact.
     # A non-null tile size must be a positive integer (the tile layout divides each
     # axis by it) not exceeding the corresponding axis.
     yield from (
         Issue(
-            code="tiled-ndarray.tile-shape-too-large",
+            code=IssueCode.TILED_NDARRAY_TILE_SHAPE_TOO_LARGE,
             message=f"tileShape element {tile_dim} exceeds shape element {dim}",
             path=_ptr(path, "tileSets", ts, "tileShape", i),
         )
@@ -905,7 +975,7 @@ def _tile_set_issues(
 
     yield from (
         Issue(
-            code="tiled-ndarray.tile-shape-not-positive",
+            code=IssueCode.TILED_NDARRAY_TILE_SHAPE_NOT_POSITIVE,
             message=f"tileShape element {tile_dim} must be a positive integer",
             path=_ptr(path, "tileSets", ts, "tileShape", i),
         )
@@ -921,7 +991,7 @@ def _tile_set_issues(
     # it cannot raise -- validate() reports issues rather than raising.
     yield from (
         Issue(
-            code="tiled-ndarray.url-template-missing-variable",
+            code=IssueCode.TILED_NDARRAY_URL_TEMPLATE_MISSING_VARIABLE,
             message=(
                 f"urlTemplate must contain a variable for the subdivided {name!r} axis"
             ),
@@ -942,7 +1012,7 @@ def _tile_set_issues(
         }
         yield from (
             Issue(
-                code="tiled-ndarray.url-template-unknown-variable",
+                code=IssueCode.TILED_NDARRAY_URL_TEMPLATE_UNKNOWN_VARIABLE,
                 message=(
                     f"urlTemplate references {name!r}, which is not a subdivided axis"
                 ),
@@ -1000,8 +1070,11 @@ def _validate_tiled_ndarray(arr: TiledNdArray, path: str) -> Iterator[Issue]:
     ...     shape=(4, 2),
     ...     tile_sets=(TileSet(tile_shape=(5, None), url_template="{t}.covjson"),),
     ... )
-    >>> [(i.code, i.path) for i in _validate_tiled_ndarray(arr, "#")]
-    [('tiled-ndarray.tile-shape-too-large', '#/tileSets/0/tileShape/0')]
+    >>> (issue,) = _validate_tiled_ndarray(arr, "#")
+    >>> issue.code == IssueCode.TILED_NDARRAY_TILE_SHAPE_TOO_LARGE
+    True
+    >>> issue.path
+    '#/tileSets/0/tileShape/0'
 
     A subdivided axis whose ordinal the template omits is flagged:
 
@@ -1011,8 +1084,11 @@ def _validate_tiled_ndarray(arr: TiledNdArray, path: str) -> Iterator[Issue]:
     ...     shape=(4, 2),
     ...     tile_sets=(TileSet(tile_shape=(1, None), url_template="tile.covjson"),),
     ... )
-    >>> [(i.code, i.path) for i in _validate_tiled_ndarray(arr, "#")]
-    [('tiled-ndarray.url-template-missing-variable', '#/tileSets/0/urlTemplate')]
+    >>> (issue,) = _validate_tiled_ndarray(arr, "#")
+    >>> issue.code == IssueCode.TILED_NDARRAY_URL_TEMPLATE_MISSING_VARIABLE
+    True
+    >>> issue.path
+    '#/tileSets/0/urlTemplate'
 
     A template variable that names no subdivided axis is flagged too:
 
@@ -1022,8 +1098,11 @@ def _validate_tiled_ndarray(arr: TiledNdArray, path: str) -> Iterator[Issue]:
     ...     shape=(4, 2),
     ...     tile_sets=(TileSet(tile_shape=(1, None), url_template="{t}-{z}.cov"),),
     ... )
-    >>> [(i.code, i.path) for i in _validate_tiled_ndarray(arr, "#")]
-    [('tiled-ndarray.url-template-unknown-variable', '#/tileSets/0/urlTemplate')]
+    >>> (issue,) = _validate_tiled_ndarray(arr, "#")
+    >>> issue.code == IssueCode.TILED_NDARRAY_URL_TEMPLATE_UNKNOWN_VARIABLE
+    True
+    >>> issue.path
+    '#/tileSets/0/urlTemplate'
     """
     rank_ok = len(arr.axis_names) == len(arr.shape)
 
@@ -1035,7 +1114,7 @@ def _validate_tiled_ndarray(arr: TiledNdArray, path: str) -> Iterator[Issue]:
         if rank_ok
         else (
             Issue(
-                code="tiled-ndarray.shape-rank",
+                code=IssueCode.TILED_NDARRAY_SHAPE_RANK,
                 message="shape and axisNames must have the same length",
                 path=_ptr(path, "shape"),
             ),
@@ -1085,11 +1164,11 @@ def _range_axis_issue(
     >>> dom = Domain.grid(x=Axis.regular(0.0, 10.0, 3), y=Axis.regular(0.0, 10.0, 2))
     >>> arr = NdArray(data_type="float", values=(1.0,), shape=(9,), axis_names=("x",))
     >>> _range_axis_issue(arr, dom, 0, "x", "#/ranges/v").code
-    'coverage.range-shape-mismatch'
+    <IssueCode.COVERAGE_RANGE_SHAPE_MISMATCH: 'coverage.range-shape-mismatch'>
     """
     if name not in domain.axes:
         return Issue(
-            code="coverage.range-axis-not-in-domain",
+            code=IssueCode.COVERAGE_RANGE_AXIS_NOT_IN_DOMAIN,
             message=f"range axis {name!r} is not a domain axis",
             path=_ptr(path, "axisNames", index),
         )
@@ -1099,7 +1178,7 @@ def _range_axis_issue(
 
         if arr.shape[index] != axis_len:
             return Issue(
-                code="coverage.range-shape-mismatch",
+                code=IssueCode.COVERAGE_RANGE_SHAPE_MISMATCH,
                 message=(
                     f"range axis {name!r} has size {arr.shape[index]} but the "
                     f"domain axis has {axis_len}"
@@ -1140,8 +1219,10 @@ def _check_range_against_domain(
     >>> arr = NdArray(
     ...     data_type="float", values=(1.0, 2.0), shape=(2,), axis_names=("q",)
     ... )
-    >>> [i.code for i in _check_range_against_domain(arr, dom, "#/ranges/v")]
-    ['coverage.range-axis-not-in-domain']
+    >>> [i.code for i in _check_range_against_domain(arr, dom, "#/ranges/v")] == [
+    ...     IssueCode.COVERAGE_RANGE_AXIS_NOT_IN_DOMAIN
+    ... ]
+    True
     """
     return (
         issue
@@ -1192,7 +1273,7 @@ def _check_categorical_codes(
 
     yield from (
         Issue(
-            code="range.invalid-category-code",
+            code=IssueCode.RANGE_INVALID_CATEGORY_CODE,
             message=f"value {value!r} is not a defined category code",
             path=_ptr(path, "values", i),
         )
@@ -1273,8 +1354,11 @@ def _check_value_data_types(arr: NdArray, path: str) -> Iterator[Issue]:
     the JSON Pointer:
 
     >>> arr = NdArray(data_type="integer", values=(1, 1.5, None))
-    >>> [(i.code, i.path) for i in _check_value_data_types(arr, "#/ranges/v")]
-    [('range.value-type-mismatch', '#/ranges/v/values/1')]
+    >>> (issue,) = _check_value_data_types(arr, "#/ranges/v")
+    >>> issue.code == IssueCode.RANGE_VALUE_TYPE_MISMATCH
+    True
+    >>> issue.path
+    '#/ranges/v/values/1'
 
     A ``"float"`` range accepts integer-written values (no issues):
 
@@ -1286,7 +1370,7 @@ def _check_value_data_types(arr: NdArray, path: str) -> Iterator[Issue]:
 
     return (
         Issue(
-            code="range.value-type-mismatch",
+            code=IssueCode.RANGE_VALUE_TYPE_MISMATCH,
             message=f"value {value!r} is not a valid {data_type} value",
             path=_ptr(path, "values", i),
         )
@@ -1322,7 +1406,7 @@ def _validate_parameter_groups(
     for i, group in enumerate(coverage.parameter_groups or ()):
         yield from (
             Issue(
-                code="parameter-group.unknown-member",
+                code=IssueCode.PARAMETER_GROUP_UNKNOWN_MEMBER,
                 message=f"parameter group references unknown member {member!r}",
                 path=_ptr(path, "parameterGroups", i),
             )
@@ -1375,7 +1459,7 @@ def _validate_ranges(
 
         if parameters is not None and key not in parameters:
             yield Issue(
-                code="coverage.range-without-parameter",
+                code=IssueCode.COVERAGE_RANGE_WITHOUT_PARAMETER,
                 message=f"range {key!r} has no matching parameter",
                 path=range_path,
             )
@@ -1440,7 +1524,7 @@ def _validate_coverage(
     parameter_issues: Iterable[Issue] = (
         (
             Issue(
-                code="coverage.missing-parameters",
+                code=IssueCode.COVERAGE_MISSING_PARAMETERS,
                 message="coverage must have a 'parameters' member",
                 path=_ptr(path, "parameters"),
             ),
