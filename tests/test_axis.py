@@ -32,6 +32,17 @@ def test_regular_num_must_be_positive() -> None:
         Axis(start=0.0, stop=1.0, num=0)
 
 
+def test_regular_num_one_requires_equal_start_stop() -> None:
+    with pytest.raises(ValueError, match="num` of 1"):
+        Axis(start=0.0, stop=10.0, num=1)
+
+
+def test_regular_num_one_with_equal_start_stop_is_allowed() -> None:
+    axis = Axis(start=5.0, stop=5.0, num=1)
+
+    assert axis.coordinate_values == (5.0,)
+
+
 def test_composite_axis_requires_coordinates() -> None:
     with pytest.raises(ValueError, match="requires `coordinates`"):
         Axis(values=((1.0, 2.0),), data_type="tuple")

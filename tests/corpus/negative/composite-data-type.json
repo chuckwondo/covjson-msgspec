@@ -31,5 +31,8 @@
       ]
     }
   },
-  "domainType": "Trajectory"
+  "domainType": "Trajectory",
+  "referencing": [
+    { "coordinates": ["x", "y"], "system": { "type": "GeographicCRS" } }
+  ]
 }

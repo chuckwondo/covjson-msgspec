@@ -9,26 +9,40 @@ from covjson_msgspec import (
     CoverageCollection,
     CovJSONValidationError,
     Domain,
+    GeographicCRS,
     Issue,
     NdArray,
     ObservedProperty,
     Parameter,
     ParameterGroup,
+    ReferenceSystemConnection,
     Severity,
+    TiledNdArray,
     Unit,
     i18n,
     validate,
 )
+from covjson_msgspec.range import TileSet
+
+# A minimal valid referencing array. Domains and coverages built for the
+# axis/range checks below carry it so they isolate the one issue under test
+# rather than also tripping the spec-required referencing/parameters presence
+# checks (see test_missing_referencing / test_missing_parameters for those).
+_REF = (ReferenceSystemConnection(coordinates=("x", "y"), system=GeographicCRS()),)
 
 
 def test_valid_grid_has_no_issues() -> None:
-    grid = Domain.grid(x=Axis.regular(0, 10, 3), y=Axis.regular(0, 10, 3))
+    grid = Domain.grid(
+        x=Axis.regular(0, 10, 3), y=Axis.regular(0, 10, 3), referencing=_REF
+    )
 
     assert validate(grid) == []
 
 
 def test_missing_required_axis() -> None:
-    domain = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
+    domain = Domain(
+        axes={"x": Axis.listed((1.0,))}, domain_type="Grid", referencing=_REF
+    )
     (issue,) = validate(domain)
 
     assert issue.code == "domain.missing-axis"
@@ -66,6 +80,7 @@ def test_surplus_multi_valued_axis_is_an_error() -> None:
             "bogus": Axis.listed((1.0, 2.0)),
         },
         domain_type="Grid",
+        referencing=_REF,
     )
     (issue,) = validate(domain)
 
@@ -83,6 +98,7 @@ def test_surplus_single_valued_axis_is_conformant() -> None:
             "extra": Axis.listed((1.0,)),
         },
         domain_type="Grid",
+        referencing=_REF,
     )
 
     assert validate(domain) == []
@@ -90,7 +106,9 @@ def test_surplus_single_valued_axis_is_conformant() -> None:
 
 def test_unknown_domain_type_is_not_checked() -> None:
     domain = Domain(
-        axes={"x": Axis.listed((1.0,))}, domain_type="http://example/Custom"
+        axes={"x": Axis.listed((1.0,))},
+        domain_type="http://example/Custom",
+        referencing=_REF,
     )
 
     assert validate(domain) == []
@@ -292,8 +310,178 @@ def test_collection_validates_resolved_members() -> None:
     assert all(i.path.startswith("/coverages/0/") for i in issues)
 
 
+def test_missing_referencing_on_standalone_domain() -> None:
+    domain = Domain(
+        axes={"x": Axis.listed((1.0,)), "y": Axis.listed((2.0,))},
+        domain_type="Point",
+    )
+    (issue,) = validate(domain)
+
+    assert issue.code == "domain.missing-referencing"
+    assert issue.path == "/referencing"
+    assert issue.severity is Severity.ERROR
+
+
+def test_collection_referencing_is_inherited_into_member_domain() -> None:
+    # The collection supplies referencing; the member's inline domain has none,
+    # so resolution injects it and no missing-referencing issue is raised.
+    member = Coverage(
+        domain=Domain(
+            axes={"x": Axis.listed((1.0,)), "y": Axis.listed((2.0,))},
+            domain_type="Point",
+        ),
+        ranges={},
+        parameters={},
+    )
+    collection = CoverageCollection(coverages=(member,), referencing=_REF)
+
+    assert validate(collection) == []
+
+
+def test_missing_parameters_on_standalone_coverage() -> None:
+    cov = Coverage(
+        domain=Domain.point(
+            x=Axis.listed((1.0,)), y=Axis.listed((2.0,)), referencing=_REF
+        ),
+        ranges={},
+    )
+    (issue,) = validate(cov)
+
+    assert issue.code == "coverage.missing-parameters"
+    assert issue.path == "/parameters"
+    assert issue.severity is Severity.ERROR
+
+
+def test_empty_parameters_member_is_present_so_not_missing() -> None:
+    # An empty (but present) parameters object satisfies the presence MUST.
+    cov = Coverage(
+        domain=Domain.point(
+            x=Axis.listed((1.0,)), y=Axis.listed((2.0,)), referencing=_REF
+        ),
+        ranges={},
+        parameters={},
+    )
+
+    assert validate(cov) == []
+
+
+def test_collection_parameters_are_inherited_by_member() -> None:
+    temp = Parameter.continuous(
+        ObservedProperty(label=i18n("Air temperature")), Unit(symbol="K")
+    )
+    member = Coverage(
+        domain=Domain.point(
+            x=Axis.listed((1.0,)), y=Axis.listed((2.0,)), referencing=_REF
+        ),
+        ranges={"t": NdArray(data_type="float", values=(280.0,))},
+    )
+    collection = CoverageCollection(coverages=(member,), parameters={"t": temp})
+    codes = {i.code for i in validate(collection)}
+
+    assert "coverage.missing-parameters" not in codes
+
+
+def test_url_reference_domain_skips_referencing_but_not_parameters() -> None:
+    # A URL-reference domain is unfetched, so its referencing cannot be checked;
+    # the coverage's own parameters MUST is independent of the domain form.
+    cov = Coverage(domain="https://example.org/domain.json", ranges={})
+    codes = {i.code for i in validate(cov)}
+
+    assert "domain.missing-referencing" not in codes
+    assert "coverage.missing-parameters" in codes
+
+
+def test_tiled_ndarray_tile_shape_too_large() -> None:
+    arr = TiledNdArray(
+        data_type="float",
+        axis_names=("t", "x"),
+        shape=(4, 2),
+        tile_sets=(TileSet(tile_shape=(5, None), url_template="{t}.covjson"),),
+    )
+    (issue,) = validate(arr)
+
+    assert issue.code == "tiled-ndarray.tile-shape-too-large"
+    assert issue.path == "/tileSets/0/tileShape/0"
+
+
+def test_tiled_ndarray_url_template_missing_variable() -> None:
+    arr = TiledNdArray(
+        data_type="float",
+        axis_names=("t", "x"),
+        shape=(4, 2),
+        tile_sets=(TileSet(tile_shape=(1, None), url_template="tile.covjson"),),
+    )
+    (issue,) = validate(arr)
+
+    assert issue.code == "tiled-ndarray.url-template-missing-variable"
+    assert issue.path == "/tileSets/0/urlTemplate"
+
+
+def test_tiled_ndarray_shape_rank_mismatch() -> None:
+    arr = TiledNdArray(
+        data_type="float",
+        axis_names=("t",),
+        shape=(4, 2),
+        tile_sets=(TileSet(tile_shape=(1, None), url_template="{t}.covjson"),),
+    )
+    codes = {i.code for i in validate(arr)}
+
+    assert "tiled-ndarray.shape-rank" in codes
+
+
+def test_tiled_ndarray_non_positive_tile_size() -> None:
+    arr = TiledNdArray(
+        data_type="float",
+        axis_names=("t", "x"),
+        shape=(4, 2),
+        tile_sets=(TileSet(tile_shape=(0, None), url_template="{t}.covjson"),),
+    )
+    (issue,) = validate(arr)
+
+    assert issue.code == "tiled-ndarray.tile-shape-not-positive"
+    assert issue.path == "/tileSets/0/tileShape/0"
+
+
+def test_tiled_ndarray_well_formed_is_clean() -> None:
+    arr = TiledNdArray(
+        data_type="float",
+        axis_names=("t", "x"),
+        shape=(4, 2),
+        tile_sets=(TileSet(tile_shape=(1, None), url_template="{t}.covjson"),),
+    )
+
+    assert validate(arr) == []
+
+
+def test_tiled_ndarray_range_inside_coverage_is_validated() -> None:
+    temp = Parameter.continuous(
+        ObservedProperty(label=i18n("Air temperature")), Unit(symbol="K")
+    )
+    cov = Coverage(
+        domain=Domain.point(
+            x=Axis.listed((1.0,)), y=Axis.listed((2.0,)), referencing=_REF
+        ),
+        ranges={
+            "t": TiledNdArray(
+                data_type="float",
+                axis_names=("t", "x"),
+                shape=(4, 2),
+                tile_sets=(TileSet(tile_shape=(5, None), url_template="{t}.covjson"),),
+            )
+        },
+        parameters={"t": temp},
+    )
+    issue = next(
+        i for i in validate(cov) if i.code == "tiled-ndarray.tile-shape-too-large"
+    )
+
+    assert issue.path == "/ranges/t/tileSets/0/tileShape/0"
+
+
 def test_raise_mode_raises_on_error() -> None:
-    domain = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
+    domain = Domain(
+        axes={"x": Axis.listed((1.0,))}, domain_type="Grid", referencing=_REF
+    )
 
     with pytest.raises(CovJSONValidationError) as excinfo:
         validate(domain, mode="raise")

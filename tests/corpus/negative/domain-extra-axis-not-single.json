@@ -18,5 +18,8 @@
       ]
     }
   },
-  "domainType": "Point"
+  "domainType": "Point",
+  "referencing": [
+    { "coordinates": ["x", "y"], "system": { "type": "GeographicCRS" } }
+  ]
 }

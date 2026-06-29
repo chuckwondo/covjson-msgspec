@@ -10,6 +10,10 @@ from covjson_msgspec import (
     validate,
 )
 
+# A minimal valid referencing array, so a domain built for a validate()-clean
+# check satisfies the spec-required referencing presence rule.
+_REF = (ReferenceSystemConnection(coordinates=("x", "y"), system=GeographicCRS()),)
+
 
 def test_grid_builder_and_accessors() -> None:
     dom = Domain.grid(x=Axis.regular(0.0, 10.0, 3), y=Axis.listed((0.0, 1.0)))
@@ -61,7 +65,7 @@ def test_trajectory_uses_composite_axis() -> None:
 
 def test_multipoint_builder_validates_clean() -> None:
     composite = Axis.tuple_([(1.0, 2.0), (3.0, 4.0)], coordinates=("x", "y"))
-    dom = Domain.multipoint(composite, t=Axis.listed(("2020-01-01",)))
+    dom = Domain.multipoint(composite, t=Axis.listed(("2020-01-01",)), referencing=_REF)
 
     assert dom.domain_type == "MultiPoint"
     assert set(dom.axes) == {"composite", "t"}
@@ -71,7 +75,9 @@ def test_multipoint_builder_validates_clean() -> None:
 
 def test_multipoint_series_builder_validates_clean() -> None:
     composite = Axis.tuple_([(1.0, 2.0)], coordinates=("x", "y"))
-    dom = Domain.multipoint_series(composite, Axis.listed(("2020-01-01", "2020-01-02")))
+    dom = Domain.multipoint_series(
+        composite, Axis.listed(("2020-01-01", "2020-01-02")), referencing=_REF
+    )
 
     assert dom.domain_type == "MultiPointSeries"
     assert set(dom.axes) == {"composite", "t"}
@@ -82,7 +88,7 @@ def test_section_builder_validates_clean() -> None:
     composite = Axis.tuple_(
         [("2020-01-01T00:00:00Z", 1.0, 2.0)], coordinates=("t", "x", "y")
     )
-    dom = Domain.section(composite, Axis.listed((10.0, 20.0)))
+    dom = Domain.section(composite, Axis.listed((10.0, 20.0)), referencing=_REF)
 
     assert dom.domain_type == "Section"
     assert set(dom.axes) == {"composite", "z"}

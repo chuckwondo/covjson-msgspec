@@ -1,0 +1,15 @@
+{
+  "type": "Coverage",
+  "domain": {
+    "type": "Domain",
+    "axes": {
+      "x": { "values": [1.0] },
+      "y": { "values": [2.0] }
+    },
+    "domainType": "Point",
+    "referencing": [
+      { "coordinates": ["x", "y"], "system": { "type": "GeographicCRS" } }
+    ]
+  },
+  "ranges": {}
+}
