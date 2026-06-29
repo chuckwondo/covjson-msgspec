@@ -442,6 +442,35 @@ def test_tiled_ndarray_non_positive_tile_size() -> None:
     assert issue.path == "/tileSets/0/tileShape/0"
 
 
+def test_tiled_ndarray_url_template_unknown_variable() -> None:
+    arr = TiledNdArray(
+        data_type="float",
+        axis_names=("t", "x"),
+        shape=(4, 2),
+        tile_sets=(TileSet(tile_shape=(1, None), url_template="{t}-{z}.covjson"),),
+    )
+    (issue,) = validate(arr)
+
+    assert issue.code == "tiled-ndarray.url-template-unknown-variable"
+    assert issue.path == "/tileSets/0/urlTemplate"
+
+
+def test_tiled_ndarray_unknown_variable_suppressed_on_rank_mismatch() -> None:
+    # With axisNames/shape misaligned, "which axes are subdivided" is unreliable,
+    # so the reverse check is skipped to avoid false positives -- only the
+    # shape-rank issue is reported.
+    arr = TiledNdArray(
+        data_type="float",
+        axis_names=("t",),
+        shape=(4, 2),
+        tile_sets=(TileSet(tile_shape=(1, None), url_template="{t}-{x}.covjson"),),
+    )
+    codes = {i.code for i in validate(arr)}
+
+    assert "tiled-ndarray.url-template-unknown-variable" not in codes
+    assert "tiled-ndarray.shape-rank" in codes
+
+
 def test_tiled_ndarray_well_formed_is_clean() -> None:
     arr = TiledNdArray(
         data_type="float",
