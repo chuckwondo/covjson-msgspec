@@ -5,9 +5,10 @@ A range is either an `NdArray` (inline values, optionally with a ``shape`` and
 referenced by URL). Given a user-supplied fetcher, `TiledNdArray.assemble`
 retrieves those tiles and stitches them back into a single inline `NdArray`.
 
-`NdArray` is generic in its element type. Decoding without a type parameter
-yields the permissive ``float | int | str`` element type; a caller who knows a
-parameter's ``data_type`` can decode ``NdArray[float]`` (etc.) for precise typing.
+``NdArray.values`` is a flat tuple of ``float | int | str | None`` (``None``
+marks missing data). The exact element type within that union depends on the
+``dataType`` field; use `~covjson_msgspec.validation.validate` with
+``check_values=True`` to verify element-vs-``dataType`` consistency after decoding.
 
 With the ``numpy`` extra installed, `NdArray.to_numpy` and `NdArray.from_numpy`
 convert to and from NumPy arrays, mapping CoverageJSON's ``null`` to NaN (float),
@@ -25,9 +26,8 @@ import asyncio
 import itertools
 import math
 import re
-import sys
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, Final, Generic, Literal
+from typing import TYPE_CHECKING, Any, Final, Literal
 
 import msgspec
 
@@ -40,85 +40,26 @@ from covjson_msgspec._fetch import (
 )
 from covjson_msgspec._ndindex import ravel_index, strides
 
-if sys.version_info >= (3, 13):
-    from typing import TypeVar
-else:
-    from typing_extensions import TypeVar
-
 if TYPE_CHECKING:
     import numpy.typing as npt
 
 # Raised (as the message) when a numpy bridge method is called without numpy.
 _NUMPY_HINT = "NumPy is required for this conversion; install covjson-msgspec[numpy]"
 
-# Element type for a bare ``NdArray`` (matches the three ``dataType``s).
-#
-# Both ``bound`` and ``default`` are set, and they do different jobs:
-#
-# * ``default`` is a PEP 696 default that the *type checker* substitutes when a
-#   bare ``NdArray`` is used, so ``NdArray.values`` reads as a tuple of Scalars.
-# * ``bound`` is what *msgspec* validates against at decode time for a bare
-#   ``NdArray``: msgspec ignores the PEP 696 default at runtime (it would treat
-#   an unparameterized ``T`` as ``Any``, accepting nested arrays, bools, etc.),
-#   but it does honor the bound, so a bare decode still rejects non-Scalars.
-#
-# An explicit parameter (e.g. ``NdArray[float]``) overrides both for that decode.
-#
-# ``covariant=True`` is sound because NdArray is frozen and T appears only in
-# read positions (``values``): it lets ``NdArray[float]`` (the type inferred when
-# you build one from float values) satisfy an API expecting the bare
-# ``NdArray`` (i.e. ``NdArray[Scalar]``), as in the CoverageJSON root union.
-Scalar = float | int | str
-T = TypeVar("T", bound=Scalar, default=Scalar, covariant=True)
+# Element type for NdArray values (matches the three ``dataType``s).
+_Scalar = float | int | str
 
 
-class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
+class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
     """An N-dimensional array of values for one parameter.
 
-    ``values`` is a flat, row-major tuple whose length is the product of
-    ``shape``; ``None`` marks missing data. ``shape`` and ``axis_names`` may be
-    omitted for a single (0-dimensional) value.
-
-    The bare ``NdArray`` may also be parameterized with its element type (e.g.
-    ``NdArray[float]``) when a caller knows the ``dataType`` ahead of time. Read
-    the Notes first: that parameter is for static typing, not a decode-time
-    guarantee that every element matches it.
-
-    Notes
-    -----
-    **Parameterizing the element type does not reliably validate it at decode
-    time.** ``NdArray[float]`` / ``NdArray[int]`` / ``NdArray[str]`` exist so a
-    type checker knows what ``values`` holds and can check your downstream code.
-    They are *not* a dependable runtime guard: decoding
-    ``{"dataType": "integer", "values": [1.5]}`` as ``NdArray[int]`` may
-    **accept** the ``1.5`` (storing it as a plain ``float``) instead of raising
-    `msgspec.ValidationError`.
-
-    Why: the element type is a generic ``TypeVar`` whose ``bound`` is `Scalar`
-    (``float | int | str``). msgspec resolves that ``TypeVar`` lazily and caches
-    the result per struct, and the cache is order-sensitive. Once the bare
-    ``NdArray`` decoder (where the ``TypeVar`` resolves to its `Scalar` bound)
-    has been built in a process, a later ``NdArray[int]`` decoder can reuse that
-    cached `Scalar` resolution rather than narrowing to ``int``, and an
-    out-of-type value then passes. Whether it happens depends on the order in which
-    the specializations are first built, which a caller cannot control. (This is
-    an upstream msgspec quirk, not a CoverageJSON rule.)
-
-    What this means for you:
-
-    * Use ``NdArray[T]`` for static typing. Do not rely on it to reject elements
-      that are not ``T`` at decode time.
-    * If you must enforce a concrete element type, do it after decoding rather
-      than assuming ``NdArray[int]`` raised on a bad value. The library's
-      `~covjson_msgspec.validation.validate` does this for you:
-      ``validate(obj, check_values=True)`` flags any value that does not match
-      its range's ``dataType`` (a ``range.value-type-mismatch`` issue). To check
-      manually instead, scan the values yourself (e.g.
-      ``all(v is None or isinstance(v, int) for v in arr.values)``).
-    * The strictness that *always* holds is the bound on the **bare**
-      ``NdArray``: a bare decode still rejects non-`Scalar` values (nested
-      arrays, booleans, etc.). The library only ever decodes the bare form (via
-      the `Range` union), so spec parsing is unaffected by this quirk.
+    ``values`` is a flat, row-major tuple of ``float | int | str | None``
+    (``None`` marks missing data) whose length is the product of ``shape``.
+    ``shape`` and ``axis_names`` may be omitted for a single (0-dimensional)
+    value. msgspec enforces the ``float | int | str`` union on decode, so nested
+    arrays and booleans are rejected; element-vs-``dataType`` consistency is a
+    cross-cutting check handled by opt-in
+    `~covjson_msgspec.validation.validate` (``check_values=True``).
 
     Examples
     --------
@@ -138,27 +79,7 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
     >>> arr.axis_names
     ('y', 'x')
 
-    A caller who knows the element type can decode it precisely:
-
-    >>> blob = '{"type": "NdArray", "dataType": "float", "values": [1.0, 2.0]}'
-    >>> floats = msgspec.json.decode(blob, type=NdArray[float])
-    >>> floats.values
-    (1.0, 2.0)
-
-    The element type is not a reliable runtime guard (see Notes). Decoding a
-    non-integer value as ``NdArray[int]`` may raise `msgspec.ValidationError`
-    *or* may accept it, depending on process state, so this call is shown but
-    not run (a doctest of it would be flaky):
-
-    >>> msgspec.json.decode(  # doctest: +SKIP
-    ...     b'{"type": "NdArray", "dataType": "integer", "values": [1.5]}',
-    ...     type=NdArray[int],
-    ... )  # may raise, or may return NdArray(values=(1.5,), ...) with 1.5 kept
-
-    So rather than trusting the parameterized decode to reject, decode the bare
-    ``NdArray`` and let `~covjson_msgspec.validation.validate` check the values
-    against the declared ``dataType`` (pass ``check_values=True``). A correctly
-    typed array reports nothing:
+    A correctly typed array passes ``validate(check_values=True)`` with no issues:
 
     >>> from covjson_msgspec import IssueCode, NdArray, validate
     >>> blob = b'''
@@ -192,7 +113,7 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
     """
 
     data_type: Literal["float", "integer", "string"]
-    values: tuple[T | None, ...]
+    values: tuple[_Scalar | None, ...]
     shape: tuple[int, ...] = ()
     axis_names: tuple[str, ...] = ()
 
@@ -296,7 +217,7 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
         axis_names: Iterable[str],
         *,
         data_type: Literal["float", "integer", "string"] | None = None,
-    ) -> NdArray[Scalar]:
+    ) -> NdArray:
         """Build an `NdArray` from a NumPy array.
 
         Requires the ``numpy`` extra. Masked entries and non-finite floats (NaN,
@@ -343,7 +264,7 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
         shape = tuple(map(int, array.shape))
         flat = np.ma.getdata(array).reshape(-1)
         mask = np.ma.getmaskarray(array).reshape(-1)
-        values: list[Scalar | None] = []
+        values: list[_Scalar | None] = []
 
         for value, missing in zip(flat, mask, strict=True):
             if missing:
@@ -355,8 +276,6 @@ class NdArray(CovJSONStruct, Generic[T], frozen=True, tag="NdArray"):
             else:
                 values.append(None if value is None else str(value))
 
-        # Build NdArray (not cls): the element type is the general Scalar union
-        # determined here at runtime, not the caller's parameterized T.
         return NdArray(
             data_type=data_type,
             values=tuple(values),
@@ -841,7 +760,7 @@ def _assemble_tiles(
     (1.0, 2.0)
     """
     full_strides = strides(shape)
-    values: list[Scalar | None] = [None] * math.prod(shape)
+    values: list[_Scalar | None] = [None] * math.prod(shape)
 
     for offsets, tile in tiles:
         axis_ranges = [

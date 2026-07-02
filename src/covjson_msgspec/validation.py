@@ -340,8 +340,8 @@ def validate(
     A domain with no ``referencing`` in scope is a spec violation (an error):
 
     >>> bare = Domain.grid(x=Axis.regular(0, 10, 3), y=Axis.regular(0, 10, 3))
-    >>> validate(bare)[0].code
-    <IssueCode.DOMAIN_MISSING_REFERENCING: 'domain.missing-referencing'>
+    >>> validate(bare)[0].code == IssueCode.DOMAIN_MISSING_REFERENCING
+    True
 
     A Grid domain missing its ``y`` axis yields an error issue. Built-in checks
     emit `IssueCode` members; a member is a ``str``, so match on either form:
@@ -383,8 +383,9 @@ def validate(
 
     A coverage with no ``parameters`` member at all is likewise an error:
 
-    >>> validate(Coverage(domain=point, ranges={}))[0].code
-    <IssueCode.COVERAGE_MISSING_PARAMETERS: 'coverage.missing-parameters'>
+    >>> cov = Coverage(domain=point, ranges={})
+    >>> validate(cov)[0].code == IssueCode.COVERAGE_MISSING_PARAMETERS
+    True
     """
     issues = list(_issues(obj, check_values))
 
@@ -644,8 +645,9 @@ def _composite_data_type_issue(
     ...     values=((0.0, 1.0),), data_type="polygon", coordinates=("x", "y")
     ... )
     >>> dom = Domain(axes={"composite": composite}, domain_type="Trajectory")
-    >>> _composite_data_type_issue(dom, "Trajectory", rule, "").code
-    <IssueCode.DOMAIN_COMPOSITE_DATA_TYPE: 'domain.composite-data-type'>
+    >>> issue = _composite_data_type_issue(dom, "Trajectory", rule, "")
+    >>> issue.code == IssueCode.DOMAIN_COMPOSITE_DATA_TYPE
+    True
     """
     composite = domain.axes.get("composite")
 
@@ -1163,8 +1165,9 @@ def _range_axis_issue(
     >>> from covjson_msgspec import Axis, Domain, NdArray
     >>> dom = Domain.grid(x=Axis.regular(0.0, 10.0, 3), y=Axis.regular(0.0, 10.0, 2))
     >>> arr = NdArray(data_type="float", values=(1.0,), shape=(9,), axis_names=("x",))
-    >>> _range_axis_issue(arr, dom, 0, "x", "#/ranges/v").code
-    <IssueCode.COVERAGE_RANGE_SHAPE_MISMATCH: 'coverage.range-shape-mismatch'>
+    >>> issue = _range_axis_issue(arr, dom, 0, "x", "#/ranges/v")
+    >>> issue.code == IssueCode.COVERAGE_RANGE_SHAPE_MISMATCH
+    True
     """
     if name not in domain.axes:
         return Issue(
@@ -1326,11 +1329,11 @@ def _check_value_data_types(arr: NdArray, path: str) -> Iterator[Issue]:
     """Yield each value that does not match the declared ``dataType``.
 
     The spec requires an `NdArray`'s ``values`` to match its ``dataType``, but
-    decoding does not reliably enforce this: a parameterized decode (e.g.
-    ``NdArray[int]``) can silently accept an out-of-type value because msgspec's
-    generic resolution is order-sensitive (see the Notes on
-    `~covjson_msgspec.range.NdArray`). So the check is done here, deterministically,
-    via `_matches_data_type` (``None`` is always allowed: missing data).
+    decoding cannot enforce this: msgspec validates ``values`` against the
+    ``float | int | str`` union but cannot distinguish the narrower ``dataType``
+    within it (a ``float`` value passes even when ``dataType`` is ``"integer"``).
+    So the check is done here, deterministically, via `_matches_data_type`
+    (``None`` is always allowed: missing data).
 
     This is one of the value-scanning checks gated behind ``check_values=True``;
     it is O(number of values). An offending value yields one

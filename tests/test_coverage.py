@@ -22,13 +22,6 @@ from covjson_msgspec import (
 )
 
 
-def _point_coverage() -> Coverage:
-    return Coverage(
-        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
-        ranges={"t": NdArray(data_type="float", values=(280.0,))},
-    )
-
-
 def test_coverage_roundtrips() -> None:
     cov = _point_coverage()
     back = msgspec.json.decode(msgspec.json.encode(cov), type=Coverage)
@@ -170,3 +163,10 @@ def test_resolved_coverages_skips_referencing_for_url_domain() -> None:
 def test_decode_rejects_unknown_type() -> None:
     with pytest.raises(msgspec.ValidationError):
         decode(b'{"type":"Nonsense"}')
+
+
+def _point_coverage() -> Coverage:
+    return Coverage(
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={"t": NdArray(data_type="float", values=(280.0,))},
+    )

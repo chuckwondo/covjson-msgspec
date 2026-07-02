@@ -161,7 +161,7 @@ def test_encodable_after_from_numpy_with_nan() -> None:
     assert msgspec.json.encode(arr).count(b"null") == 1
 
 
-def test_to_numpy_typed_ndarray_float() -> None:
-    typed: NdArray[float] = NdArray(data_type="float", values=(1.0, 2.0), shape=(2,))
+def test_to_numpy_float_ndarray() -> None:
+    arr = NdArray(data_type="float", values=(1.0, 2.0), shape=(2,))
 
-    assert pytest.approx([1.0, 2.0]) == typed.to_numpy().tolist()
+    assert pytest.approx([1.0, 2.0]) == arr.to_numpy().tolist()

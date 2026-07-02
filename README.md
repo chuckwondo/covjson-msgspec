@@ -9,9 +9,9 @@ that aims for:
 - **Performance & a small footprint**: msgspec instead of pydantic.
 - **Full CoverageJSON spec coverage**: every domain type, composite/tuple and
   polygon axes, tiled ranges, i18n, categorical parameters, and referencing.
-- **Better ergonomics & type-checker support**: generic `NdArray[T]`, narrow
-  named builders instead of wide mutually-exclusive constructors, and a public
-  API verified across multiple type checkers.
+- **Better ergonomics & type-checker support**: narrow named builders instead
+  of wide mutually-exclusive constructors, and a public API verified across
+  multiple type checkers.
 
 ## Design
 

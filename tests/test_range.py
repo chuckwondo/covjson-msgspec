@@ -11,18 +11,18 @@ import pytest
 from covjson_msgspec import NdArray, TiledNdArray, TileSet, encode
 
 
-def _store_fetcher(store: dict[str, bytes]) -> Callable[[str], bytes]:
-    """A Fetch backed by an in-memory dict of canned tile documents."""
-    return store.__getitem__
-
-
-def _async_store_fetcher(store: dict[str, bytes]) -> Callable[[str], Awaitable[bytes]]:
-    """An AsyncFetch backed by an in-memory dict of canned tile documents."""
-
-    async def fetch(url: str) -> bytes:
-        return store[url]
-
-    return fetch
+def _spec_tiled() -> TiledNdArray:
+    """The canonical spec example: shape (2, 5, 10) with three tilings."""
+    return TiledNdArray(
+        data_type="float",
+        axis_names=("t", "y", "x"),
+        shape=(2, 5, 10),
+        tile_sets=(
+            TileSet(tile_shape=(None, None, None), url_template="a/all.covjson"),
+            TileSet(tile_shape=(1, None, None), url_template="b/{t}.covjson"),
+            TileSet(tile_shape=(None, 2, 3), url_template="c/{y}-{x}.covjson"),
+        ),
+    )
 
 
 def test_ndarray_roundtrips() -> None:
@@ -34,33 +34,19 @@ def test_ndarray_roundtrips() -> None:
     assert back.values == (1.0, None, 3.0)
 
 
-def test_ndarray_typed_decode() -> None:
-    blob = b'{"type":"NdArray","dataType":"float","values":[1.0,2.0]}'
-    typed = msgspec.json.decode(blob, type=NdArray[float])
-    assert typed.values == (1.0, 2.0)
-
-    # NOTE: we deliberately do NOT assert that a parameterized decode REJECTS an
-    # out-of-type element (e.g. NdArray[int] on 1.5). msgspec's resolution of a
-    # generic struct's TypeVar is order-sensitive: once the bare NdArray (T ->
-    # its bound Scalar) is built, a later NdArray[int] can reuse that cached
-    # Scalar resolution and wrongly accept 1.5. It is not reliably reproducible
-    # or controllable (it flips between near-identical runs), so element-level
-    # strictness for a parameterized NdArray[X] is best-effort only. The
-    # strictness contract we DO rely on (a bare NdArray rejecting non-Scalar
-    # values via the TypeVar bound) is covered by
-    # test_bare_ndarray_enforces_scalar_bound_on_decode and is always enforced
-    # because production only ever decodes the bare NdArray (the Range union).
-
-
-def test_bare_ndarray_enforces_scalar_bound_on_decode() -> None:
-    # msgspec ignores the TypeVar PEP 696 *default* at runtime but honors its
-    # *bound*, so a bare NdArray still rejects non-scalar element values.
-    for blob in (
+@pytest.mark.parametrize(
+    "blob",
+    [
         b'{"type":"NdArray","dataType":"float","values":[[1,2]]}',
         b'{"type":"NdArray","dataType":"float","values":[true]}',
-    ):
-        with pytest.raises(msgspec.ValidationError):
-            msgspec.json.decode(blob, type=NdArray)
+    ],
+)
+def test_bare_ndarray_enforces_scalar_union_on_decode(blob: bytes) -> None:
+    # Verifies that removing Generic[T] did not loosen element-type enforcement:
+    # msgspec still enforces tuple[float | int | str | None, ...] directly, so
+    # nested arrays and booleans are rejected at decode time.
+    with pytest.raises(msgspec.ValidationError):
+        msgspec.json.decode(blob, type=NdArray)
 
 
 def test_ndarray_zero_dimensional_defaults() -> None:
@@ -96,81 +82,34 @@ def test_tiled_ndarray_rank_check() -> None:
 
 
 def test_tile_shape_allows_null() -> None:
-    blob = (
-        b'{"type":"TiledNdArray","dataType":"float","axisNames":["t","y","x"],'
-        b'"shape":[4,100,100],"tileSets":[{"tileShape":[null,100,100],'
-        b'"urlTemplate":"http://ex/{t}.covjson"}]}'
-    )
+    blob = b"""
+{
+  "type": "TiledNdArray",
+  "dataType": "float",
+  "axisNames": ["t", "y", "x"],
+  "shape": [4, 100, 100],
+  "tileSets": [
+    {
+      "tileShape": [null, 100, 100],
+      "urlTemplate": "http://ex/{t}.covjson"
+    }
+  ]
+}
+"""
     tiled = msgspec.json.decode(blob, type=TiledNdArray)
     assert tiled.tile_sets[0].tile_shape == (None, 100, 100)
 
 
-def _spec_tiled() -> TiledNdArray:
-    """The canonical spec example: shape (2, 5, 10) with three tilings."""
-    return TiledNdArray(
-        data_type="float",
-        axis_names=("t", "y", "x"),
-        shape=(2, 5, 10),
-        tile_sets=(
-            TileSet(tile_shape=(None, None, None), url_template="a/all.covjson"),
-            TileSet(tile_shape=(1, None, None), url_template="b/{t}.covjson"),
-            TileSet(tile_shape=(None, 2, 3), url_template="c/{y}-{x}.covjson"),
-        ),
-    )
-
-
-def _tile_store(
-    full: "np.ndarray", tiled: TiledNdArray, tileset: int
-) -> dict[str, bytes]:
-    """Slice ``full`` into a tile set's tiles, keyed by their (independent) URLs.
-
-    Built without the production layout/expander code so the assembly tests stay
-    an independent check: each tile is the matching slice of the known full array.
-    """
-    tile_shape = tiled.tile_sets[tileset].tile_shape
-    template = tiled.tile_sets[tileset].url_template
-
-    per_axis: list[list[tuple[int | None, slice]]] = []
-
-    for size, tile_size in zip(tiled.shape, tile_shape, strict=True):
-        if tile_size is None:
-            per_axis.append([(None, slice(0, size))])
-        else:
-            count = -(-size // tile_size)
-            per_axis.append(
-                [
-                    (o, slice(o * tile_size, min((o + 1) * tile_size, size)))
-                    for o in range(count)
-                ]
-            )
-
-    store: dict[str, bytes] = {}
-
-    for combination in itertools.product(*per_axis):
-        url = template
-
-        for name, (ordinal, _) in zip(tiled.axis_names, combination, strict=True):
-            if ordinal is not None:
-                url = url.replace("{" + name + "}", str(ordinal))
-
-        slices = tuple(axis_slice for _, axis_slice in combination)
-        store[url] = encode(NdArray.from_numpy(full[slices], tiled.axis_names))
-
-    return store
-
-
-def test_assemble_reconstructs_full_array_for_each_tileset() -> None:
+@pytest.mark.parametrize("index", range(len(_spec_tiled().tile_sets)))
+def test_assemble_reconstructs_full_array_for_each_tileset(index: int) -> None:
     full = np.arange(100, dtype=float).reshape(2, 5, 10)
     tiled = _spec_tiled()
-    expected = tuple(full.ravel(order="C").tolist())
+    store = _tile_store(full, tiled, index)
+    result = tiled.assemble(_store_fetcher(store), tileset=index)
 
-    for index in range(len(tiled.tile_sets)):
-        store = _tile_store(full, tiled, index)
-        result = tiled.assemble(_store_fetcher(store), tileset=index)
-
-        assert result.shape == (2, 5, 10)
-        assert result.axis_names == ("t", "y", "x")
-        assert result.values == expected
+    assert result.shape == (2, 5, 10)
+    assert result.axis_names == ("t", "y", "x")
+    assert result.values == tuple(full.ravel(order="C").tolist())
 
 
 def test_assemble_default_picks_the_fewest_tiles() -> None:
@@ -232,19 +171,18 @@ def test_assemble_invalid_tile_document_reports_url() -> None:
         tiled.assemble(_store_fetcher({"0.covjson": b"nope"}))
 
 
-def test_assemble_async_matches_sync_for_each_tileset() -> None:
+@pytest.mark.parametrize("index", range(len(_spec_tiled().tile_sets)))
+def test_assemble_async_matches_sync_for_each_tileset(index: int) -> None:
     full = np.arange(100, dtype=float).reshape(2, 5, 10)
     tiled = _spec_tiled()
-    expected = tuple(full.ravel(order="C").tolist())
+    store = _tile_store(full, tiled, index)
+    result = asyncio.run(
+        tiled.assemble_async(_async_store_fetcher(store), tileset=index)
+    )
 
-    for index in range(len(tiled.tile_sets)):
-        store = _tile_store(full, tiled, index)
-        fetch = _async_store_fetcher(store)
-        result = asyncio.run(tiled.assemble_async(fetch, tileset=index))
-
-        assert result.shape == (2, 5, 10)
-        assert result.axis_names == ("t", "y", "x")
-        assert result.values == expected
+    assert result.shape == (2, 5, 10)
+    assert result.axis_names == ("t", "y", "x")
+    assert result.values == tuple(full.ravel(order="C").tolist())
 
 
 def test_assemble_async_default_picks_the_fewest_tiles() -> None:
@@ -284,3 +222,57 @@ def test_assemble_async_invalid_tile_document_reports_url() -> None:
 
     with pytest.raises(ValueError, match="not valid CoverageJSON"):
         asyncio.run(tiled.assemble_async(_async_store_fetcher({"0.covjson": b"nope"})))
+
+
+def _store_fetcher(store: dict[str, bytes]) -> Callable[[str], bytes]:
+    """A Fetch backed by an in-memory dict of canned tile documents."""
+    return store.__getitem__
+
+
+def _async_store_fetcher(store: dict[str, bytes]) -> Callable[[str], Awaitable[bytes]]:
+    """An AsyncFetch backed by an in-memory dict of canned tile documents."""
+
+    async def fetch(url: str) -> bytes:
+        return store[url]
+
+    return fetch
+
+
+def _tile_store(
+    full: "np.ndarray", tiled: TiledNdArray, tileset: int
+) -> dict[str, bytes]:
+    """Slice ``full`` into a tile set's tiles, keyed by their (independent) URLs.
+
+    Built without the production layout/expander code so the assembly tests stay
+    an independent check: each tile is the matching slice of the known full array.
+    """
+    tile_shape = tiled.tile_sets[tileset].tile_shape
+    template = tiled.tile_sets[tileset].url_template
+
+    per_axis: list[list[tuple[int | None, slice]]] = []
+
+    for size, tile_size in zip(tiled.shape, tile_shape, strict=True):
+        if tile_size is None:
+            per_axis.append([(None, slice(0, size))])
+        else:
+            count = -(-size // tile_size)
+            per_axis.append(
+                [
+                    (o, slice(o * tile_size, min((o + 1) * tile_size, size)))
+                    for o in range(count)
+                ]
+            )
+
+    store: dict[str, bytes] = {}
+
+    for combination in itertools.product(*per_axis):
+        url = template
+
+        for name, (ordinal, _) in zip(tiled.axis_names, combination, strict=True):
+            if ordinal is not None:
+                url = url.replace("{" + name + "}", str(ordinal))
+
+        slices = tuple(axis_slice for _, axis_slice in combination)
+        store[url] = encode(NdArray.from_numpy(full[slices], tiled.axis_names))
+
+    return store

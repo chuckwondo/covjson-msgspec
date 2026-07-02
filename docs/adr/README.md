@@ -38,6 +38,8 @@ CLAUDE.md.
   opt-in `validate()`, not `__post_init__`
 - [ADR-0003](0003-issue-code-enum.md) -- `IssueCode` enum, closed because the
   library owns the codes; category matching deferred
+- [ADR-0004](0004-ndarray-single-non-generic-class.md) -- `NdArray` as a
+  single, non-generic class; element typing via `validate(check_values=True)`
 
 Some decisions are recorded in ADRs that land with their implementation rather
 than here; see the issue tracker for the in-flight set.

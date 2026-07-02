@@ -24,24 +24,6 @@ from covjson_msgspec import (
 )
 
 
-def _point(geom: Any) -> Point:
-    # geopandas types a geometry as the abstract BaseGeometry; assert the concrete
-    # type so the Point coordinate accessors (x / y / z) type-check (and to guard
-    # the test's assumption at runtime).
-    assert isinstance(geom, Point)
-    return geom
-
-
-def _polygon(geom: Any) -> Polygon:
-    assert isinstance(geom, Polygon)
-    return geom
-
-
-def _linestring(geom: Any) -> LineString:
-    assert isinstance(geom, LineString)
-    return geom
-
-
 def test_point_is_single_point_feature() -> None:
     cov = Coverage(
         domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
@@ -107,21 +89,6 @@ def test_no_geographic_referencing_leaves_crs_unset() -> None:
     )
 
     assert to_geopandas(cov).crs is None
-
-
-def _geographic_point(crs_id: str | None) -> Coverage:
-    return Coverage(
-        domain=Domain.point(
-            x=Axis.listed((1.0,)),
-            y=Axis.listed((2.0,)),
-            referencing=(
-                ReferenceSystemConnection(
-                    coordinates=("x", "y"), system=GeographicCRS(id=crs_id)
-                ),
-            ),
-        ),
-        ranges={},
-    )
 
 
 def test_geographic_referencing_without_id_defaults_to_crs84() -> None:
@@ -411,14 +378,6 @@ def test_non_ndarray_polygon_range_is_rejected() -> None:
         to_geopandas(cov)
 
 
-def _point_member(id_: str | None, x: float, y: float, v: float) -> Coverage:
-    return Coverage(
-        id=id_,
-        domain=Domain.point(x=Axis.listed((x,)), y=Axis.listed((y,))),
-        ranges={"v": NdArray(data_type="float", values=(v,))},
-    )
-
-
 def test_collection_concatenates_members_with_coverage_column() -> None:
     collection = CoverageCollection(
         coverages=(
@@ -557,21 +516,6 @@ def test_polygon_carries_z_into_geometry() -> None:
     assert list(polygon.exterior.coords) == exterior
 
 
-def _trajectory(*coordinates: str, values: tuple[tuple[object, ...], ...]) -> Coverage:
-    composite = Axis(data_type="tuple", coordinates=coordinates, values=values)
-    return Coverage(
-        domain=Domain.trajectory(composite),
-        ranges={
-            "v": NdArray(
-                data_type="float",
-                values=tuple(float(i) for i in range(len(values))),
-                shape=(len(values),),
-                axis_names=("composite",),
-            )
-        },
-    )
-
-
 def test_trajectory_as_linestring_is_one_feature() -> None:
     cov = _trajectory(
         "t",
@@ -644,3 +588,59 @@ def test_to_geojson_trajectory_as_linestring() -> None:
     gj = to_geojson(cov, trajectory_as="linestring")
 
     assert gj["features"][0]["geometry"]["type"] == "LineString"
+
+
+def _point(geom: Any) -> Point:
+    # geopandas types a geometry as the abstract BaseGeometry; assert the concrete
+    # type so the Point coordinate accessors (x / y / z) type-check (and to guard
+    # the test's assumption at runtime).
+    assert isinstance(geom, Point)
+    return geom
+
+
+def _polygon(geom: Any) -> Polygon:
+    assert isinstance(geom, Polygon)
+    return geom
+
+
+def _linestring(geom: Any) -> LineString:
+    assert isinstance(geom, LineString)
+    return geom
+
+
+def _geographic_point(crs_id: str | None) -> Coverage:
+    return Coverage(
+        domain=Domain.point(
+            x=Axis.listed((1.0,)),
+            y=Axis.listed((2.0,)),
+            referencing=(
+                ReferenceSystemConnection(
+                    coordinates=("x", "y"), system=GeographicCRS(id=crs_id)
+                ),
+            ),
+        ),
+        ranges={},
+    )
+
+
+def _point_member(id_: str | None, x: float, y: float, v: float) -> Coverage:
+    return Coverage(
+        id=id_,
+        domain=Domain.point(x=Axis.listed((x,)), y=Axis.listed((y,))),
+        ranges={"v": NdArray(data_type="float", values=(v,))},
+    )
+
+
+def _trajectory(*coordinates: str, values: tuple[tuple[object, ...], ...]) -> Coverage:
+    composite = Axis(data_type="tuple", coordinates=coordinates, values=values)
+    return Coverage(
+        domain=Domain.trajectory(composite),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=tuple(float(i) for i in range(len(values))),
+                shape=(len(values),),
+                axis_names=("composite",),
+            )
+        },
+    )

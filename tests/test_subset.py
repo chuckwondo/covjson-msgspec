@@ -25,49 +25,6 @@ from covjson_msgspec import (
 _REF = (ReferenceSystemConnection(coordinates=("x", "y"), system=GeographicCRS()),)
 
 
-def _grid() -> Coverage:
-    """A 2 (y) x 4 (x) grid whose single range holds 0..7 in row-major order.
-
-    Fully spec-valid (carries referencing and a matching parameter) so that
-    `test_isel_result_is_valid` can assert a subset of a valid coverage stays
-    valid.
-    """
-    return Coverage(
-        domain=Domain.grid(
-            x=Axis.regular(0.0, 30.0, 4),
-            y=Axis.regular(0.0, 10.0, 2),
-            referencing=_REF,
-        ),
-        ranges={
-            "v": NdArray(
-                data_type="float",
-                values=tuple(float(i) for i in range(8)),
-                shape=(2, 4),
-                axis_names=("y", "x"),
-            )
-        },
-        parameters={
-            "v": Parameter.continuous(
-                ObservedProperty(label=i18n("Value")), Unit(symbol="1")
-            )
-        },
-    )
-
-
-def _arr(coverage: Coverage, key: str) -> NdArray:
-    """The named range, narrowed to `NdArray` for typed attribute access."""
-    range_ = coverage.ranges[key]
-    assert isinstance(range_, NdArray)
-    return range_
-
-
-def _axis(coverage: Coverage, name: str) -> Axis:
-    """The named domain axis, narrowed past the `Domain | str` domain union."""
-    domain = coverage.domain
-    assert isinstance(domain, Domain)
-    return domain.axes[name]
-
-
 # --- isel -------------------------------------------------------------------
 
 
@@ -355,3 +312,46 @@ def test_isel_matches_xarray_roundtrip() -> None:
     assert _axis(sub, "x").coordinate_values == tuple(ds["x"].values.tolist())
     # xarray keeps y as a scalar coordinate; our domain keeps it as a 1-value axis.
     assert _axis(sub, "y").coordinate_values == (float(ds["y"].values),)
+
+
+def _grid() -> Coverage:
+    """A 2 (y) x 4 (x) grid whose single range holds 0..7 in row-major order.
+
+    Fully spec-valid (carries referencing and a matching parameter) so that
+    `test_isel_result_is_valid` can assert a subset of a valid coverage stays
+    valid.
+    """
+    return Coverage(
+        domain=Domain.grid(
+            x=Axis.regular(0.0, 30.0, 4),
+            y=Axis.regular(0.0, 10.0, 2),
+            referencing=_REF,
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=tuple(float(i) for i in range(8)),
+                shape=(2, 4),
+                axis_names=("y", "x"),
+            )
+        },
+        parameters={
+            "v": Parameter.continuous(
+                ObservedProperty(label=i18n("Value")), Unit(symbol="1")
+            )
+        },
+    )
+
+
+def _arr(coverage: Coverage, key: str) -> NdArray:
+    """The named range, narrowed to `NdArray` for typed attribute access."""
+    range_ = coverage.ranges[key]
+    assert isinstance(range_, NdArray)
+    return range_
+
+
+def _axis(coverage: Coverage, name: str) -> Axis:
+    """The named domain axis, narrowed past the `Domain | str` domain union."""
+    domain = coverage.domain
+    assert isinstance(domain, Domain)
+    return domain.axes[name]

@@ -135,6 +135,15 @@ Docstrings and doctests:
   stays single-line. Do not reformat verbatim `msgspec.json.format(indent=2)`
   output, which is program output that must match exactly.
 
+Tests:
+
+- Place `_helper` functions after all `test_` functions (mirrors the source
+  convention of private helpers after the public API). Exception: a helper
+  called at module-load time (e.g., directly inside a `@pytest.mark.parametrize`
+  decorator) must precede its first use; treat it like a module-level constant.
+- Prefer `@pytest.mark.parametrize` over `for` loops inside test functions; each
+  case becomes a separately reported, independently re-runnable test item.
+
 Prose wrapping (three surfaces, three rules):
 
 - Git commit messages: hard-wrap, standard conventions (~50-char subject, body

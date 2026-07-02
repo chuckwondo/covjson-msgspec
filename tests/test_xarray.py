@@ -29,33 +29,6 @@ from covjson_msgspec import (
 )
 
 
-def _dom(coverage: Coverage) -> Domain:
-    domain = coverage.domain
-    assert isinstance(domain, Domain)
-    return domain
-
-
-def _nd(coverage: Coverage, key: str) -> NdArray:
-    array = coverage.ranges[key]
-    assert isinstance(array, NdArray)
-    return array
-
-
-def _params(coverage: Coverage) -> dict[str, Parameter]:
-    assert coverage.parameters is not None
-    return coverage.parameters
-
-
-def _temperature() -> Parameter:
-    return Parameter.continuous(
-        ObservedProperty(
-            label=i18n("Air temperature"),
-            id="http://vocab.nerc.ac.uk/standard_name/air_temperature",
-        ),
-        Unit(symbol="K"),
-    )
-
-
 def test_grid_maps_ranges_to_data_variables() -> None:
     cov = Coverage(
         domain=Domain.grid(x=Axis.regular(0.0, 10.0, 2), y=Axis.regular(0.0, 5.0, 2)),
@@ -607,27 +580,6 @@ def test_from_xarray_rejects_missing_time_coordinate() -> None:
         from_xarray(ds)
 
 
-def _collection() -> CoverageCollection:
-    members = (
-        Coverage(
-            id="point-a",
-            domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
-            ranges={"t": NdArray(data_type="float", values=(280.0,))},
-        ),
-        Coverage(
-            id="point-b",
-            domain=Domain.point(x=Axis.listed((3.0,)), y=Axis.listed((4.0,))),
-            ranges={"t": NdArray(data_type="float", values=(281.0,))},
-        ),
-    )
-
-    return CoverageCollection(
-        coverages=members,
-        domain_type="Point",
-        parameters={"t": _temperature()},
-    )
-
-
 def test_collection_to_datatree_one_node_per_coverage() -> None:
     tree = to_datatree(_collection())
 
@@ -668,3 +620,51 @@ def test_from_datatree_single_node_root_data() -> None:
 
     assert len(collection.coverages) == 1
     assert _dom(collection.coverages[0]).domain_type == "Grid"
+
+
+def _dom(coverage: Coverage) -> Domain:
+    domain = coverage.domain
+    assert isinstance(domain, Domain)
+    return domain
+
+
+def _nd(coverage: Coverage, key: str) -> NdArray:
+    array = coverage.ranges[key]
+    assert isinstance(array, NdArray)
+    return array
+
+
+def _params(coverage: Coverage) -> dict[str, Parameter]:
+    assert coverage.parameters is not None
+    return coverage.parameters
+
+
+def _temperature() -> Parameter:
+    return Parameter.continuous(
+        ObservedProperty(
+            label=i18n("Air temperature"),
+            id="http://vocab.nerc.ac.uk/standard_name/air_temperature",
+        ),
+        Unit(symbol="K"),
+    )
+
+
+def _collection() -> CoverageCollection:
+    members = (
+        Coverage(
+            id="point-a",
+            domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+            ranges={"t": NdArray(data_type="float", values=(280.0,))},
+        ),
+        Coverage(
+            id="point-b",
+            domain=Domain.point(x=Axis.listed((3.0,)), y=Axis.listed((4.0,))),
+            ranges={"t": NdArray(data_type="float", values=(281.0,))},
+        ),
+    )
+
+    return CoverageCollection(
+        coverages=members,
+        domain_type="Point",
+        parameters={"t": _temperature()},
+    )

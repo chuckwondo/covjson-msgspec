@@ -16,13 +16,6 @@ from covjson_msgspec import (
 )
 
 
-def _coverage() -> Coverage:
-    return Coverage(
-        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
-        ranges={"t": NdArray(data_type="float", values=(280.0,))},
-    )
-
-
 def test_media_type_value() -> None:
     assert MEDIA_TYPE == "application/prs.coverage+json"
     assert MEDIA_TYPE.endswith("+json")
@@ -101,3 +94,10 @@ def test_decode_response_rejects_wrong_content_type() -> None:
 
     with pytest.raises(ValueError, match="content type"):
         decode_response(body, "application/json")
+
+
+def _coverage() -> Coverage:
+    return Coverage(
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={"t": NdArray(data_type="float", values=(280.0,))},
+    )

@@ -41,20 +41,6 @@ def _ids(paths: list[pathlib.Path]) -> list[str]:
     return [str(path.relative_to(_CORPUS)) for path in paths]
 
 
-def _error_codes(obj: CoverageJSON) -> set[str]:
-    return {
-        issue.code
-        for issue in validate(obj, check_values=True)
-        if issue.severity is Severity.ERROR
-    }
-
-
-def _issues(obj: CoverageJSON) -> set[tuple[str, str]]:
-    return {
-        (issue.code, issue.severity.value) for issue in validate(obj, check_values=True)
-    }
-
-
 def test_playground_corpus_is_present() -> None:
     # Guard against a silently empty parametrization (e.g. a partial checkout):
     # the pinned playground snapshot vendors exactly 28 documents.
@@ -122,3 +108,17 @@ def test_negative_document_flags_expected_issues(path: pathlib.Path) -> None:
     # them negative is the validate() issues they carry.
     assert decode(encode(obj)) == obj
     assert _issues(obj) == _NEGATIVE_ISSUES[path.name]
+
+
+def _error_codes(obj: CoverageJSON) -> set[str]:
+    return {
+        issue.code
+        for issue in validate(obj, check_values=True)
+        if issue.severity is Severity.ERROR
+    }
+
+
+def _issues(obj: CoverageJSON) -> set[tuple[str, str]]:
+    return {
+        (issue.code, issue.severity.value) for issue in validate(obj, check_values=True)
+    }
