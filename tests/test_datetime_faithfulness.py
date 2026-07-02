@@ -52,33 +52,6 @@ NON_GREGORIAN_CALENDAR = "http://example.com/calendars/non-gregorian"
 CF_CALENDAR_NAME = "360_day"
 
 
-def _series(calendar: str = NON_GREGORIAN_CALENDAR) -> Coverage:
-    """A PointSeries coverage whose time axis lists the awkward instants."""
-    domain = Domain.point_series(
-        x=Axis.listed((1.0,)),
-        y=Axis.listed((2.0,)),
-        t=Axis.listed(AWKWARD_TIMES),
-        referencing=[
-            ReferenceSystemConnection(
-                coordinates=("t",),
-                system=TemporalRS(calendar=calendar),
-            )
-        ],
-    )
-    values = tuple(float(i) for i in range(len(AWKWARD_TIMES)))
-    return Coverage(
-        domain=domain,
-        ranges={
-            "v": NdArray(
-                data_type="float",
-                axis_names=("t",),
-                shape=(len(values),),
-                values=values,
-            )
-        },
-    )
-
-
 def test_decode_keeps_time_values_as_raw_strings() -> None:
     """Decoding never parses a temporal value: each stays the exact wire string."""
     blob = encode(_series())
@@ -153,3 +126,30 @@ def test_decoded_time_values_are_plain_str() -> None:
     assert values is not None
     assert all(isinstance(value, str) for value in values)
     assert not any(isinstance(value, datetime.datetime) for value in values)
+
+
+def _series(calendar: str = NON_GREGORIAN_CALENDAR) -> Coverage:
+    """A PointSeries coverage whose time axis lists the awkward instants."""
+    domain = Domain.point_series(
+        x=Axis.listed((1.0,)),
+        y=Axis.listed((2.0,)),
+        t=Axis.listed(AWKWARD_TIMES),
+        referencing=[
+            ReferenceSystemConnection(
+                coordinates=("t",),
+                system=TemporalRS(calendar=calendar),
+            )
+        ],
+    )
+    values = tuple(float(i) for i in range(len(AWKWARD_TIMES)))
+    return Coverage(
+        domain=domain,
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                axis_names=("t",),
+                shape=(len(values),),
+                values=values,
+            )
+        },
+    )

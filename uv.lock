@@ -232,7 +232,6 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "msgspec" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
 
 [package.optional-dependencies]
@@ -298,7 +297,6 @@ requires-dist = [
     { name = "pandas", marker = "extra == 'geo'", specifier = ">=2.0" },
     { name = "pandas", marker = "extra == 'pandas'", specifier = ">=2.0" },
     { name = "shapely", marker = "extra == 'geo'", specifier = ">=2.0" },
-    { name = "typing-extensions", marker = "python_full_version < '3.13'", specifier = ">=4.12" },
     { name = "xarray", marker = "extra == 'xarray'", specifier = ">=2024.10" },
 ]
 provides-extras = ["numpy", "xarray", "pandas", "geo", "all"]

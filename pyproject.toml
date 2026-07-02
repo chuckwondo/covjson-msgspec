@@ -23,9 +23,6 @@ classifiers = [
 ]
 dependencies = [
     "msgspec>=0.18",
-    # TypeVar(default=...) (PEP 696) is only in stdlib typing on 3.13+; use the
-    # backport on 3.11/3.12. Pure-Python, no transitive deps.
-    "typing-extensions>=4.12; python_version < '3.13'",
 ]
 
 [project.urls]

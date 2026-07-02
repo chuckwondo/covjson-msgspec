@@ -23,24 +23,6 @@ from covjson_msgspec import (
 )
 
 
-def _point_series_member(
-    coverage_id: str | None, x: float, values: tuple[float, ...]
-) -> Coverage:
-    return Coverage(
-        id=coverage_id,
-        domain=Domain.point_series(
-            x=Axis.listed((x,)),
-            y=Axis.listed((2.0,)),
-            t=Axis.listed(("a", "b")),
-        ),
-        ranges={
-            "v": NdArray(
-                data_type="float", values=values, shape=(2,), axis_names=("t",)
-            )
-        },
-    )
-
-
 def test_point_is_single_row_with_scalar_columns() -> None:
     cov = Coverage(
         domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
@@ -447,3 +429,21 @@ def test_collection_inherits_parameters_and_referencing() -> None:
 
 def test_empty_collection_is_empty_frame() -> None:
     assert to_pandas(CoverageCollection(coverages=())).empty
+
+
+def _point_series_member(
+    coverage_id: str | None, x: float, values: tuple[float, ...]
+) -> Coverage:
+    return Coverage(
+        id=coverage_id,
+        domain=Domain.point_series(
+            x=Axis.listed((x,)),
+            y=Axis.listed((2.0,)),
+            t=Axis.listed(("a", "b")),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float", values=values, shape=(2,), axis_names=("t",)
+            )
+        },
+    )

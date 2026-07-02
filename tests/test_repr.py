@@ -30,46 +30,6 @@ Displayable = (
 )
 
 
-def _render(obj: Displayable) -> str:
-    """Invoke the Jupyter ``_repr_html_`` hook.
-
-    The hook name has a leading underscore (the IPython protocol), which strict
-    type-checkers treat as a protected member; routing every call through this
-    one helper keeps the single suppression in one place.
-    """
-    return obj._repr_html_()  # pyright: ignore[reportPrivateUsage]
-
-
-def _temp_parameter() -> Parameter:
-    """A continuous air-temperature parameter in kelvin."""
-    return Parameter.continuous(
-        ObservedProperty(label=i18n("Air temperature")), Unit(symbol="K")
-    )
-
-
-def _temp_range() -> NdArray:
-    """A 2 (y) x 4 (x) float range holding 1..8 in row-major order."""
-    return NdArray(
-        data_type="float",
-        values=(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0),
-        shape=(2, 4),
-        axis_names=("y", "x"),
-    )
-
-
-def _grid_coverage() -> Coverage:
-    """A small Grid coverage with one continuous parameter and an NdArray range."""
-    return Coverage(
-        id="cov-1",
-        domain=Domain.grid(
-            x=Axis.regular(-180.0, 180.0, 4),
-            y=Axis.listed((0.0, 1.0)),
-        ),
-        ranges={"t": _temp_range()},
-        parameters={"t": _temp_parameter()},
-    )
-
-
 def test_coverage_repr_has_card_and_facts() -> None:
     html = _render(_grid_coverage())
 
@@ -246,6 +206,36 @@ def test_parameter_repr_categorical_lists_categories() -> None:
     assert "Forest" in html
 
 
+def _temp_parameter() -> Parameter:
+    """A continuous air-temperature parameter in kelvin."""
+    return Parameter.continuous(
+        ObservedProperty(label=i18n("Air temperature")), Unit(symbol="K")
+    )
+
+
+def _temp_range() -> NdArray:
+    """A 2 (y) x 4 (x) float range holding 1..8 in row-major order."""
+    return NdArray(
+        data_type="float",
+        values=(1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0),
+        shape=(2, 4),
+        axis_names=("y", "x"),
+    )
+
+
+def _grid_coverage() -> Coverage:
+    """A small Grid coverage with one continuous parameter and an NdArray range."""
+    return Coverage(
+        id="cov-1",
+        domain=Domain.grid(
+            x=Axis.regular(-180.0, 180.0, 4),
+            y=Axis.listed((0.0, 1.0)),
+        ),
+        ranges={"t": _temp_range()},
+        parameters={"t": _temp_parameter()},
+    )
+
+
 @pytest.mark.parametrize(
     "obj",
     [
@@ -257,3 +247,13 @@ def test_parameter_repr_categorical_lists_categories() -> None:
 )
 def test_repr_html_is_nonempty_str(obj: Displayable) -> None:
     assert _render(obj).strip()
+
+
+def _render(obj: Displayable) -> str:
+    """Invoke the Jupyter ``_repr_html_`` hook.
+
+    The hook name has a leading underscore (the IPython protocol), which strict
+    type-checkers treat as a protected member; routing every call through this
+    one helper keeps the single suppression in one place.
+    """
+    return obj._repr_html_()  # pyright: ignore[reportPrivateUsage]

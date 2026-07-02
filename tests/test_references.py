@@ -19,37 +19,6 @@ from covjson_msgspec import (
 )
 
 
-def _store_fetcher(store: dict[str, bytes]) -> Callable[[str], bytes]:
-    """A Fetch backed by an in-memory dict of canned documents."""
-    return store.__getitem__
-
-
-def _async_store_fetcher(store: dict[str, bytes]) -> Callable[[str], Awaitable[bytes]]:
-    """An AsyncFetch backed by an in-memory dict of canned documents."""
-
-    async def fetch(url: str) -> bytes:
-        return store[url]
-
-    return fetch
-
-
-def _domain() -> Domain:
-    return Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,)))
-
-
-def _ndarray() -> NdArray:
-    return NdArray(data_type="float", values=(280.0,))
-
-
-def _tiled() -> TiledNdArray:
-    return TiledNdArray(
-        data_type="float",
-        axis_names=("x",),
-        shape=(2,),
-        tile_sets=(TileSet(tile_shape=(1,), url_template="tiles/{x}.covjson"),),
-    )
-
-
 def test_resolves_url_domain() -> None:
     fetch = _store_fetcher({"d": encode(_domain())})
     cov = Coverage(domain="d", ranges={})
@@ -216,3 +185,34 @@ def test_async_delegates_match_the_function() -> None:
     assert asyncio.run(
         collection.resolve_references_async(_async_store_fetcher(store))
     ) == resolve_references(collection, _store_fetcher(store))
+
+
+def _store_fetcher(store: dict[str, bytes]) -> Callable[[str], bytes]:
+    """A Fetch backed by an in-memory dict of canned documents."""
+    return store.__getitem__
+
+
+def _async_store_fetcher(store: dict[str, bytes]) -> Callable[[str], Awaitable[bytes]]:
+    """An AsyncFetch backed by an in-memory dict of canned documents."""
+
+    async def fetch(url: str) -> bytes:
+        return store[url]
+
+    return fetch
+
+
+def _domain() -> Domain:
+    return Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,)))
+
+
+def _ndarray() -> NdArray:
+    return NdArray(data_type="float", values=(280.0,))
+
+
+def _tiled() -> TiledNdArray:
+    return TiledNdArray(
+        data_type="float",
+        axis_names=("x",),
+        shape=(2,),
+        tile_sets=(TileSet(tile_shape=(1,), url_template="tiles/{x}.covjson"),),
+    )
