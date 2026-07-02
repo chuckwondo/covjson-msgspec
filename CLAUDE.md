@@ -18,9 +18,12 @@ the README for install extras and usage.
 
 ## Architecture
 
-A **thin core + opt-in bridges** design. The core depends only on msgspec; each
-bridge lazy-imports its heavy dependency inside helper bodies and raises an
-install hint if it is missing.
+A **thin core + opt-in bridges** design. The core depends only on msgspec and
+langcodes (both pure Python, no heavy or native transitive dependencies;
+`langcodes` backs the BCP 47 language-tag check in `validation.py`, see
+ADR-0005 for why a small, dependency-free-in-its-base-install package cleared
+the bar a heavier one would not); each bridge lazy-imports its own (larger)
+dependency inside helper bodies and raises an install hint if it is missing.
 
 Core model (`src/covjson_msgspec/`):
 
@@ -31,7 +34,7 @@ Core model (`src/covjson_msgspec/`):
   subclass it only for types that cross the CoverageJSON wire. Internal value
   types that never serialize as CoverageJSON (`Issue`, `DomainTypeRule`)
   subclass bare `msgspec.Struct(frozen=True)` instead -- still a Struct (one
-  immutable-record system, and the core already depends only on msgspec), but
+  immutable-record system, and msgspec is already a core dependency), but
   without the wire-facing `rename`/`omit_defaults`. Reserve plain `@dataclass`
   for cases that need to avoid msgspec entirely; we have none today.
 - Spec structs: `axis.py`, `domain.py`, `range.py` (NdArray / TileSet /

@@ -5,11 +5,13 @@ import pytest
 from covjson_msgspec import (
     Axis,
     Category,
+    Concept,
     Coverage,
     CoverageCollection,
     CovJSONValidationError,
     Domain,
     GeographicCRS,
+    IdentifierRS,
     Issue,
     NdArray,
     ObservedProperty,
@@ -510,6 +512,120 @@ def test_raise_mode_raises_on_error() -> None:
 # A test that ``mode="raise"`` returns warning-only issues without raising
 # returns with #37, which reintroduces SHOULD-level (warning) checks. After #35
 # the warning tier has no producer, so no real document can exercise that path.
+
+
+def test_i18n_invalid_tag_in_parameter_label() -> None:
+    temp = Parameter.continuous(
+        ObservedProperty(label=i18n("Air temperature")),
+        Unit(symbol="K"),
+        label={"en_US": "Air temperature"},
+    )
+    cov = Coverage(
+        domain=Domain.point(
+            x=Axis.listed((1.0,)), y=Axis.listed((2.0,)), referencing=_REF
+        ),
+        ranges={},
+        parameters={"t": temp},
+    )
+    (issue,) = validate(cov)
+
+    assert issue.code == "i18n.invalid-language-tag"
+    assert issue.path == "/parameters/t/label/en_US"
+
+
+def test_i18n_invalid_tag_in_category_label() -> None:
+    land_cover = ObservedProperty(
+        label=i18n("Land cover"),
+        categories=(Category(id="1", label={"en_US": "Water"}),),
+    )
+    cov = Coverage(
+        domain=Domain.point(
+            x=Axis.listed((1.0,)), y=Axis.listed((2.0,)), referencing=_REF
+        ),
+        ranges={},
+        parameters={"lc": Parameter.categorical(land_cover, {"1": 1})},
+    )
+    (issue,) = validate(cov)
+
+    assert issue.code == "i18n.invalid-language-tag"
+    assert issue.path == "/parameters/lc/observedProperty/categories/0/label/en_US"
+
+
+def test_i18n_invalid_tag_in_crs_description() -> None:
+    ref = (
+        ReferenceSystemConnection(
+            coordinates=("x", "y"),
+            system=GeographicCRS(description={"en_US": "WGS 84"}),
+        ),
+    )
+    domain = Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,)), referencing=ref)
+    (issue,) = validate(domain)
+
+    assert issue.code == "i18n.invalid-language-tag"
+    assert issue.path == "/referencing/0/system/description/en_US"
+
+
+def test_i18n_invalid_tag_in_identifier_rs_identifiers() -> None:
+    # No domain_type set: isolates the i18n check from the axis-rule checks a
+    # "Point" domain_type would otherwise also require (see the _REF comment).
+    ref = (
+        ReferenceSystemConnection(
+            coordinates=("x",),
+            system=IdentifierRS(
+                target_concept=Concept(label=i18n("Land cover")),
+                identifiers={"1": Concept(label={"en_US": "Water"})},
+            ),
+        ),
+    )
+    domain = Domain(axes={"x": Axis.listed((1.0,))}, referencing=ref)
+    (issue,) = validate(domain)
+
+    assert issue.code == "i18n.invalid-language-tag"
+    assert issue.path == "/referencing/0/system/identifiers/1/label/en_US"
+
+
+def test_i18n_valid_tags_including_und_are_not_flagged() -> None:
+    temp = Parameter.continuous(
+        ObservedProperty(label=i18n("Air temperature", en="Air temperature")),
+        Unit(label={"en": "kelvin"}, symbol="K"),
+    )
+    domain = Domain(axes={"x": Axis.listed((1.0,))}, referencing=_REF)
+    cov = Coverage(domain=domain, ranges={}, parameters={"t": temp})
+
+    assert validate(cov) == []
+
+
+def test_i18n_invalid_tag_in_parameter_group_checked_even_without_parameters() -> None:
+    domain = Domain(axes={"x": Axis.listed((1.0,))}, referencing=_REF)
+    cov = Coverage(
+        domain=domain,
+        ranges={},
+        parameter_groups=(ParameterGroup(members=("a",), label={"en_US": "grp"}),),
+    )
+    codes = {i.code for i in validate(cov)}
+
+    assert "coverage.missing-parameters" in codes
+    assert "i18n.invalid-language-tag" in codes
+
+
+def test_i18n_empty_map_is_flagged() -> None:
+    # Built via the raw constructor (bypassing the `i18n()` builder, which
+    # itself rejects an empty map) to exercise validate()'s own check.
+    temp = Parameter.continuous(
+        ObservedProperty(label=i18n("Air temperature")),
+        Unit(label={}, symbol="K"),
+    )
+    cov = Coverage(
+        domain=Domain.point(
+            x=Axis.listed((1.0,)), y=Axis.listed((2.0,)), referencing=_REF
+        ),
+        ranges={},
+        parameters={"t": temp},
+    )
+    (issue,) = validate(cov)
+
+    assert issue.code == "i18n.empty"
+    assert issue.path == "/parameters/t/unit/label"
 
 
 def _value_type_paths(issues: list[Issue]) -> list[str]:

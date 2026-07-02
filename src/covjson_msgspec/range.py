@@ -578,7 +578,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
 _TILE_DECODER: Final[msgspec.json.Decoder[NdArray]] = msgspec.json.Decoder(NdArray)
 
 # A single Level 1 RFC 6570 expression, e.g. ``{t}`` in a tile url template.
-_TEMPLATE_VARIABLE = re.compile(r"\{([^{}]+)\}")
+_TEMPLATE_VARIABLE_RE = re.compile(r"\{([^{}]+)\}")
 
 
 def _tile_count(shape: tuple[int, ...], tile_shape: tuple[int | None, ...]) -> int:
@@ -661,7 +661,7 @@ def _expand_url_template(template: str, variables: dict[str, int]) -> str:
 
         return str(variables[name])
 
-    return _TEMPLATE_VARIABLE.sub(_substitute, template)
+    return _TEMPLATE_VARIABLE_RE.sub(_substitute, template)
 
 
 def _tile_layout(
