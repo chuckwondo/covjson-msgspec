@@ -23,6 +23,10 @@ classifiers = [
 ]
 dependencies = [
     "msgspec>=0.18",
+    # BCP 47 language-tag validation for i18n keys (validation.py). Pure
+    # Python, zero runtime deps in its base install (the `[data]` extra pulls
+    # in language_data, which we don't use). See ADR-0005.
+    "langcodes>=3.5",
 ]
 
 [project.urls]
@@ -30,9 +34,11 @@ Homepage = "https://github.com/chuckwondo/covjson-msgspec"
 Repository = "https://github.com/chuckwondo/covjson-msgspec"
 Issues = "https://github.com/chuckwondo/covjson-msgspec/issues"
 
-# Optional bridges -- the "thin core + opt-in bridges" architecture. Core stays
-# msgspec-only; each bridge lazy-imports its dependency and raises an install
-# hint if missing.
+# Optional bridges -- the "thin core + opt-in bridges" architecture. The core
+# depends only on msgspec and langcodes (both pure Python, no heavy/native
+# transitive deps; see ADR-0005); each bridge below lazy-imports its own
+# (typically numeric or geospatial) dependency and raises an install hint if
+# missing.
 [project.optional-dependencies]
 numpy = ["numpy>=1.24"]
 # xarray>=2024.10 first ships xarray.DataTree, used by the collection bridge.

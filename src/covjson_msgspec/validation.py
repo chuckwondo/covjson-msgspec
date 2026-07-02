@@ -36,9 +36,11 @@ import enum
 import math
 import re
 from collections.abc import Iterable, Iterator
+from functools import cache
 from itertools import chain
 from typing import Literal, assert_never
 
+import langcodes
 import msgspec
 
 from covjson_msgspec.axis import Axis
@@ -48,8 +50,24 @@ from covjson_msgspec.coverage import (
     CoverageJSON,
 )
 from covjson_msgspec.domain import Domain
-from covjson_msgspec.parameter import Parameter
+from covjson_msgspec.i18n import I18n
+from covjson_msgspec.parameter import (
+    Category,
+    ObservedProperty,
+    Parameter,
+    ParameterGroup,
+    Unit,
+)
 from covjson_msgspec.range import NdArray, TiledNdArray, TileSet
+from covjson_msgspec.referencing import (
+    Concept,
+    GeographicCRS,
+    IdentifierRS,
+    ProjectedCRS,
+    ReferenceSystem,
+    TemporalRS,
+    VerticalCRS,
+)
 
 
 class Severity(enum.StrEnum):
@@ -108,6 +126,8 @@ class IssueCode(enum.StrEnum):
     RANGE_VALUE_TYPE_MISMATCH = "range.value-type-mismatch"
     RANGE_INVALID_CATEGORY_CODE = "range.invalid-category-code"
     PARAMETER_GROUP_UNKNOWN_MEMBER = "parameter-group.unknown-member"
+    I18N_INVALID_LANGUAGE_TAG = "i18n.invalid-language-tag"
+    I18N_EMPTY = "i18n.empty"
 
 
 class Issue(msgspec.Struct, frozen=True):
@@ -782,6 +802,238 @@ def _domain_issues(
     )
 
 
+# BCP 47 (RFC 5646) restricts a language tag to ASCII letters, digits, and
+# hyphens as the subtag separator. `langcodes.tag_is_valid` is deliberately
+# more lenient than that (its primary use case is locale matching, so it
+# normalizes POSIX-style underscores, e.g. "en_US" parses the same as
+# "en-US"), so this structural guard runs first and rejects anything
+# `langcodes` would otherwise silently normalize away.
+_BCP47_CHARSET_RE = re.compile(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
+
+
+@cache
+def _is_valid_language_tag(tag: str) -> bool:
+    """Whether ``tag`` is a well-formed, registered BCP 47 language tag.
+
+    Validity has two independent parts, checked as a conjunction:
+    `_BCP47_CHARSET_RE` guards the wire-format character set (letters,
+    digits, and ``-`` only), and `langcodes.tag_is_valid` checks the parsed
+    tag against the actual IANA subtag registry (catching, for example,
+    ``"jp"``, which is well-formed but not a real language code -- a check no
+    regex alone can do). Both are needed: `langcodes.tag_is_valid` alone would
+    accept ``"en_US"`` (it normalizes the underscore before validating, since
+    its primary purpose is locale matching, not strict wire-format
+    validation). Cached: a document commonly repeats the same handful of tags
+    (e.g. ``"en"``) across many i18n-bearing fields, and each `langcodes`
+    lookup parses the tag against the registry data from scratch.
+
+    Parameters
+    ----------
+    tag
+        A single i18n object key.
+
+    Returns
+    -------
+    bool
+        Whether ``tag`` is both wire-format-conformant and registered.
+
+    Examples
+    --------
+    >>> _is_valid_language_tag("en-US")
+    True
+    >>> _is_valid_language_tag("und")
+    True
+    >>> _is_valid_language_tag("en_US")  # underscore: not BCP 47 syntax
+    False
+    >>> _is_valid_language_tag("jp")  # well-formed, but not a real code
+    False
+    """
+    return bool(_BCP47_CHARSET_RE.fullmatch(tag)) and langcodes.tag_is_valid(tag)
+
+
+def _language_tag_issues(tags: I18n | None, path: str) -> Iterator[Issue]:
+    """Yield an i18n object's ``i18n.empty`` or ``i18n.invalid-language-tag`` issues.
+
+    Spec 2: an i18n object MUST have at least one entry, and every key MUST be
+    a BCP 47 language tag (RFC 5646), or the special tag ``"und"`` (itself an
+    ordinary 3-letter subtag, so it needs no special case). A present-but-empty
+    map (``{}``) is reported once as ``i18n.empty``; otherwise each malformed
+    key is reported via `_is_valid_language_tag`.
+
+    Parameters
+    ----------
+    tags
+        An i18n language map, or ``None`` when the member is absent (yields
+        nothing); each key is checked. Accepting ``None`` here, rather than at
+        every call site, is what lets a caller pass an optional ``label`` /
+        ``description`` straight through without a guarding ternary.
+    path
+        The JSON Pointer to the i18n object, extended via `_ptr` per key.
+
+    Yields
+    ------
+    Issue
+        One ``i18n.empty`` issue for a present-but-empty map, or one
+        ``i18n.invalid-language-tag`` per malformed key, in map order.
+
+    Examples
+    --------
+    ``"und"`` and well-formed, registered tags pass; ``None`` yields nothing:
+
+    >>> list(_language_tag_issues({"und": "x", "en-US": "y"}, "#/label"))
+    []
+    >>> list(_language_tag_issues(None, "#/label"))
+    []
+
+    A present-but-empty map is reported once, at the map's own path:
+
+    >>> issue = next(_language_tag_issues({}, "#/label"))
+    >>> issue.code, issue.path
+    (<IssueCode.I18N_EMPTY: 'i18n.empty'>, '#/label')
+
+    A malformed separator and an unregistered subtag are both reported:
+
+    >>> [i.path for i in _language_tag_issues({"en_US": "x", "jp": "y"}, "#/label")]
+    ['#/label/en_US', '#/label/jp']
+    """
+    if tags is None:
+        return
+
+    if not tags:
+        yield Issue(
+            code=IssueCode.I18N_EMPTY,
+            message="i18n object must have at least one language-tagged entry",
+            path=path,
+        )
+        return
+
+    yield from (
+        Issue(
+            code=IssueCode.I18N_INVALID_LANGUAGE_TAG,
+            message=f"{tag!r} is not a valid BCP 47 language tag",
+            path=_ptr(path, tag),
+        )
+        for tag in tags
+        if not _is_valid_language_tag(tag)
+    )
+
+
+def _label_description_i18n_issues(
+    label: I18n | None, description: I18n | None, path: str
+) -> Iterator[Issue]:
+    """Yield the language-tag issues for a ``label``/``description`` pair.
+
+    The shared shape behind every ``label``/``description``-carrying struct in
+    this module (`Unit`, `Category`, `ObservedProperty`, `Parameter`,
+    `ParameterGroup`, `Concept`, `IdentifierRS`): both members are optional
+    i18n maps, checked via `_language_tag_issues` in that order.
+
+    Parameters
+    ----------
+    label
+        The ``label`` i18n map, or ``None`` when absent.
+    description
+        The ``description`` i18n map, or ``None`` when absent.
+    path
+        The JSON Pointer to the enclosing object, extended via `_ptr`.
+
+    Yields
+    ------
+    Issue
+        ``label`` issues first, then ``description`` issues.
+
+    Examples
+    --------
+    >>> issues = _label_description_i18n_issues(
+    ...     {"en_US": "x"}, {"jp": "y"}, "#/parameters/t"
+    ... )
+    >>> [i.path for i in issues]
+    ['#/parameters/t/label/en_US', '#/parameters/t/description/jp']
+    """
+    yield from _language_tag_issues(label, _ptr(path, "label"))
+    yield from _language_tag_issues(description, _ptr(path, "description"))
+
+
+def _concept_i18n_issues(concept: Concept, path: str) -> Iterator[Issue]:
+    """Yield a `Concept`'s language-tag issues (its ``label``/``description``).
+
+    Parameters
+    ----------
+    concept
+        The concept to check (an `IdentifierRS`'s ``target_concept`` or one of
+        its ``identifiers`` values).
+    path
+        The JSON Pointer to ``concept``, extended via `_ptr` for each issue.
+
+    Yields
+    ------
+    Issue
+        ``label`` issues first, then ``description`` issues, per `_ptr` order.
+
+    Examples
+    --------
+    >>> bad = Concept(label={"en_US": "Water"})
+    >>> [i.path for i in _concept_i18n_issues(bad, "#/targetConcept")]
+    ['#/targetConcept/label/en_US']
+    """
+    yield from _label_description_i18n_issues(concept.label, concept.description, path)
+
+
+def _reference_system_i18n_issues(
+    system: ReferenceSystem, path: str
+) -> Iterator[Issue]:
+    """Yield a `ReferenceSystem`'s language-tag issues, dispatching on its kind.
+
+    The three spatial CRS types carry only ``description``; `TemporalRS` has no
+    i18n fields at all; `IdentifierRS` carries a `Concept` for ``target_concept``
+    (encoded first on the wire), then its own ``label``/``description``, then
+    each ``identifiers`` value.
+
+    Parameters
+    ----------
+    system
+        The reference system to check (a `ReferenceSystemConnection.system`).
+    path
+        The JSON Pointer to ``system``, extended via `_ptr` for each issue.
+
+    Yields
+    ------
+    Issue
+        The system's language-tag issues, in wire-field order.
+
+    Examples
+    --------
+    >>> crs = GeographicCRS(description={"en_US": "WGS 84"})
+    >>> [i.path for i in _reference_system_i18n_issues(crs, "#/referencing/0/system")]
+    ['#/referencing/0/system/description/en_US']
+
+    A `TemporalRS` has no i18n fields, so it yields nothing:
+
+    >>> list(_reference_system_i18n_issues(TemporalRS(calendar="Gregorian"), "#"))
+    []
+    """
+    match system:
+        case GeographicCRS() | ProjectedCRS() | VerticalCRS():
+            yield from _language_tag_issues(
+                system.description, _ptr(path, "description")
+            )
+        case TemporalRS():
+            pass
+        case IdentifierRS():
+            yield from _concept_i18n_issues(
+                system.target_concept, _ptr(path, "targetConcept")
+            )
+            yield from _label_description_i18n_issues(
+                system.label, system.description, path
+            )
+            yield from chain.from_iterable(
+                _concept_i18n_issues(concept, _ptr(path, "identifiers", key))
+                for key, concept in (system.identifiers or {}).items()
+            )
+        case _:
+            assert_never(system)
+
+
 def _validate_domain(
     domain: Domain, domain_type: str | None, path: str
 ) -> Iterator[Issue]:
@@ -789,9 +1041,10 @@ def _validate_domain(
 
     Resolves ``domain_type`` to a `DomainTypeRule` and, when one applies, yields
     the violations `_domain_issues` finds; then yields a missing-referencing issue
-    when the domain carries no ``referencing`` in scope. An absent or unrecognized
-    (e.g. custom URI) ``domain_type`` carries no axis rules, but the referencing
-    check still applies.
+    when the domain carries no ``referencing`` in scope, and each reference
+    system's language-tag issues (`_reference_system_i18n_issues`). An absent or
+    unrecognized (e.g. custom URI) ``domain_type`` carries no axis rules, but the
+    referencing checks still apply.
 
     Parameters
     ----------
@@ -807,7 +1060,8 @@ def _validate_domain(
     ------
     Issue
         Axis-rule issues first (``axes`` precedes ``referencing`` on the wire),
-        then the referencing issue if any.
+        then the referencing issue if any, then each reference system's
+        language-tag issues.
 
     Examples
     --------
@@ -842,6 +1096,15 @@ def _validate_domain(
             message="domain must have a 'referencing' member",
             path=_ptr(path, "referencing"),
         )
+
+    # Spec 2: each reference system's i18n objects must be non-empty and their
+    # keys must be valid BCP 47 tags.
+    yield from chain.from_iterable(
+        _reference_system_i18n_issues(
+            connection.system, _ptr(path, "referencing", i, "system")
+        )
+        for i, connection in enumerate(domain.referencing)
+    )
 
 
 def _validate_ndarray(arr: NdArray, path: str) -> Iterator[Issue]:
@@ -907,9 +1170,10 @@ def _validate_ndarray(arr: NdArray, path: str) -> Iterator[Issue]:
 
 
 # A single Level 1 RFC 6570 expression (e.g. ``{t}``) in a tile url template.
-# Mirrors `covjson_msgspec.range._TEMPLATE_VARIABLE`; kept local so validation
-# owns its own template parsing rather than importing another module's private.
-_TEMPLATE_VARIABLE = re.compile(r"\{([^{}]+)\}")
+# Mirrors `covjson_msgspec.range._TEMPLATE_VARIABLE_RE`; kept local so
+# validation owns its own template parsing rather than importing another
+# module's private.
+_TEMPLATE_VARIABLE_RE = re.compile(r"\{([^{}]+)\}")
 
 
 def _tile_set_issues(
@@ -985,7 +1249,7 @@ def _tile_set_issues(
         if tile_dim is not None and tile_dim < 1
     )
 
-    present_names = _TEMPLATE_VARIABLE.findall(tile_set.url_template)
+    present_names = _TEMPLATE_VARIABLE_RE.findall(tile_set.url_template)
     present = set(present_names)
 
     # A subdivided axis (non-null tileShape) MUST have a template variable. When
@@ -1382,6 +1646,166 @@ def _check_value_data_types(arr: NdArray, path: str) -> Iterator[Issue]:
     )
 
 
+def _unit_i18n_issues(unit: Unit | None, path: str) -> Iterator[Issue]:
+    """Yield a `Unit`'s language-tag issues (its ``label``, if present).
+
+    Parameters
+    ----------
+    unit
+        The unit to check, or ``None`` when absent (yields nothing).
+    path
+        The JSON Pointer to ``unit``, extended via `_ptr` for each issue.
+
+    Yields
+    ------
+    Issue
+        The ``label``'s language-tag issues (`_language_tag_issues`).
+
+    Examples
+    --------
+    >>> list(_unit_i18n_issues(Unit(symbol="K"), "#/unit"))
+    []
+    >>> bad = Unit(label={"en_US": "kelvin"})
+    >>> [i.path for i in _unit_i18n_issues(bad, "#/unit")]
+    ['#/unit/label/en_US']
+    """
+    if unit is None:
+        return
+
+    yield from _language_tag_issues(unit.label, _ptr(path, "label"))
+
+
+def _category_i18n_issues(category: Category, path: str) -> Iterator[Issue]:
+    """Yield a `Category`'s language-tag issues (``label``/``description``).
+
+    Parameters
+    ----------
+    category
+        The category to check.
+    path
+        The JSON Pointer to ``category``, extended via `_ptr` for each issue.
+
+    Yields
+    ------
+    Issue
+        ``label`` issues first, then ``description`` issues.
+
+    Examples
+    --------
+    >>> bad = Category(id="1", label={"en_US": "Water"})
+    >>> [i.path for i in _category_i18n_issues(bad, "#/categories/0")]
+    ['#/categories/0/label/en_US']
+    """
+    yield from _label_description_i18n_issues(
+        category.label, category.description, path
+    )
+
+
+def _observed_property_i18n_issues(
+    op: ObservedProperty | None, path: str
+) -> Iterator[Issue]:
+    """Yield an `ObservedProperty`'s language-tag issues, including its categories.
+
+    Parameters
+    ----------
+    op
+        The observed property to check, or ``None`` when absent (yields
+        nothing).
+    path
+        The JSON Pointer to ``op``, extended via `_ptr` for each issue.
+
+    Yields
+    ------
+    Issue
+        ``label`` issues, then ``description`` issues, then each
+        ``categories[i]``'s issues (`_category_i18n_issues`), in order.
+
+    Examples
+    --------
+    >>> land_cover = ObservedProperty(
+    ...     label={"en": "Land cover"},
+    ...     categories=(Category(id="1", label={"en_US": "Water"}),),
+    ... )
+    >>> issues = _observed_property_i18n_issues(land_cover, "#/observedProperty")
+    >>> [i.path for i in issues]
+    ['#/observedProperty/categories/0/label/en_US']
+    """
+    if op is None:
+        return
+
+    yield from _label_description_i18n_issues(op.label, op.description, path)
+    yield from chain.from_iterable(
+        _category_i18n_issues(category, _ptr(path, "categories", i))
+        for i, category in enumerate(op.categories or ())
+    )
+
+
+def _parameter_i18n_issues(param: Parameter, path: str) -> Iterator[Issue]:
+    """Yield a `Parameter`'s language-tag issues, including nested members.
+
+    Checks the parameter's ``observedProperty`` (`_observed_property_i18n_issues`,
+    encoded first on the wire), then its own ``label``/``description``, then
+    its ``unit`` (`_unit_i18n_issues`).
+
+    Parameters
+    ----------
+    param
+        The parameter to check.
+    path
+        The JSON Pointer to ``param``, extended via `_ptr` for each issue.
+
+    Yields
+    ------
+    Issue
+        The parameter's issues, in wire-field order.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import i18n
+    >>> temp = Parameter.continuous(
+    ...     ObservedProperty(label=i18n("Air temperature")),
+    ...     Unit(label={"en_US": "kelvin"}),
+    ... )
+    >>> [i.path for i in _parameter_i18n_issues(temp, "#/parameters/t")]
+    ['#/parameters/t/unit/label/en_US']
+    """
+    yield from _observed_property_i18n_issues(
+        param.observed_property, _ptr(path, "observedProperty")
+    )
+    yield from _label_description_i18n_issues(param.label, param.description, path)
+    yield from _unit_i18n_issues(param.unit, _ptr(path, "unit"))
+
+
+def _parameter_group_i18n_issues(group: ParameterGroup, path: str) -> Iterator[Issue]:
+    """Yield a `ParameterGroup`'s language-tag issues, including nested members.
+
+    Checks the group's own ``label``/``description`` and, when present, its
+    ``observedProperty`` (`_observed_property_i18n_issues`).
+
+    Parameters
+    ----------
+    group
+        The parameter group to check.
+    path
+        The JSON Pointer to ``group``, extended via `_ptr` for each issue.
+
+    Yields
+    ------
+    Issue
+        The group's issues, in wire-field order.
+
+    Examples
+    --------
+    >>> bad = ParameterGroup(members=("u", "v"), label={"en_US": "Wind"})
+    >>> [i.path for i in _parameter_group_i18n_issues(bad, "#/parameterGroups/0")]
+    ['#/parameterGroups/0/label/en_US']
+    """
+    yield from _label_description_i18n_issues(group.label, group.description, path)
+    yield from _observed_property_i18n_issues(
+        group.observed_property, _ptr(path, "observedProperty")
+    )
+
+
 def _validate_parameter_groups(
     coverage: Coverage, parameters: dict[str, Parameter], path: str
 ) -> Iterator[Issue]:
@@ -1492,9 +1916,13 @@ def _validate_coverage(
     Composes the per-coverage rules: an inline domain's issues
     (`_validate_domain`), the coverage's ``parameters`` presence (a
     ``coverage.missing-parameters`` issue) or its parameter groups
-    (`_validate_parameter_groups`), and every range (`_validate_ranges`). A
-    URL-reference domain contributes no domain or range-vs-domain issues silently
-    (it is unfetched yet spec-valid; see `validate`'s Notes).
+    (`_validate_parameter_groups`), each parameter's and parameter group's
+    language-tag issues (`_parameter_i18n_issues` / `_parameter_group_i18n_issues`,
+    run unconditionally -- a group's own label is checkable even when
+    ``coverage.missing-parameters`` also fires), and every range
+    (`_validate_ranges`). A URL-reference domain contributes no domain or
+    range-vs-domain issues silently (it is unfetched yet spec-valid; see
+    `validate`'s Notes).
 
     Parameters
     ----------
@@ -1508,7 +1936,8 @@ def _validate_coverage(
     Yields
     ------
     Issue
-        The coverage's issues, in document order: domain, parameters, ranges.
+        The coverage's issues, in document order: domain, parameters (including
+        parameter and parameter-group language-tag issues), ranges.
     """
     domain = coverage.domain
     parameters = coverage.parameters
@@ -1536,9 +1965,20 @@ def _validate_coverage(
         else _validate_parameter_groups(coverage, parameters, path)
     )
 
+    parameter_i18n_issues = chain.from_iterable(
+        _parameter_i18n_issues(param, _ptr(path, "parameters", key))
+        for key, param in (parameters or {}).items()
+    )
+    parameter_group_i18n_issues = chain.from_iterable(
+        _parameter_group_i18n_issues(group, _ptr(path, "parameterGroups", i))
+        for i, group in enumerate(coverage.parameter_groups or ())
+    )
+
     return chain(
         domain_issues,
         parameter_issues,
+        parameter_i18n_issues,
+        parameter_group_i18n_issues,
         _validate_ranges(coverage, domain, parameters, path, check_values),
     )
 

@@ -68,3 +68,11 @@ file = "tiled-ndarray-url-template-unknown-variable.json"
 issues = [
   { code = "tiled-ndarray.url-template-unknown-variable", severity = "error" },
 ]
+
+[[case]]
+file = "i18n-invalid-language-tag.json"
+issues = [{ code = "i18n.invalid-language-tag", severity = "error" }]
+
+[[case]]
+file = "i18n-empty.json"
+issues = [{ code = "i18n.empty", severity = "error" }]
