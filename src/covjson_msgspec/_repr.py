@@ -18,11 +18,12 @@ from __future__ import annotations
 import html
 from typing import TYPE_CHECKING
 
+from covjson_msgspec._i18n import display
+
 if TYPE_CHECKING:
     from covjson_msgspec.axis import Axis
     from covjson_msgspec.coverage import Coverage, CoverageCollection
     from covjson_msgspec.domain import Domain
-    from covjson_msgspec.i18n import I18n
     from covjson_msgspec.parameter import Parameter, Unit
     from covjson_msgspec.range import NdArray, TiledNdArray
 
@@ -287,14 +288,14 @@ def parameter_html(parameter: Parameter) -> str:
     categories = observed.categories
     summary = [
         ("Kind", "categorical" if categories is not None else "continuous"),
-        ("Observed property", _label(observed.label) or "?"),
+        ("Observed property", display(observed.label) or "?"),
     ]
 
     sections: list[str] = []
 
     if categories is not None:
         summary.append(("Categories", str(len(categories))))
-        rows = [[category.id, _label(category.label)] for category in categories]
+        rows = [[category.id, display(category.label)] for category in categories]
         sections.append(_table_section("Categories", ["id", "Label"], rows))
     else:
         summary.append(("Unit", _unit_text(parameter.unit)))
@@ -540,7 +541,7 @@ def _parameter_section(parameters: dict[str, Parameter]) -> str:
     rows = [
         [
             key,
-            _label(parameter.observed_property.label),
+            display(parameter.observed_property.label),
             _unit_text(parameter.unit),
         ]
         for key, parameter in parameters.items()
@@ -717,37 +718,6 @@ def _shape_text(shape: tuple[int | None, ...]) -> str:
     return str(shape) if shape else "scalar"
 
 
-def _label(text: I18n | None) -> str:
-    """Pick one display string from an i18n language map.
-
-    Parameters
-    ----------
-    text
-        A CoverageJSON i18n object (``language tag -> string``), or ``None``.
-
-    Returns
-    -------
-    str
-        The English string if present, else the undetermined (``"und"``) one,
-        else any value; ``""`` for ``None`` or an empty map.
-
-    Examples
-    --------
-    >>> _label({"en": "Air temperature", "de": "Lufttemperatur"})
-    'Air temperature'
-    >>> _label({"und": "Wind"})
-    'Wind'
-    >>> _label(None)
-    ''
-    """
-    if not text:
-        return ""
-    for tag in ("en", "und"):
-        if tag in text:
-            return text[tag]
-    return next(iter(text.values()))
-
-
 def _unit_text(unit: Unit | None) -> str:
     """Describe a `Unit` in one line: its symbol, else its label.
 
@@ -783,7 +753,7 @@ def _unit_text(unit: Unit | None) -> str:
         # a runtime import of the model types (all are TYPE_CHECKING-only).
         return str(getattr(unit.symbol, "value", unit.symbol))
 
-    return _label(unit.label)
+    return display(unit.label)
 
 
 def _escape(value: object) -> str:
