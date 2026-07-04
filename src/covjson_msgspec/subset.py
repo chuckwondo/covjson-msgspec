@@ -80,7 +80,8 @@ def isel(
         If the domain is a URL reference, an indexer names an unknown axis, or
         the same axis is given both positionally and as a keyword.
     IndexError
-        If an integer indexer is out of bounds for its axis.
+        If an integer indexer is out of bounds for its axis, or a slice
+        selects no positions (CoverageJSON forbids an empty axis).
     NotImplementedError
         If an indexer targets a composite (``"tuple"`` / ``"polygon"``) axis.
 
@@ -402,7 +403,8 @@ def _resolve_indexer(axis: Axis, indexer: Indexer) -> _AxisSelection:
     Raises
     ------
     IndexError
-        If an integer indexer is out of bounds.
+        If an integer indexer is out of bounds, or a slice selects no
+        positions (CoverageJSON forbids an empty axis).
 
     Examples
     --------
@@ -415,11 +417,24 @@ def _resolve_indexer(axis: Axis, indexer: Indexer) -> _AxisSelection:
     Traceback (most recent call last):
         ...
     IndexError: index 5 is out of bounds for axis of length 5
+    >>> _resolve_indexer(Axis.regular(0.0, 10.0, 5), slice(2, 2))
+    Traceback (most recent call last):
+        ...
+    IndexError: slice(2, 2, None) selects no coordinates; an axis cannot be empty
     """
-    length = len(axis.coordinate_values)
+    length = len(axis)
 
     if isinstance(indexer, slice):
-        return _AxisSelection(tuple(range(*indexer.indices(length))), keep_dim=True)
+        positions = tuple(range(*indexer.indices(length)))
+
+        # An empty selection cannot be represented: CoverageJSON forbids an
+        # empty axis (spec 6.1.1, enforced by Axis.__post_init__). Mirrors the
+        # KeyError `sel` raises for a label slice matching no coordinates.
+        if not positions:
+            msg = f"{indexer!r} selects no coordinates; an axis cannot be empty"
+            raise IndexError(msg)
+
+        return _AxisSelection(positions, keep_dim=True)
 
     position = indexer + length if indexer < 0 else indexer
 

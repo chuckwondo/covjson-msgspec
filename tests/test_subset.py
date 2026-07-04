@@ -87,6 +87,11 @@ def test_isel_out_of_bounds() -> None:
         isel(_grid(), x=4)
 
 
+def test_isel_empty_slice() -> None:
+    with pytest.raises(IndexError, match="selects no coordinates"):
+        isel(_grid(), x=slice(2, 2))
+
+
 def test_isel_conflicting_indexer() -> None:
     with pytest.raises(ValueError, match="both positionally and as a keyword"):
         isel(_grid(), {"x": 0}, x=1)

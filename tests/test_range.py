@@ -2,13 +2,13 @@
 
 import asyncio
 import itertools
-from collections.abc import Awaitable, Callable
 
 import msgspec
 import numpy as np
 import pytest
 
 from covjson_msgspec import NdArray, TiledNdArray, TileSet, encode
+from fetchers import async_store_fetcher, store_fetcher
 
 
 def _spec_tiled() -> TiledNdArray:
@@ -105,7 +105,7 @@ def test_assemble_reconstructs_full_array_for_each_tileset(index: int) -> None:
     full = np.arange(100, dtype=float).reshape(2, 5, 10)
     tiled = _spec_tiled()
     store = _tile_store(full, tiled, index)
-    result = tiled.assemble(_store_fetcher(store), tileset=index)
+    result = tiled.assemble(store_fetcher(store), tileset=index)
 
     assert result.shape == (2, 5, 10)
     assert result.axis_names == ("t", "y", "x")
@@ -119,7 +119,7 @@ def test_assemble_default_picks_the_fewest_tiles() -> None:
     # so never request a URL from the 2-tile or 12-tile sets).
     store = _tile_store(full, tiled, 0)
 
-    result = tiled.assemble(_store_fetcher(store))
+    result = tiled.assemble(store_fetcher(store))
 
     assert result.values == tuple(full.ravel(order="C").tolist())
 
@@ -138,7 +138,7 @@ def test_assemble_handles_remainder_tiles() -> None:
         "2.covjson": encode(NdArray.from_numpy(full[4:5], ("x",))),
     }
 
-    result = tiled.assemble(_store_fetcher(store))
+    result = tiled.assemble(store_fetcher(store))
 
     assert result.shape == (5,)
     assert result.values == (0.0, 1.0, 2.0, 3.0, 4.0)
@@ -149,14 +149,14 @@ def test_assemble_without_tilesets_errors() -> None:
     tiled = TiledNdArray(data_type="float", axis_names=("x",), shape=(2,), tile_sets=())
 
     with pytest.raises(ValueError, match="no tileSets"):
-        tiled.assemble(_store_fetcher(empty))
+        tiled.assemble(store_fetcher(empty))
 
 
 def test_assemble_tileset_index_out_of_range_errors() -> None:
     empty: dict[str, bytes] = {}  # fetch is never reached
 
     with pytest.raises(ValueError, match="out of range"):
-        _spec_tiled().assemble(_store_fetcher(empty), tileset=5)
+        _spec_tiled().assemble(store_fetcher(empty), tileset=5)
 
 
 def test_assemble_invalid_tile_document_reports_url() -> None:
@@ -168,7 +168,7 @@ def test_assemble_invalid_tile_document_reports_url() -> None:
     )
 
     with pytest.raises(ValueError, match="not valid CoverageJSON"):
-        tiled.assemble(_store_fetcher({"0.covjson": b"nope"}))
+        tiled.assemble(store_fetcher({"0.covjson": b"nope"}))
 
 
 @pytest.mark.parametrize("index", range(len(_spec_tiled().tile_sets)))
@@ -177,7 +177,7 @@ def test_assemble_async_matches_sync_for_each_tileset(index: int) -> None:
     tiled = _spec_tiled()
     store = _tile_store(full, tiled, index)
     result = asyncio.run(
-        tiled.assemble_async(_async_store_fetcher(store), tileset=index)
+        tiled.assemble_async(async_store_fetcher(store), tileset=index)
     )
 
     assert result.shape == (2, 5, 10)
@@ -191,7 +191,7 @@ def test_assemble_async_default_picks_the_fewest_tiles() -> None:
     # Tile set 0 is the whole array in one tile; the default must reproduce it.
     store = _tile_store(full, tiled, 0)
 
-    result = asyncio.run(tiled.assemble_async(_async_store_fetcher(store)))
+    result = asyncio.run(tiled.assemble_async(async_store_fetcher(store)))
 
     assert result.values == tuple(full.ravel(order="C").tolist())
 
@@ -201,12 +201,12 @@ def test_assemble_async_without_tilesets_errors() -> None:
     tiled = TiledNdArray(data_type="float", axis_names=("x",), shape=(2,), tile_sets=())
 
     with pytest.raises(ValueError, match="no tileSets"):
-        asyncio.run(tiled.assemble_async(_async_store_fetcher(empty)))
+        asyncio.run(tiled.assemble_async(async_store_fetcher(empty)))
 
 
 def test_assemble_async_tileset_index_out_of_range_errors() -> None:
     empty: dict[str, bytes] = {}  # fetch is never reached
-    fetch = _async_store_fetcher(empty)
+    fetch = async_store_fetcher(empty)
 
     with pytest.raises(ValueError, match="out of range"):
         asyncio.run(_spec_tiled().assemble_async(fetch, tileset=5))
@@ -221,21 +221,7 @@ def test_assemble_async_invalid_tile_document_reports_url() -> None:
     )
 
     with pytest.raises(ValueError, match="not valid CoverageJSON"):
-        asyncio.run(tiled.assemble_async(_async_store_fetcher({"0.covjson": b"nope"})))
-
-
-def _store_fetcher(store: dict[str, bytes]) -> Callable[[str], bytes]:
-    """A Fetch backed by an in-memory dict of canned tile documents."""
-    return store.__getitem__
-
-
-def _async_store_fetcher(store: dict[str, bytes]) -> Callable[[str], Awaitable[bytes]]:
-    """An AsyncFetch backed by an in-memory dict of canned tile documents."""
-
-    async def fetch(url: str) -> bytes:
-        return store[url]
-
-    return fetch
+        asyncio.run(tiled.assemble_async(async_store_fetcher({"0.covjson": b"nope"})))
 
 
 def _tile_store(

@@ -16,14 +16,14 @@ previews are truncated), so a repr is cheap even for a big coverage.
 from __future__ import annotations
 
 import html
-import math
 from typing import TYPE_CHECKING
+
+from covjson_msgspec._i18n import display
 
 if TYPE_CHECKING:
     from covjson_msgspec.axis import Axis
     from covjson_msgspec.coverage import Coverage, CoverageCollection
     from covjson_msgspec.domain import Domain
-    from covjson_msgspec.i18n import I18n
     from covjson_msgspec.parameter import Parameter, Unit
     from covjson_msgspec.range import NdArray, TiledNdArray
 
@@ -236,6 +236,8 @@ def tiled_ndarray_html(array: TiledNdArray) -> str:
     >>> "TiledNdArray" in tiled_ndarray_html(tiled)
     True
     """
+    from covjson_msgspec.range import tile_count
+
     summary = [
         ("Data type", array.data_type),
         ("Shape", _shape_text(array.shape)),
@@ -246,7 +248,7 @@ def tiled_ndarray_html(array: TiledNdArray) -> str:
     rows = [
         [
             _shape_text(tile_set.tile_shape),
-            str(_tile_count(array.shape, tile_set.tile_shape)),
+            str(tile_count(array.shape, tile_set.tile_shape)),
             tile_set.url_template,
         ]
         for tile_set in array.tile_sets
@@ -286,14 +288,14 @@ def parameter_html(parameter: Parameter) -> str:
     categories = observed.categories
     summary = [
         ("Kind", "categorical" if categories is not None else "continuous"),
-        ("Observed property", _label(observed.label) or "?"),
+        ("Observed property", display(observed.label) or "?"),
     ]
 
     sections: list[str] = []
 
     if categories is not None:
         summary.append(("Categories", str(len(categories))))
-        rows = [[category.id, _label(category.label)] for category in categories]
+        rows = [[category.id, display(category.label)] for category in categories]
         sections.append(_table_section("Categories", ["id", "Label"], rows))
     else:
         summary.append(("Unit", _unit_text(parameter.unit)))
@@ -506,8 +508,7 @@ def _axis_section(domain: Domain) -> str:
     True
     """
     rows = [
-        [name, str(_axis_length(axis)), _axis_detail(axis)]
-        for name, axis in domain.axes.items()
+        [name, str(len(axis)), _axis_detail(axis)] for name, axis in domain.axes.items()
     ]
 
     return _table_section("Axes", ["Axis", "Length", "Extent"], rows)
@@ -540,7 +541,7 @@ def _parameter_section(parameters: dict[str, Parameter]) -> str:
     rows = [
         [
             key,
-            _label(parameter.observed_property.label),
+            display(parameter.observed_property.label),
             _unit_text(parameter.unit),
         ]
         for key, parameter in parameters.items()
@@ -602,36 +603,6 @@ def _range_summary(value: NdArray | TiledNdArray | str) -> list[str]:
         return ["reference", value, ""]
 
     return [type(value).__name__, value.data_type, _shape_text(value.shape)]
-
-
-def _axis_length(axis: Axis) -> int:
-    """Return an axis's coordinate count without materializing a regular axis.
-
-    Parameters
-    ----------
-    axis
-        The axis to measure.
-
-    Returns
-    -------
-    int
-        ``len(values)`` for a value-listing or composite axis, else ``num`` for
-        a regular axis.
-
-    Examples
-    --------
-    >>> from covjson_msgspec import Axis
-    >>> _axis_length(Axis.regular(0.0, 10.0, 5))
-    5
-    >>> _axis_length(Axis.listed((1.0, 2.0, 3.0)))
-    3
-    """
-    if (values := axis.values) is not None:
-        return len(values)
-
-    # __post_init__ guarantees the regular triple is complete when values is None.
-    assert axis.num is not None
-    return axis.num
 
 
 def _axis_detail(axis: Axis) -> str:
@@ -744,70 +715,7 @@ def _shape_text(shape: tuple[int | None, ...]) -> str:
     >>> _shape_text(())
     'scalar'
     """
-    return "scalar" if not shape else str(shape)
-
-
-def _tile_count(shape: tuple[int, ...], tile_shape: tuple[int | None, ...]) -> int:
-    """Count the tiles of one tile set that cover the full array.
-
-    Parameters
-    ----------
-    shape
-        The full array shape.
-    tile_shape
-        One tile set's tile shape (rank-matched to ``shape``). A ``None`` entry
-        marks an axis the tile set does not subdivide (one tile spans it).
-
-    Returns
-    -------
-    int
-        The product over each axis of ``ceil(size / tile_size)``, taking an
-        un-subdivided (``None``) axis as a single tile.
-
-    Examples
-    --------
-    >>> _tile_count((2, 5, 10), (1, 5, 10))
-    2
-    >>> _tile_count((2, 5, 10), (1, None, None))
-    2
-    >>> _tile_count((3,), (2,))
-    2
-    """
-    return math.prod(
-        math.ceil(size / tile) if tile is not None else 1
-        for size, tile in zip(shape, tile_shape, strict=True)
-    )
-
-
-def _label(text: I18n | None) -> str:
-    """Pick one display string from an i18n language map.
-
-    Parameters
-    ----------
-    text
-        A CoverageJSON i18n object (``language tag -> string``), or ``None``.
-
-    Returns
-    -------
-    str
-        The English string if present, else the undetermined (``"und"``) one,
-        else any value; ``""`` for ``None`` or an empty map.
-
-    Examples
-    --------
-    >>> _label({"en": "Air temperature", "de": "Lufttemperatur"})
-    'Air temperature'
-    >>> _label({"und": "Wind"})
-    'Wind'
-    >>> _label(None)
-    ''
-    """
-    if not text:
-        return ""
-    for tag in ("en", "und"):
-        if tag in text:
-            return text[tag]
-    return next(iter(text.values()))
+    return str(shape) if shape else "scalar"
 
 
 def _unit_text(unit: Unit | None) -> str:
@@ -845,7 +753,7 @@ def _unit_text(unit: Unit | None) -> str:
         # a runtime import of the model types (all are TYPE_CHECKING-only).
         return str(getattr(unit.symbol, "value", unit.symbol))
 
-    return _label(unit.label)
+    return display(unit.label)
 
 
 def _escape(value: object) -> str:

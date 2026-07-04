@@ -1,7 +1,6 @@
 """Behavioral tests for resolve_references and the injected fetcher seam."""
 
 import asyncio
-from collections.abc import Awaitable, Callable
 
 import pytest
 
@@ -17,10 +16,11 @@ from covjson_msgspec import (
     resolve_references,
     resolve_references_async,
 )
+from fetchers import async_store_fetcher, store_fetcher
 
 
 def test_resolves_url_domain() -> None:
-    fetch = _store_fetcher({"d": encode(_domain())})
+    fetch = store_fetcher({"d": encode(_domain())})
     cov = Coverage(domain="d", ranges={})
 
     resolved = resolve_references(cov, fetch)
@@ -30,7 +30,7 @@ def test_resolves_url_domain() -> None:
 
 
 def test_resolves_url_range_to_ndarray() -> None:
-    fetch = _store_fetcher({"t": encode(_ndarray())})
+    fetch = store_fetcher({"t": encode(_ndarray())})
     cov = Coverage(domain=_domain(), ranges={"t": "t"})
 
     resolved = resolve_references(cov, fetch)
@@ -41,7 +41,7 @@ def test_resolves_url_range_to_ndarray() -> None:
 
 
 def test_resolves_url_range_to_tiled_ndarray() -> None:
-    fetch = _store_fetcher({"t": encode(_tiled())})
+    fetch = store_fetcher({"t": encode(_tiled())})
     cov = Coverage(domain=_domain(), ranges={"t": "t"})
 
     resolved = resolve_references(cov, fetch)
@@ -51,7 +51,7 @@ def test_resolves_url_range_to_tiled_ndarray() -> None:
 
 def test_leaves_inline_members_untouched_and_resolves_mixed_ranges() -> None:
     inline = _ndarray()
-    fetch = _store_fetcher({"b": encode(NdArray(data_type="float", values=(9.0,)))})
+    fetch = store_fetcher({"b": encode(NdArray(data_type="float", values=(9.0,)))})
     cov = Coverage(domain=_domain(), ranges={"a": inline, "b": "b"})
 
     resolved = resolve_references(cov, fetch)
@@ -74,7 +74,7 @@ def test_coverage_without_references_returns_same_instance() -> None:
 
 
 def test_resolves_each_member_of_a_collection() -> None:
-    fetch = _store_fetcher({"d": encode(_domain()), "t": encode(_ndarray())})
+    fetch = store_fetcher({"d": encode(_domain()), "t": encode(_ndarray())})
     collection = CoverageCollection(
         coverages=(
             Coverage(domain="d", ranges={}),
@@ -91,7 +91,7 @@ def test_resolves_each_member_of_a_collection() -> None:
 
 
 def test_decode_failure_is_reported_against_the_url() -> None:
-    fetch = _store_fetcher({"d": b"not json"})
+    fetch = store_fetcher({"d": b"not json"})
     cov = Coverage(domain="d", ranges={})
 
     with pytest.raises(ValueError, match=r"fetched from 'd'"):
@@ -99,7 +99,7 @@ def test_decode_failure_is_reported_against_the_url() -> None:
 
 
 def test_fetcher_errors_propagate_unchanged() -> None:
-    fetch = _store_fetcher({})  # empty store -> KeyError
+    fetch = store_fetcher({})  # empty store -> KeyError
     cov = Coverage(domain="missing", ranges={})
 
     with pytest.raises(KeyError):
@@ -107,14 +107,14 @@ def test_fetcher_errors_propagate_unchanged() -> None:
 
 
 def test_coverage_delegate_matches_the_function() -> None:
-    fetch = _store_fetcher({"t": encode(_ndarray())})
+    fetch = store_fetcher({"t": encode(_ndarray())})
     cov = Coverage(domain=_domain(), ranges={"t": "t"})
 
     assert cov.resolve_references(fetch) == resolve_references(cov, fetch)
 
 
 def test_collection_delegate_matches_the_function() -> None:
-    fetch = _store_fetcher({"t": encode(_ndarray())})
+    fetch = store_fetcher({"t": encode(_ndarray())})
     collection = CoverageCollection(
         coverages=(Coverage(domain=_domain(), ranges={"t": "t"}),)
     )
@@ -132,14 +132,14 @@ def test_async_resolve_matches_sync_for_a_collection() -> None:
     )
 
     resolved = asyncio.run(
-        resolve_references_async(collection, _async_store_fetcher(store))
+        resolve_references_async(collection, async_store_fetcher(store))
     )
 
-    assert resolved == resolve_references(collection, _store_fetcher(store))
+    assert resolved == resolve_references(collection, store_fetcher(store))
 
 
 def test_async_resolves_url_range_to_tiled_ndarray() -> None:
-    fetch = _async_store_fetcher({"t": encode(_tiled())})
+    fetch = async_store_fetcher({"t": encode(_tiled())})
     cov = Coverage(domain=_domain(), ranges={"t": "t"})
 
     resolved = asyncio.run(resolve_references_async(cov, fetch))
@@ -159,7 +159,7 @@ def test_async_coverage_without_references_returns_same_instance() -> None:
 
 
 def test_async_decode_failure_is_reported_against_the_url() -> None:
-    fetch = _async_store_fetcher({"d": b"not json"})
+    fetch = async_store_fetcher({"d": b"not json"})
     cov = Coverage(domain="d", ranges={})
 
     with pytest.raises(ValueError, match=r"fetched from 'd'"):
@@ -167,7 +167,7 @@ def test_async_decode_failure_is_reported_against_the_url() -> None:
 
 
 def test_async_fetcher_errors_propagate_unchanged() -> None:
-    fetch = _async_store_fetcher({})  # empty store -> KeyError
+    fetch = async_store_fetcher({})  # empty store -> KeyError
     cov = Coverage(domain="missing", ranges={})
 
     with pytest.raises(KeyError):
@@ -179,26 +179,12 @@ def test_async_delegates_match_the_function() -> None:
     cov = Coverage(domain=_domain(), ranges={"t": "t"})
     collection = CoverageCollection(coverages=(cov,))
 
-    assert asyncio.run(cov.resolve_references_async(_async_store_fetcher(store))) == (
-        resolve_references(cov, _store_fetcher(store))
+    assert asyncio.run(cov.resolve_references_async(async_store_fetcher(store))) == (
+        resolve_references(cov, store_fetcher(store))
     )
     assert asyncio.run(
-        collection.resolve_references_async(_async_store_fetcher(store))
-    ) == resolve_references(collection, _store_fetcher(store))
-
-
-def _store_fetcher(store: dict[str, bytes]) -> Callable[[str], bytes]:
-    """A Fetch backed by an in-memory dict of canned documents."""
-    return store.__getitem__
-
-
-def _async_store_fetcher(store: dict[str, bytes]) -> Callable[[str], Awaitable[bytes]]:
-    """An AsyncFetch backed by an in-memory dict of canned documents."""
-
-    async def fetch(url: str) -> bytes:
-        return store[url]
-
-    return fetch
+        collection.resolve_references_async(async_store_fetcher(store))
+    ) == resolve_references(collection, store_fetcher(store))
 
 
 def _domain() -> Domain:

@@ -48,6 +48,7 @@ from covjson_msgspec._bridging import (
     STANDARD_CALENDARS,
     require_inline_ndarray,
 )
+from covjson_msgspec._i18n import display
 from covjson_msgspec.axis import Axis
 from covjson_msgspec.coverage import Coverage, CoverageCollection, Range
 from covjson_msgspec.domain import Domain
@@ -896,7 +897,7 @@ def _vertical_attrs(system: VerticalCRS) -> dict[str, str]:
     >>> _vertical_attrs(VerticalCRS(id="http://example.com/pressure"))
     {}
     """
-    text = " ".join(filter(None, (system.id, _english(system.description)))).lower()
+    text = " ".join(filter(None, (system.id, display(system.description)))).lower()
 
     if "depth" in text:
         return {"standard_name": "depth", "positive": "down"}
@@ -1011,7 +1012,7 @@ def _variable_attrs(parameter: Parameter | None) -> dict[str, Any]:
     observed = parameter.observed_property
     attrs: dict[str, Any] = {}
 
-    if long_name := (_english(parameter.label) or _english(observed.label)):
+    if long_name := (display(parameter.label) or display(observed.label)):
         attrs["long_name"] = long_name
 
     if (standard_name := _standard_name(observed.id)) is not None:
@@ -1128,8 +1129,8 @@ def _flag_meaning(label: I18n) -> str:
     """Turn a category label into a single CF ``flag_meanings`` token.
 
     CF ``flag_meanings`` is a whitespace-delimited list, so each meaning must be
-    one token; this takes the English label (`_english`) and joins its words with
-    underscores.
+    one token; this takes the display label (`~covjson_msgspec.i18n.display`) and
+    joins its words with underscores.
 
     Parameters
     ----------
@@ -1149,37 +1150,7 @@ def _flag_meaning(label: I18n) -> str:
     """
     # CF flag_meanings are whitespace-delimited tokens, so collapse internal
     # whitespace in the label to underscores.
-    return "_".join((_english(label) or "").split())
-
-
-def _english(text: I18n | None) -> str | None:
-    """Pick a single display string from a localized `~covjson_msgspec.i18n.I18n` map.
-
-    CF attributes are plain strings, so this collapses a language map to one
-    value: the English (``"en"``) entry when present, else the first available
-    language. ``None`` or an empty map yields ``None``.
-
-    Parameters
-    ----------
-    text
-        A language-code-to-string map, or ``None``.
-
-    Returns
-    -------
-    str or None
-        The chosen string, or ``None`` when there is nothing to show.
-
-    Examples
-    --------
-    >>> from covjson_msgspec.i18n import i18n
-    >>> _english(i18n("hello"))
-    'hello'
-    >>> _english({"de": "hallo", "fr": "bonjour"})
-    'hallo'
-    >>> _english(None) is None
-    True
-    """
-    return text.get("en") or next(iter(text.values())) if text else None
+    return "_".join(display(label).split())
 
 
 # Coordinate names commonly used for each role, lower-cased, as a detection
