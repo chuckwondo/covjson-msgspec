@@ -27,6 +27,20 @@ def test_axis_rejects_neither_form() -> None:
         Axis()
 
 
+def test_axis_rejects_empty_values() -> None:
+    # Spec 6.1.1: `values` is a non-empty array. With num >= 1 also enforced,
+    # every axis has at least one coordinate, so len(axis) >= 1 and a valid
+    # Axis never evaluates falsy.
+    with pytest.raises(ValueError, match="non-empty"):
+        Axis(values=())
+
+
+def test_axis_len_never_materializes_and_is_never_zero() -> None:
+    assert len(Axis.regular(0.0, 10.0, 1_000_000)) == 1_000_000
+    assert len(Axis.listed((10, 20, 30))) == 3
+    assert bool(Axis.listed((10,)))
+
+
 def test_regular_num_must_be_positive() -> None:
     with pytest.raises(ValueError, match="positive"):
         Axis(start=0.0, stop=1.0, num=0)

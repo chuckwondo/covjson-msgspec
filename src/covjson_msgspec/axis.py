@@ -76,6 +76,18 @@ class Axis(CovJSONStruct, frozen=True):
         ...
     ValueError: Axis requires exactly one of `values` or `start`/`stop`/`num`
 
+    ``len()`` gives the coordinate count without materializing a regular
+    axis's values. An axis must have at least one coordinate (spec 6.1.1: an
+    empty ``values`` array is rejected), so a valid axis never evaluates
+    falsy:
+
+    >>> len(Axis.regular(0.0, 270.0, 4))
+    4
+    >>> Axis(values=())
+    Traceback (most recent call last):
+        ...
+    ValueError: Axis `values` must be non-empty
+
     A single-coordinate regular axis (``num`` of 1) must have ``start == stop``:
 
     >>> Axis(start=0.0, stop=10.0, num=1)
@@ -127,6 +139,14 @@ class Axis(CovJSONStruct, frozen=True):
             msg = "Axis requires exactly one of `values` or `start`/`stop`/`num`"
             raise ValueError(msg)
 
+        # Spec 6.1.1: the `values` member is "a non-empty array of axis
+        # values". Together with the `num >= 1` check below, every axis has at
+        # least one coordinate, so `len(axis)` is never 0 and a valid Axis
+        # never evaluates falsy.
+        if self.values is not None and not self.values:
+            msg = "Axis `values` must be non-empty"
+            raise ValueError(msg)
+
         if self.num is not None and self.num < 1:
             msg = "Axis `num` must be a positive integer"
             raise ValueError(msg)
@@ -175,6 +195,37 @@ class Axis(CovJSONStruct, frozen=True):
 
         step = (self.stop - self.start) / (self.num - 1)
         return tuple(self.start + i * step for i in range(self.num))
+
+    def __len__(self) -> int:
+        """The number of coordinates, in any of the axis's forms.
+
+        Unlike ``len(axis.coordinate_values)``, this never materializes a
+        regular axis's values: it is O(1) in every form.
+
+        A valid axis is never empty (`__post_init__` rejects an empty
+        ``values`` array and a non-positive ``num``, per spec 6.1.1), so the
+        length is at least 1 and an `Axis` never evaluates falsy.
+
+        Returns
+        -------
+        int
+            ``len(values)`` for a value-listing or composite axis; ``num`` for
+            a regular axis. At least 1.
+
+        Examples
+        --------
+        >>> len(Axis.listed((10.0, 20.0, 30.0)))
+        3
+        >>> len(Axis.regular(0.0, 10.0, 5))
+        5
+        """
+        if self.values is not None:
+            return len(self.values)
+
+        # __post_init__ guarantees the regular triple is complete when values
+        # is None.
+        assert self.num is not None
+        return self.num
 
     @classmethod
     def regular(

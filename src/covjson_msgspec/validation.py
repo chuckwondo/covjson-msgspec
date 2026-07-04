@@ -43,7 +43,6 @@ from typing import Literal, assert_never
 import langcodes
 import msgspec
 
-from covjson_msgspec.axis import Axis
 from covjson_msgspec.coverage import (
     Coverage,
     CoverageCollection,
@@ -510,40 +509,6 @@ def _ptr(prefix: str, *parts: str | int) -> str:
     return "/".join((prefix, *escaped))
 
 
-def _axis_length(axis: Axis) -> int:
-    """The number of coordinates an axis represents, in any of its forms.
-
-    An axis is either a listed/tuple/polygon form (with explicit ``values``) or a
-    regular form (a ``start`` / ``stop`` / ``num`` triple); `Axis.__post_init__`
-    guarantees exactly one is populated. This returns ``len(values)`` for the
-    former and ``num`` for the latter, so callers compare lengths without caring
-    which form an axis uses.
-
-    Parameters
-    ----------
-    axis
-        The axis to measure.
-
-    Returns
-    -------
-    int
-        The coordinate count.
-
-    Examples
-    --------
-    >>> _axis_length(Axis.listed((10.0, 20.0, 30.0)))
-    3
-    >>> _axis_length(Axis.regular(0.0, 10.0, 5))
-    5
-    """
-    # __post_init__ guarantees exactly one form, so one of these is set.
-    if axis.values is not None:
-        return len(axis.values)
-
-    assert axis.num is not None
-    return axis.num
-
-
 def _missing_axis_issues(
     domain: Domain, domain_type: str, rule: DomainTypeRule, path: str
 ) -> Iterator[Issue]:
@@ -590,7 +555,8 @@ def _non_single_axis_issues(
     """Yield a ``domain.axis-not-single`` issue for each over-valued single axis.
 
     A ``single_valued_axes`` entry that is present yet carries more than one
-    coordinate (per `_axis_length`) violates the domain type.
+    coordinate (its ``len()``, O(1) in every axis form) violates the domain
+    type.
 
     Parameters
     ----------
@@ -627,7 +593,7 @@ def _non_single_axis_issues(
             path=_ptr(path, "axes", name),
         )
         for name in rule.single_valued_axes
-        if (axis := domain.axes.get(name)) is not None and _axis_length(axis) != 1
+        if (axis := domain.axes.get(name)) is not None and len(axis) != 1
     )
 
 
@@ -751,7 +717,7 @@ def _unexpected_axis_issues(
             path=_ptr(path, "axes", name),
         )
         for name in domain.axes
-        if name not in allowed and _axis_length(domain.axes[name]) != 1
+        if name not in allowed and len(domain.axes[name]) != 1
     )
 
 
@@ -1403,7 +1369,7 @@ def _range_axis_issue(
 
     The range axis ``name`` (at position ``index``) must be a real domain axis
     (else ``coverage.range-axis-not-in-domain``); when it is, the range's size
-    along it must equal the domain axis's length from `_axis_length` (else
+    along it must equal the domain axis's ``len()`` (else
     ``coverage.range-shape-mismatch``).
 
     Parameters
@@ -1441,7 +1407,7 @@ def _range_axis_issue(
         )
 
     if index < len(arr.shape):
-        axis_len = _axis_length(domain.axes[name])
+        axis_len = len(domain.axes[name])
 
         if arr.shape[index] != axis_len:
             return Issue(

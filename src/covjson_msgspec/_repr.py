@@ -506,8 +506,7 @@ def _axis_section(domain: Domain) -> str:
     True
     """
     rows = [
-        [name, str(_axis_length(axis)), _axis_detail(axis)]
-        for name, axis in domain.axes.items()
+        [name, str(len(axis)), _axis_detail(axis)] for name, axis in domain.axes.items()
     ]
 
     return _table_section("Axes", ["Axis", "Length", "Extent"], rows)
@@ -602,36 +601,6 @@ def _range_summary(value: NdArray | TiledNdArray | str) -> list[str]:
         return ["reference", value, ""]
 
     return [type(value).__name__, value.data_type, _shape_text(value.shape)]
-
-
-def _axis_length(axis: Axis) -> int:
-    """Return an axis's coordinate count without materializing a regular axis.
-
-    Parameters
-    ----------
-    axis
-        The axis to measure.
-
-    Returns
-    -------
-    int
-        ``len(values)`` for a value-listing or composite axis, else ``num`` for
-        a regular axis.
-
-    Examples
-    --------
-    >>> from covjson_msgspec import Axis
-    >>> _axis_length(Axis.regular(0.0, 10.0, 5))
-    5
-    >>> _axis_length(Axis.listed((1.0, 2.0, 3.0)))
-    3
-    """
-    if (values := axis.values) is not None:
-        return len(values)
-
-    # __post_init__ guarantees the regular triple is complete when values is None.
-    assert axis.num is not None
-    return axis.num
 
 
 def _axis_detail(axis: Axis) -> str:
@@ -744,7 +713,7 @@ def _shape_text(shape: tuple[int | None, ...]) -> str:
     >>> _shape_text(())
     'scalar'
     """
-    return "scalar" if not shape else str(shape)
+    return str(shape) if shape else "scalar"
 
 
 def _tile_count(shape: tuple[int, ...], tile_shape: tuple[int | None, ...]) -> int:
