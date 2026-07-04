@@ -155,6 +155,7 @@ rules   = { invalid-argument-type = "ignore" }
 # import mode avoids src-layout duplicate-module issues with --doctest-modules.
 testpaths           = [ "src", "tests" ]
 addopts             = "-ra --doctest-modules --import-mode=importlib"
+pythonpath          = [ "tests" ]
 doctest_optionflags = [ "NORMALIZE_WHITESPACE", "ELLIPSIS" ]
 
 [tool.coverage.run]
