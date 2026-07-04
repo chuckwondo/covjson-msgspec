@@ -16,7 +16,6 @@ previews are truncated), so a repr is cheap even for a big coverage.
 from __future__ import annotations
 
 import html
-import math
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -236,6 +235,8 @@ def tiled_ndarray_html(array: TiledNdArray) -> str:
     >>> "TiledNdArray" in tiled_ndarray_html(tiled)
     True
     """
+    from covjson_msgspec.range import tile_count
+
     summary = [
         ("Data type", array.data_type),
         ("Shape", _shape_text(array.shape)),
@@ -246,7 +247,7 @@ def tiled_ndarray_html(array: TiledNdArray) -> str:
     rows = [
         [
             _shape_text(tile_set.tile_shape),
-            str(_tile_count(array.shape, tile_set.tile_shape)),
+            str(tile_count(array.shape, tile_set.tile_shape)),
             tile_set.url_template,
         ]
         for tile_set in array.tile_sets
@@ -714,38 +715,6 @@ def _shape_text(shape: tuple[int | None, ...]) -> str:
     'scalar'
     """
     return str(shape) if shape else "scalar"
-
-
-def _tile_count(shape: tuple[int, ...], tile_shape: tuple[int | None, ...]) -> int:
-    """Count the tiles of one tile set that cover the full array.
-
-    Parameters
-    ----------
-    shape
-        The full array shape.
-    tile_shape
-        One tile set's tile shape (rank-matched to ``shape``). A ``None`` entry
-        marks an axis the tile set does not subdivide (one tile spans it).
-
-    Returns
-    -------
-    int
-        The product over each axis of ``ceil(size / tile_size)``, taking an
-        un-subdivided (``None``) axis as a single tile.
-
-    Examples
-    --------
-    >>> _tile_count((2, 5, 10), (1, 5, 10))
-    2
-    >>> _tile_count((2, 5, 10), (1, None, None))
-    2
-    >>> _tile_count((3,), (2,))
-    2
-    """
-    return math.prod(
-        math.ceil(size / tile) if tile is not None else 1
-        for size, tile in zip(shape, tile_shape, strict=True)
-    )
 
 
 def _label(text: I18n | None) -> str:

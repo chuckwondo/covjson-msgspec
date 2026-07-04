@@ -551,7 +551,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         if tileset is None:
             return min(
                 self.tile_sets,
-                key=lambda candidate: _tile_count(self.shape, candidate.tile_shape),
+                key=lambda candidate: tile_count(self.shape, candidate.tile_shape),
             )
 
         try:
@@ -581,19 +581,22 @@ _TILE_DECODER: Final[msgspec.json.Decoder[NdArray]] = msgspec.json.Decoder(NdArr
 _TEMPLATE_VARIABLE_RE = re.compile(r"\{([^{}]+)\}")
 
 
-def _tile_count(shape: tuple[int, ...], tile_shape: tuple[int | None, ...]) -> int:
-    """Return how many tiles a tile set partitions the array into.
+def tile_count(shape: tuple[int, ...], tile_shape: tuple[int | None, ...]) -> int:
+    """Return how many tiles a tile set partitions an array into.
 
-    The product over the partitioned axes of how many tiles each is divided into
-    (``ceil(size / tile_size)``); an axis with a ``None`` tile size is whole and
-    contributes a single tile.
+    The product over the subdivided axes of how many tiles each is divided into
+    (integer ``ceil(size / tile_size)``); an axis with a ``None`` tile size is
+    whole and contributes a single tile. This is the number of fetches
+    `TiledNdArray.assemble` performs for a tile set, so `TiledNdArray` selects
+    the tile set with the fewest by default.
 
     Parameters
     ----------
     shape
         The full array shape.
     tile_shape
-        A tile set's ``tile_shape`` (per-axis tile size, ``None`` where whole).
+        A tile set's ``tile_shape`` (per-axis tile size, ``None`` where whole),
+        rank-matched to ``shape``.
 
     Returns
     -------
@@ -602,20 +605,19 @@ def _tile_count(shape: tuple[int, ...], tile_shape: tuple[int | None, ...]) -> i
 
     Examples
     --------
-    >>> _tile_count((2, 5, 10), (1, None, None))
+    >>> tile_count((2, 5, 10), (1, None, None))
     2
-    >>> _tile_count((2, 5, 10), (None, 2, 3))
+    >>> tile_count((2, 5, 10), (None, 2, 3))
     12
-    >>> _tile_count((2, 5, 10), (None, None, None))
+    >>> tile_count((2, 5, 10), (None, None, None))
     1
     """
-    count = 1
-
-    for size, tile_size in zip(shape, tile_shape, strict=True):
-        if tile_size is not None:
-            count *= -(-size // tile_size)
-
-    return count
+    # -(-size // tile) is exact integer ceil-division (matching `_tile_layout`);
+    # a None axis is whole and contributes a single tile.
+    return math.prod(
+        -(-size // tile) if tile is not None else 1
+        for size, tile in zip(shape, tile_shape, strict=True)
+    )
 
 
 def _expand_url_template(template: str, variables: dict[str, int]) -> str:
