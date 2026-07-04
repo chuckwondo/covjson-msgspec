@@ -5,53 +5,53 @@ description = "Fast, fully-typed CoverageJSON models built on msgspec"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-license-files = ["LICENSE"]
-authors = [{ name = "Chuck Daniels", email = "cjdaniels4@gmail.com" }]
-keywords = ["coveragejson", "covjson", "msgspec", "geospatial", "ogc"]
+license-files = [ "LICENSE" ]
+authors = [ { name = "Chuck Daniels", email = "cjdaniels4@gmail.com" } ]
+keywords = [ "coveragejson", "covjson", "msgspec", "geospatial", "ogc" ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Intended Audience :: Science/Research",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
-    "Programming Language :: Python :: 3.14",
-    "Topic :: Scientific/Engineering :: GIS",
-    "Typing :: Typed",
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Topic :: Scientific/Engineering :: GIS",
+  "Typing :: Typed",
 ]
 dependencies = [
-    "msgspec>=0.18",
-    # BCP 47 language-tag validation for i18n keys (validation.py). Pure
-    # Python, zero runtime deps in its base install (the `[data]` extra pulls
-    # in language_data, which we don't use). See ADR-0005.
-    "langcodes>=3.5",
+  "msgspec>=0.18",
+  # BCP 47 language-tag validation for i18n keys (validation.py). Pure
+  # Python, zero runtime deps in its base install (the `[data]` extra pulls
+  # in language_data, which we don't use). See ADR-0005.
+  "langcodes>=3.5",
 ]
 
 [project.urls]
-Homepage = "https://github.com/chuckwondo/covjson-msgspec"
+Homepage   = "https://github.com/chuckwondo/covjson-msgspec"
 Repository = "https://github.com/chuckwondo/covjson-msgspec"
-Issues = "https://github.com/chuckwondo/covjson-msgspec/issues"
+Issues     = "https://github.com/chuckwondo/covjson-msgspec/issues"
 
-# Optional bridges -- the "thin core + opt-in bridges" architecture. The core
+# Optional bridges: the "thin core + opt-in bridges" architecture. The core
 # depends only on msgspec and langcodes (both pure Python, no heavy/native
 # transitive deps; see ADR-0005); each bridge below lazy-imports its own
 # (typically numeric or geospatial) dependency and raises an install hint if
 # missing.
 [project.optional-dependencies]
-numpy = ["numpy>=1.24"]
+numpy = [ "numpy>=1.24" ]
 # xarray>=2024.10 first ships xarray.DataTree, used by the collection bridge.
-xarray = ["xarray>=2024.10", "numpy>=1.24", "cftime>=1.6"]
-pandas = ["pandas>=2.0", "numpy>=1.24"]
+xarray = [ "xarray>=2024.10", "numpy>=1.24", "cftime>=1.6" ]
+pandas = [ "pandas>=2.0", "numpy>=1.24" ]
 # geopandas guarantees pandas + numpy transitively, but the geo bridge imports
 # both directly (it reuses the pandas bridge and builds geometry with numpy), so
 # list them explicitly rather than relying on a transitive dependency.
-geo = ["geopandas>=0.14", "shapely>=2.0", "pandas>=2.0", "numpy>=1.24"]
+geo = [ "geopandas>=0.14", "shapely>=2.0", "pandas>=2.0", "numpy>=1.24" ]
 # The litestar / fastapi response-helper bridges are planned but not yet shipped,
 # so they carry no extra until there is code behind them (an extra that installs
 # a framework but adds nothing would mislead).
-all = ["covjson-msgspec[numpy,xarray,pandas,geo]"]
+all = [ "covjson-msgspec[numpy,xarray,pandas,geo]" ]
 
 # PEP 735 dependency groups (uv-native).
 [dependency-groups]
@@ -59,55 +59,61 @@ all = ["covjson-msgspec[numpy,xarray,pandas,geo]"]
 # on any platform without a build toolchain. (mypy ships wheels; the Node-based
 # checker lives in `typecheck` below.)
 dev = [
-    "covjson-msgspec[all]",
-    "ruff>=0.15",
-    "mypy>=1.13",
-    # Type stubs so mypy checks the bridges against the real APIs (these libraries
-    # ship no py.typed marker). cftime has no stub package, so it stays untyped.
-    "pandas-stubs",
-    "types-geopandas",
-    "types-shapely",
-    "pytest>=8.0",
-    "pytest-cov>=5.0",
-    "coverage>=7.14.3",
-    "prek>=0.0.1",
+  "covjson-msgspec[all]",
+  "ruff>=0.15",
+  "mypy>=1.13",
+  # Type stubs so mypy checks the bridges against the real APIs (these libraries
+  # ship no py.typed marker). cftime has no stub package, so it stays untyped.
+  "pandas-stubs",
+  "types-geopandas",
+  "types-shapely",
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "coverage>=7.14.3",
+  "prek>=0.0.1",
 ]
 # Strict source-gate checker for CI. basedpyright bundles a Node runtime
 # (nodejs-wheel-binaries), so it is opt-in to keep the default sync lightweight.
 # pyrefly + ty (pre-1.0) run via `uvx` in CI and are deliberately kept out of
 # the lock.
-typecheck = ["basedpyright>=1.21"]
+typecheck = [ "basedpyright>=1.21" ]
 bench = [
-    "covjson-msgspec[all]",
-    "pytest-benchmark>=4.0",
-    "covjson-pydantic>=0.7",
+  "covjson-msgspec[all]",
+  "pytest-benchmark>=4.0",
+  "covjson-pydantic>=0.7",
 ]
 
 [build-system]
-requires = ["uv_build>=0.11.23,<0.12.0"]
+requires      = [ "uv_build>=0.11.23,<0.12.0" ]
 build-backend = "uv_build"
 
 [tool.ruff]
 line-length = 88
-src = ["src", "tests"]
+src         = [ "src", "tests" ]
 
 [tool.ruff.lint]
+# PLC2701 bans importing another package's `_private` names (third-party or
+# stdlib); it does not police intra-package private imports (that convention is
+# enforced by review, see CLAUDE.md). Still a preview rule, so `preview` must be
+# on; `explicit-preview-rules` then enables preview rules only when named by
+# their exact code, keeping every other preview rule off.
+preview = true
+explicit-preview-rules = true
 select = [
-    "E",   # pycodestyle errors
-    "W",   # pycodestyle warnings
-    "F",   # pyflakes
-    "I",   # isort
-    "N",   # pep8-naming
-    "UP",  # pyupgrade
-    "B",   # flake8-bugbear
-    "C4",  # flake8-comprehensions
-    "EM",  # flake8-errmsg (assign message to a var before raising)
-    "SIM", # flake8-simplify
-    "TID", # flake8-tidy-imports
-    "RUF", # ruff-specific
+  "E",       # pycodestyle errors
+  "W",       # pycodestyle warnings
+  "F",       # pyflakes
+  "I",       # isort
+  "N",       # pep8-naming
+  "UP",      # pyupgrade
+  "B",       # flake8-bugbear
+  "C4",      # flake8-comprehensions
+  "EM",      # flake8-errmsg (assign message to a var before raising)
+  "SIM",     # flake8-simplify
+  "TID",     # flake8-tidy-imports
+  "RUF",     # ruff-specific
+  "PLC2701", # import-private-name: don't import another package's `_private`
 ]
-# Python attributes are snake_case; msgspec `rename="camel"` maps them to the
-# CoverageJSON lowerCamelCase wire names, so N815 is unnecessary.
 
 [tool.ruff.lint.flake8-tidy-imports]
 # Use absolute imports throughout: explicit, grep-able, and they stay flat as
@@ -115,21 +121,21 @@ select = [
 ban-relative-imports = "all"
 
 [tool.mypy]
-files = ["src", "tests"]
-strict = true
-warn_unreachable = true
-enable_error_code = ["redundant-expr", "truthy-bool", "ignore-without-code"]
+files             = [ "src", "tests" ]
+strict            = true
+warn_unreachable  = true
+enable_error_code = [ "redundant-expr", "truthy-bool", "ignore-without-code" ]
 
 [[tool.mypy.overrides]]
 # cftime ships no py.typed marker and has no stub package (no types-cftime on
 # PyPI), so it stays untyped; the xarray bridge uses it only for the
 # non-standard-calendar time path. pandas / geopandas / shapely are now typed via
 # the pandas-stubs / types-geopandas / types-shapely packages in the dev group.
-module = ["cftime"]
+module                 = [ "cftime" ]
 ignore_missing_imports = true
 
 [tool.basedpyright]
-include = ["src", "tests"]
+include          = [ "src", "tests" ]
 typeCheckingMode = "strict"
 
 # ty is an informational (non-blocking) checker. Two negative tests deliberately
@@ -141,24 +147,24 @@ typeCheckingMode = "strict"
 # so this cannot mask a real public-API type weakness. (The numpy bridge test
 # uses inline `# ty: ignore[...]` where it fits.)
 [[tool.ty.overrides]]
-include = ["tests/test_geo.py", "tests/test_xarray.py"]
-rules = { invalid-argument-type = "ignore" }
+include = [ "tests/test_geo.py", "tests/test_xarray.py" ]
+rules   = { invalid-argument-type = "ignore" }
 
 [tool.pytest.ini_options]
 # Run doctests in the package modules alongside the test suite. `importlib`
 # import mode avoids src-layout duplicate-module issues with --doctest-modules.
-testpaths = ["src", "tests"]
-addopts = "-ra --doctest-modules --import-mode=importlib"
-doctest_optionflags = ["NORMALIZE_WHITESPACE", "ELLIPSIS"]
+testpaths           = [ "src", "tests" ]
+addopts             = "-ra --doctest-modules --import-mode=importlib"
+doctest_optionflags = [ "NORMALIZE_WHITESPACE", "ELLIPSIS" ]
 
 [tool.coverage.run]
-source = ["covjson_msgspec"]
+source = [ "covjson_msgspec" ]
 branch = true
 
 [tool.coverage.report]
 show_missing = true
 exclude_also = [
-    "if TYPE_CHECKING:",
-    "raise NotImplementedError",
-    "@(abc\\.)?abstractmethod",
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+  "@(abc\\.)?abstractmethod",
 ]
