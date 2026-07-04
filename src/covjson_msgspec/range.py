@@ -620,6 +620,35 @@ def tile_count(shape: tuple[int, ...], tile_shape: tuple[int | None, ...]) -> in
     )
 
 
+def template_variables(template: str) -> tuple[str, ...]:
+    """Return the variable names in a Level 1 RFC 6570 URL template, in order.
+
+    Each ``{name}`` expression contributes its bare ``name``; a template with no
+    expressions yields ``()``. CoverageJSON tile ``urlTemplate`` values are Level 1
+    (simple ``{var}`` expansion), so these names are the axes a template addresses:
+    `_expand_url_template` substitutes them, and `validation` checks that every
+    subdivided axis has one.
+
+    Parameters
+    ----------
+    template
+        A url template, e.g. ``"tiles/{y}-{x}.covjson"``.
+
+    Returns
+    -------
+    tuple of str
+        The variable names, in order of appearance (duplicates kept).
+
+    Examples
+    --------
+    >>> template_variables("tiles/{y}-{x}.covjson")
+    ('y', 'x')
+    >>> template_variables("all.covjson")
+    ()
+    """
+    return tuple(_TEMPLATE_VARIABLE_RE.findall(template))
+
+
 def _expand_url_template(template: str, variables: dict[str, int]) -> str:
     """Expand a Level 1 RFC 6570 URL template with integer tile indices.
 

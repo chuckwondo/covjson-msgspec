@@ -57,7 +57,7 @@ from covjson_msgspec.parameter import (
     ParameterGroup,
     Unit,
 )
-from covjson_msgspec.range import NdArray, TiledNdArray, TileSet
+from covjson_msgspec.range import NdArray, TiledNdArray, TileSet, template_variables
 from covjson_msgspec.referencing import (
     Concept,
     GeographicCRS,
@@ -1135,13 +1135,6 @@ def _validate_ndarray(arr: NdArray, path: str) -> Iterator[Issue]:
         )
 
 
-# A single Level 1 RFC 6570 expression (e.g. ``{t}``) in a tile url template.
-# Mirrors `covjson_msgspec.range._TEMPLATE_VARIABLE_RE`; kept local so
-# validation owns its own template parsing rather than importing another
-# module's private.
-_TEMPLATE_VARIABLE_RE = re.compile(r"\{([^{}]+)\}")
-
-
 def _tile_set_issues(
     arr: TiledNdArray, ts: int, tile_set: TileSet, path: str, *, rank_ok: bool
 ) -> Iterator[Issue]:
@@ -1215,7 +1208,7 @@ def _tile_set_issues(
         if tile_dim is not None and tile_dim < 1
     )
 
-    present_names = _TEMPLATE_VARIABLE_RE.findall(tile_set.url_template)
+    present_names = template_variables(tile_set.url_template)
     present = set(present_names)
 
     # A subdivided axis (non-null tileShape) MUST have a template variable. When
