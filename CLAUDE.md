@@ -92,11 +92,26 @@ Bridges (each behind an extra): `numpy` (NdArray <-> numpy, methods on NdArray),
 
 ## Conventions
 
+The canonical coding-style reference for every contributor, human or Claude. A
+`CONTRIBUTING.md`, if added, should link here (`CLAUDE.md#conventions`) rather
+than restate these. Grouped below: code, docstrings and doctests, tests, and
+prose wrapping.
+
 Code:
 
 - `from __future__ import annotations` at the top of every module (after the
   docstring). Write bare annotations; quote only the strings inside `cast()`.
 - Absolute imports only (relative imports are banned by ruff).
+- Don't import another module's `_private` member. To share an internal helper
+  across modules without widening the public API, give it a home in a
+  `_`-prefixed module (`_bridging.py`, `_i18n.py`) and import its non-underscore
+  name. The two underscores mark different boundaries: `_` on a member means
+  "private to this module" (only that file uses it); `_` on a module means
+  "internal to the package" (its non-underscore names are the intra-package API,
+  off-limits to end users). This keeps every module-local `_helper` genuinely
+  file-local: safe to rename or inline after grepping a single file. (Ruff's
+  PLC2701 enforces the neighboring rule, banning imports of *another package's*
+  privates, but not this intra-package case, which review must catch.)
 - Place `_private` module functions after the public API. Private helpers still
   get full numpy-style docstrings with cheap, runnable examples.
 - Prefer implicit iteration (comprehensions, generator expressions,
