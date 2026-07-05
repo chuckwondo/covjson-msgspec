@@ -48,9 +48,13 @@ pandas = [ "pandas>=2.0", "numpy>=1.24" ]
 # both directly (it reuses the pandas bridge and builds geometry with numpy), so
 # list them explicitly rather than relying on a transitive dependency.
 geo = [ "geopandas>=0.14", "shapely>=2.0", "pandas>=2.0", "numpy>=1.24" ]
-# The litestar / fastapi response-helper bridges are planned but not yet shipped,
-# so they carry no extra until there is code behind them (an extra that installs
-# a framework but adds nothing would mislead).
+# FastAPI response adapter (CovJSONResponse). The framework-agnostic core stays
+# in media_type.py; fastapi is imported only behind this extra. Deliberately kept
+# out of `all` below, which aggregates the data bridges, not a web framework.
+fastapi = [ "fastapi>=0.110" ]
+# The litestar response-helper bridge is planned but not yet shipped, so it
+# carries no extra until there is code behind it (an extra that installs a
+# framework but adds nothing would mislead).
 all = [ "covjson-msgspec[numpy,xarray,pandas,geo]" ]
 
 # PEP 735 dependency groups (uv-native).
@@ -60,6 +64,7 @@ all = [ "covjson-msgspec[numpy,xarray,pandas,geo]" ]
 # checker lives in `typecheck` below.)
 dev = [
   "covjson-msgspec[all]",
+  "covjson-msgspec[fastapi]",
   "ruff>=0.15",
   "mypy>=1.13",
   # Type stubs so mypy checks the bridges against the real APIs (these libraries
@@ -70,6 +75,10 @@ dev = [
   "pytest>=8.0",
   "pytest-cov>=5.0",
   "coverage>=7.14.3",
+  # httpx2 backs Starlette's TestClient (tests/test_fastapi.py). Pydantic took
+  # over httpx as httpx2; Starlette's TestClient prefers it and deprecates plain
+  # httpx.
+  "httpx2>=2.0",
   "prek>=0.0.1",
 ]
 # Strict source-gate checker for CI. basedpyright bundles a Node runtime
