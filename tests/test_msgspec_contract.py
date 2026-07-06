@@ -11,7 +11,7 @@ Behaviors under test:
 2. ``rename="camel"`` on a shared base maps snake_case attrs to lowerCamelCase
    wire names, and composes with tags and unions.
 3. ``frozen=True`` prevents attribute rebinding but does NOT make dict-field
-   contents immutable -- the known mutability hole in ``Coverage.ranges``.
+   contents immutable: the known mutability hole in ``Coverage.ranges``.
 """
 
 from typing import Literal
@@ -61,7 +61,7 @@ def test_rename_camel_roundtrips_with_tag() -> None:
 
 def test_dict_field_contents_remain_mutable_despite_frozen() -> None:
     # frozen=True prevents rebinding the attribute, but a dict field's *contents*
-    # are still mutable -- the known hole for Coverage.ranges (dict[str, Range]).
+    # are still mutable: the known hole for Coverage.ranges (dict[str, Range]).
     class HasRanges(_CovJSONStruct, frozen=True, tag="HasRanges"):
         ranges: dict[str, int] = msgspec.field(default_factory=dict)
 

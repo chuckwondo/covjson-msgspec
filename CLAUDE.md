@@ -140,9 +140,11 @@ Code:
 - Link the CoverageJSON spec from docstrings and comments where it teaches the
   wire format; centralize the spec and RFC links in the module docstring rather
   than repeating URLs.
-- Prefer colons or parentheses to em-dashes; where an em-dash is genuinely the
-  right punctuation, use a double hyphen (`--`) rather than the Unicode em-dash
-  character.
+- Prefer colons, parentheses, or a shorter sentence to em-dashes, reaching for
+  one only where it genuinely earns its keep; then write it as a double hyphen
+  (`--`), never the Unicode em-dash character. In a definition list (a term and
+  its gloss), always use a colon. This governs prose in docs, docstrings, and
+  comments alike.
 
 Docstrings and doctests:
 

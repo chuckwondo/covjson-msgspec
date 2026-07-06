@@ -81,7 +81,7 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
 
     A correctly typed array passes ``validate(check_values=True)`` with no issues:
 
-    >>> from covjson_msgspec import IssueCode, NdArray, validate
+    >>> from covjson_msgspec import NdArray, validate
     >>> blob = b'''
     ... {
     ...   "type": "NdArray",
@@ -107,7 +107,7 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
     ... '''
     >>> bad = msgspec.json.decode(blob, type=NdArray)
     >>> [issue.code for issue in validate(bad, check_values=True)] == [
-    ...     IssueCode.RANGE_VALUE_TYPE_MISMATCH
+    ...     "range.value-type-mismatch"
     ... ]
     True
     """

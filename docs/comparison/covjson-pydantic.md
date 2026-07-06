@@ -9,7 +9,7 @@ restructured when #22 is written and the docs toolchain (#19) is chosen.
 on work that is in flight. When those issues close, revisit the affected
 sections rather than trusting these notes:
 
-- **#21** / typed-projection idiom -- if we add an opt-in typed projection for
+- **#21** / typed-projection idiom: if we add an opt-in typed projection for
   axis values, it narrows the "static type precision" gap that today favors
   covjson-pydantic.
 - **#23** (drop the NdArray generic) and **#12** (opt-in temporal validation +
@@ -24,7 +24,7 @@ Versions compared: covjson-pydantic `domain.py` / `base_models.py` as of
 
 ### How each models an axis
 
-**covjson-pydantic -- multiple types plus a fixed container.**
+**covjson-pydantic: multiple types plus a fixed container.**
 
 - `CompactAxis` (`start` / `stop` / `num`) and `ValuesAxis[ValuesT]` (`values` /
   `bounds`) are separate classes, unioned at each use site.
@@ -37,7 +37,7 @@ Versions compared: covjson-pydantic `domain.py` / `base_models.py` as of
   (`check_axis` / `check_domain_consistent`).
 - `CovJsonBaseModel` is `extra="forbid"`, and `Axes` does not override it.
 
-**covjson-msgspec -- one permissive struct plus an open dict.**
+**covjson-msgspec: one permissive struct plus an open dict.**
 
 - A single `Axis` struct models all three forms (value-listing, regular,
   composite); `__post_init__` enforces that exactly one form is present (a
