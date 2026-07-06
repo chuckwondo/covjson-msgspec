@@ -1,5 +1,8 @@
 """Behavioral tests for document-level validation."""
 
+from typing import assert_never
+
+import msgspec
 import pytest
 
 from covjson_msgspec import (
@@ -25,6 +28,29 @@ from covjson_msgspec import (
     validate,
 )
 from covjson_msgspec.range import TileSet
+from covjson_msgspec.validation import (
+    CoverageMissingParameters,
+    CoverageRangeAxisNotInDomain,
+    CoverageRangeShapeMismatch,
+    CoverageRangeWithoutParameter,
+    DomainAxisNotSingle,
+    DomainCompositeDataType,
+    DomainExtraAxisNotSingle,
+    DomainMissingAxis,
+    DomainMissingReferencing,
+    I18nEmpty,
+    I18nInvalidLanguageTag,
+    NdArrayShapeRank,
+    NdArrayValueCount,
+    ParameterGroupUnknownMember,
+    RangeInvalidCategoryCode,
+    RangeValueTypeMismatch,
+    TiledNdArrayShapeRank,
+    TiledNdArrayTileShapeNotPositive,
+    TiledNdArrayTileShapeTooLarge,
+    TiledNdArrayUrlTemplateMissingVariable,
+    TiledNdArrayUrlTemplateUnknownVariable,
+)
 
 # A minimal valid referencing array. Domains and coverages built for the
 # axis/range checks below carry it so they isolate the one issue under test
@@ -48,7 +74,7 @@ def test_missing_required_axis() -> None:
     (issue,) = validate(domain)
 
     assert issue.code == "domain.missing-axis"
-    assert issue.path == "/axes/y"
+    assert issue.at == "/axes/y"
     assert issue.severity is Severity.ERROR
 
 
@@ -88,7 +114,7 @@ def test_surplus_multi_valued_axis_is_an_error() -> None:
 
     assert issue.code == "domain.extra-axis-not-single"
     assert issue.severity is Severity.ERROR
-    assert issue.path == "/axes/bogus"
+    assert issue.at == "/axes/bogus"
 
 
 def test_surplus_single_valued_axis_is_conformant() -> None:
@@ -121,7 +147,7 @@ def test_ndarray_value_count_mismatch() -> None:
     (issue,) = validate(arr)
 
     assert issue.code == "ndarray.value-count"
-    assert issue.path == "/values"
+    assert issue.at == "/values"
 
 
 def test_ndarray_shape_rank_mismatch() -> None:
@@ -214,7 +240,7 @@ def test_categorical_code_check_is_opt_in() -> None:
     bad = [i for i in issues if i.code == "range.invalid-category-code"]
 
     assert len(bad) == 1
-    assert bad[0].path == "/ranges/lc/values/1"
+    assert bad[0].at == "/ranges/lc/values/1"
 
 
 def test_value_data_type_check_is_opt_in() -> None:
@@ -228,7 +254,7 @@ def test_value_data_type_check_is_opt_in() -> None:
     bad = [i for i in issues if i.code == "range.value-type-mismatch"]
 
     assert len(bad) == 1
-    assert bad[0].path == "/ranges/v/values/1"
+    assert bad[0].at == "/ranges/v/values/1"
     assert bad[0].severity is Severity.ERROR
 
 
@@ -297,7 +323,7 @@ def test_collection_validates_resolved_members() -> None:
     issues = validate(collection)
 
     assert any(i.code == "domain.axis-not-single" for i in issues)
-    assert all(i.path.startswith("/coverages/0/") for i in issues)
+    assert all(i.at.startswith("/coverages/0/") for i in issues)
 
 
 def test_missing_referencing_on_standalone_domain() -> None:
@@ -308,7 +334,7 @@ def test_missing_referencing_on_standalone_domain() -> None:
     (issue,) = validate(domain)
 
     assert issue.code == "domain.missing-referencing"
-    assert issue.path == "/referencing"
+    assert issue.at == "/referencing"
     assert issue.severity is Severity.ERROR
 
 
@@ -338,7 +364,7 @@ def test_missing_parameters_on_standalone_coverage() -> None:
     (issue,) = validate(cov)
 
     assert issue.code == "coverage.missing-parameters"
-    assert issue.path == "/parameters"
+    assert issue.at == "/parameters"
     assert issue.severity is Severity.ERROR
 
 
@@ -391,7 +417,7 @@ def test_tiled_ndarray_tile_shape_too_large() -> None:
     (issue,) = validate(arr)
 
     assert issue.code == "tiled-ndarray.tile-shape-too-large"
-    assert issue.path == "/tileSets/0/tileShape/0"
+    assert issue.at == "/tileSets/0/tileShape/0"
 
 
 def test_tiled_ndarray_url_template_missing_variable() -> None:
@@ -404,7 +430,7 @@ def test_tiled_ndarray_url_template_missing_variable() -> None:
     (issue,) = validate(arr)
 
     assert issue.code == "tiled-ndarray.url-template-missing-variable"
-    assert issue.path == "/tileSets/0/urlTemplate"
+    assert issue.at == "/tileSets/0/urlTemplate"
 
 
 def test_tiled_ndarray_shape_rank_mismatch() -> None:
@@ -429,7 +455,7 @@ def test_tiled_ndarray_non_positive_tile_size() -> None:
     (issue,) = validate(arr)
 
     assert issue.code == "tiled-ndarray.tile-shape-not-positive"
-    assert issue.path == "/tileSets/0/tileShape/0"
+    assert issue.at == "/tileSets/0/tileShape/0"
 
 
 def test_tiled_ndarray_url_template_unknown_variable() -> None:
@@ -442,12 +468,12 @@ def test_tiled_ndarray_url_template_unknown_variable() -> None:
     (issue,) = validate(arr)
 
     assert issue.code == "tiled-ndarray.url-template-unknown-variable"
-    assert issue.path == "/tileSets/0/urlTemplate"
+    assert issue.at == "/tileSets/0/urlTemplate"
 
 
 def test_tiled_ndarray_unknown_variable_suppressed_on_rank_mismatch() -> None:
     # With axisNames/shape misaligned, "which axes are subdivided" is unreliable,
-    # so the reverse check is skipped to avoid false positives -- only the
+    # so the reverse check is skipped to avoid false positives: only the
     # shape-rank issue is reported.
     arr = TiledNdArray(
         data_type="float",
@@ -494,7 +520,7 @@ def test_tiled_ndarray_range_inside_coverage_is_validated() -> None:
         i for i in validate(cov) if i.code == "tiled-ndarray.tile-shape-too-large"
     )
 
-    assert issue.path == "/ranges/t/tileSets/0/tileShape/0"
+    assert issue.at == "/ranges/t/tileSets/0/tileShape/0"
 
 
 def test_raise_mode_raises_on_error() -> None:
@@ -530,7 +556,7 @@ def test_i18n_invalid_tag_in_parameter_label() -> None:
     (issue,) = validate(cov)
 
     assert issue.code == "i18n.invalid-language-tag"
-    assert issue.path == "/parameters/t/label/en_US"
+    assert issue.at == "/parameters/t/label/en_US"
 
 
 def test_i18n_invalid_tag_in_category_label() -> None:
@@ -548,7 +574,7 @@ def test_i18n_invalid_tag_in_category_label() -> None:
     (issue,) = validate(cov)
 
     assert issue.code == "i18n.invalid-language-tag"
-    assert issue.path == "/parameters/lc/observedProperty/categories/0/label/en_US"
+    assert issue.at == "/parameters/lc/observedProperty/categories/0/label/en_US"
 
 
 def test_i18n_invalid_tag_in_crs_description() -> None:
@@ -562,7 +588,7 @@ def test_i18n_invalid_tag_in_crs_description() -> None:
     (issue,) = validate(domain)
 
     assert issue.code == "i18n.invalid-language-tag"
-    assert issue.path == "/referencing/0/system/description/en_US"
+    assert issue.at == "/referencing/0/system/description/en_US"
 
 
 def test_i18n_invalid_tag_in_identifier_rs_identifiers() -> None:
@@ -581,7 +607,7 @@ def test_i18n_invalid_tag_in_identifier_rs_identifiers() -> None:
     (issue,) = validate(domain)
 
     assert issue.code == "i18n.invalid-language-tag"
-    assert issue.path == "/referencing/0/system/identifiers/1/label/en_US"
+    assert issue.at == "/referencing/0/system/identifiers/1/label/en_US"
 
 
 def test_i18n_valid_tags_including_und_are_not_flagged() -> None:
@@ -625,12 +651,34 @@ def test_i18n_empty_map_is_flagged() -> None:
     (issue,) = validate(cov)
 
     assert issue.code == "i18n.empty"
-    assert issue.path == "/parameters/t/unit/label"
+    assert issue.at == "/parameters/t/unit/label"
+
+
+def test_report_roundtrips_through_json() -> None:
+    # A report encodes to JSON (each finding tagged by its `code`) and decodes
+    # back to the exact concrete variants: the serialization payoff of the
+    # tagged-union model.
+    domain = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
+    report = validate(domain)
+
+    restored = msgspec.json.decode(msgspec.json.encode(report), type=list[Issue])
+
+    assert restored == report
+    assert [type(i) for i in restored] == [type(i) for i in report]
+
+
+def test_every_finding_kind_is_exhaustively_matchable() -> None:
+    # `_describe` matches every `Issue` variant with an `assert_never` default,
+    # so adding a finding kind without handling it is a (strict) type error.
+    # This document produces two `domain.*` findings.
+    domain = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
+
+    assert {_describe(i) for i in validate(domain)} == {"domain"}
 
 
 def _value_type_paths(issues: list[Issue]) -> list[str]:
     """Paths of the value-type-mismatch issues, in document order."""
-    return [i.path for i in issues if i.code == "range.value-type-mismatch"]
+    return [i.at for i in issues if i.code == "range.value-type-mismatch"]
 
 
 def _coverage_with_range(arr: NdArray) -> Coverage:
@@ -638,3 +686,47 @@ def _coverage_with_range(arr: NdArray) -> Coverage:
         domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
         ranges={"v": arr},
     )
+
+
+def _describe(issue: Issue) -> str:
+    """Group a finding by category via an exhaustive `match`.
+
+    The `assert_never` default is the point: every `Issue` variant must be
+    handled, so a new finding kind fails the strict type check until it is added
+    here. This mirrors how a consumer groups findings by the *type*
+    (compiler-checked) rather than by splitting the string ``code``.
+    """
+    match issue:
+        case (
+            DomainMissingAxis()
+            | DomainAxisNotSingle()
+            | DomainCompositeDataType()
+            | DomainExtraAxisNotSingle()
+            | DomainMissingReferencing()
+        ):
+            return "domain"
+        case NdArrayShapeRank() | NdArrayValueCount():
+            return "ndarray"
+        case (
+            TiledNdArrayShapeRank()
+            | TiledNdArrayTileShapeTooLarge()
+            | TiledNdArrayTileShapeNotPositive()
+            | TiledNdArrayUrlTemplateMissingVariable()
+            | TiledNdArrayUrlTemplateUnknownVariable()
+        ):
+            return "tiled-ndarray"
+        case (
+            CoverageMissingParameters()
+            | CoverageRangeWithoutParameter()
+            | CoverageRangeAxisNotInDomain()
+            | CoverageRangeShapeMismatch()
+        ):
+            return "coverage"
+        case RangeValueTypeMismatch() | RangeInvalidCategoryCode():
+            return "range"
+        case ParameterGroupUnknownMember():
+            return "parameter-group"
+        case I18nInvalidLanguageTag() | I18nEmpty():
+            return "i18n"
+        case _:
+            assert_never(issue)

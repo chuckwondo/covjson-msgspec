@@ -14,11 +14,17 @@ it). The tier-3 rules span objects and need the whole-document view plus a
 collect-all, error-or-warning result that a fail-fast ``__post_init__`` cannot
 give, so they are an opt-in step rather than enforced at decode.
 
-`validate` collects `Issue` records rather than raising on the first problem, so
-a caller sees every error and warning at once, each with a stable ``code`` and a
-JSON Pointer ``path``. Pass ``mode="raise"`` to raise a `CovJSONValidationError`
-instead when any error-severity issue is found, and ``check_values=True`` to add
-the value-scanning checks that are skipped by default (each value matching its
+`validate` collects `Issue` findings rather than raising on the first problem, so
+a caller sees every error and warning at once. `Issue` is a closed union of one
+frozen struct per finding kind (`DomainMissingAxis`, `NdArrayValueCount`, ...),
+each carrying its substitution values as typed fields, a human message via
+``str(issue)``, a stable string ``code``, and a JSON Pointer ``at``. Match on the
+concrete variant (``match`` / `~typing.assert_never` for exhaustiveness, or
+``isinstance`` to read a variant's typed payload) and use ``code`` for stringly
+work (aggregation, logging, the wire tag); see `_Issue` for the full rationale.
+Pass ``mode="raise"`` to raise a `CovJSONValidationError` instead when any
+error-severity issue is found, and ``check_values=True`` to add the
+value-scanning checks that are skipped by default (each value matching its
 range's ``dataType``, and categorical codes being defined).
 
 The per-domain-type axis rules live in the `DOMAIN_TYPE_RULES` registry, keyed by
@@ -38,7 +44,7 @@ import re
 from collections.abc import Iterable, Iterator
 from functools import cache
 from itertools import chain
-from typing import Literal, assert_never
+from typing import Literal, assert_never, cast
 
 import langcodes
 import msgspec
@@ -76,80 +82,321 @@ class Severity(enum.StrEnum):
     WARNING = "warning"
 
 
-class IssueCode(enum.StrEnum):
-    """The stable codes emitted by this library's validation checks.
+class _Issue(
+    msgspec.Struct, frozen=True, kw_only=True, omit_defaults=True, tag_field="code"
+):
+    """Shared base for every validation finding (private; not a union member).
 
-    This library is the sole producer of validation codes -- there is no seam
-    for an external check to emit one (the `DOMAIN_TYPE_RULES` registry only
-    supplies axis-constraint *data*, which the built-in checks turn into these
-    same codes). So the set is closed, and `Issue.code` is typed `IssueCode`
-    rather than a bare ``str``. This is the opposite of `DomainType`, which
-    stays a bare ``str`` on `Domain.domain_type` because the spec forces that
-    field open (documents may carry custom domain-type URIs). A ``StrEnum``
-    member is a ``str``, so consumers may still match a code with ``==`` against
-    either the member or its plain-string literal.
+    Each concrete finding is a frozen struct subclassing this base and pinning a
+    msgspec ``tag``: its stable, machine-readable ``code``
+    (``"domain.missing-axis"``). The base supplies the two fields every finding
+    carries (``at`` and ``severity``), the `code` accessor, and the
+    ``tag_field="code"`` config that makes a ``list[Issue]`` a *tagged union*:
+    it encodes to a machine-readable report and decodes back to the exact
+    concrete variants (the ``code`` field is the discriminant).
 
-    Each member name is its ``category.key`` value uppercased, with ``.`` and
-    ``-`` replaced by ``_`` (so ``parameter-group.unknown-member`` becomes
-    `PARAMETER_GROUP_UNKNOWN_MEMBER`).
-    The leading ``category`` segment is a loose producer-side grouping, not a
-    stable taxonomy: range-related findings currently live under both
-    ``range.*`` (`RANGE_VALUE_TYPE_MISMATCH`, `RANGE_INVALID_CATEGORY_CODE`) and
-    ``coverage.range-*`` (`COVERAGE_RANGE_WITHOUT_PARAMETER`,
-    `COVERAGE_RANGE_SHAPE_MISMATCH`, `COVERAGE_RANGE_AXIS_NOT_IN_DOMAIN`).
-    Match on a whole code; broad category matching is intentionally not offered
-    until that overlap is reconciled (see ADR-0003). Use `Issue.path` for
-    locality-based matching.
-    """
+    Consumers have two matching styles, and the split is the whole point:
 
-    DOMAIN_MISSING_AXIS = "domain.missing-axis"
-    DOMAIN_AXIS_NOT_SINGLE = "domain.axis-not-single"
-    DOMAIN_COMPOSITE_DATA_TYPE = "domain.composite-data-type"
-    DOMAIN_EXTRA_AXIS_NOT_SINGLE = "domain.extra-axis-not-single"
-    DOMAIN_MISSING_REFERENCING = "domain.missing-referencing"
-    NDARRAY_SHAPE_RANK = "ndarray.shape-rank"
-    NDARRAY_VALUE_COUNT = "ndarray.value-count"
-    TILED_NDARRAY_SHAPE_RANK = "tiled-ndarray.shape-rank"
-    TILED_NDARRAY_TILE_SHAPE_TOO_LARGE = "tiled-ndarray.tile-shape-too-large"
-    TILED_NDARRAY_TILE_SHAPE_NOT_POSITIVE = "tiled-ndarray.tile-shape-not-positive"
-    TILED_NDARRAY_URL_TEMPLATE_MISSING_VARIABLE = (
-        "tiled-ndarray.url-template-missing-variable"
-    )
-    TILED_NDARRAY_URL_TEMPLATE_UNKNOWN_VARIABLE = (
-        "tiled-ndarray.url-template-unknown-variable"
-    )
-    COVERAGE_MISSING_PARAMETERS = "coverage.missing-parameters"
-    COVERAGE_RANGE_WITHOUT_PARAMETER = "coverage.range-without-parameter"
-    COVERAGE_RANGE_AXIS_NOT_IN_DOMAIN = "coverage.range-axis-not-in-domain"
-    COVERAGE_RANGE_SHAPE_MISMATCH = "coverage.range-shape-mismatch"
-    RANGE_VALUE_TYPE_MISMATCH = "range.value-type-mismatch"
-    RANGE_INVALID_CATEGORY_CODE = "range.invalid-category-code"
-    PARAMETER_GROUP_UNKNOWN_MEMBER = "parameter-group.unknown-member"
-    I18N_INVALID_LANGUAGE_TAG = "i18n.invalid-language-tag"
-    I18N_EMPTY = "i18n.empty"
-
-
-class Issue(msgspec.Struct, frozen=True):
-    """One validation finding.
+    * Reach for the **type** (``match`` / ``isinstance``) for anything the type
+      checker should verify: exhaustiveness via `~typing.assert_never`, reading
+      a variant's typed payload (``issue.code == ...`` does *not* narrow the
+      type), and refactor-safety.
+    * Reach for **`code`** only for stringly work that leaves the type system:
+      aggregating (``Counter(i.code for i in issues)``), logging, the wire tag,
+      or a loose ``code == "domain.missing-axis"`` match by a consumer that never
+      imports the variant classes.
 
     Attributes
     ----------
-    code
-        A stable, machine-readable `IssueCode` (e.g.
-        `IssueCode.DOMAIN_MISSING_AXIS`). A member is a ``str``, so it also
-        compares ``==`` to its plain-string literal (``"domain.missing-axis"``).
-    message
-        A human-readable description.
-    path
-        A JSON Pointer (RFC 6901) to the offending location in the document.
+    at
+        A JSON Pointer (RFC 6901) to the offending location, built via `_ptr`.
     severity
-        `Severity.ERROR` (the default) or `Severity.WARNING`.
+        `Severity.ERROR` (the default) or `Severity.WARNING`. An error finding
+        omits this on the wire (the base sets ``omit_defaults``), so a report
+        reader treats an absent ``severity`` as ``error``.
+
+    Examples
+    --------
+    Aggregate by kind with the string ``code`` (work that leaves the types):
+
+    >>> from covjson_msgspec import Axis, Domain
+    >>> dom = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
+    >>> sorted(i.code for i in validate(dom))
+    ['domain.missing-axis', 'domain.missing-referencing']
+
+    Narrow with the type to read a variant's typed payload (the string ``code``
+    cannot do this: it does not tell the checker which variant you hold):
+
+    >>> issue = validate(dom)[0]
+    >>> issue.axis if isinstance(issue, DomainMissingAxis) else None
+    'y'
+
+    A report round-trips through JSON, the ``code`` tag discriminating on decode:
+
+    >>> import msgspec
+    >>> report = validate(dom)
+    >>> msgspec.json.decode(msgspec.json.encode(report), type=list[Issue]) == report
+    True
     """
 
-    code: IssueCode
-    message: str
-    path: str
+    at: str
     severity: Severity = Severity.ERROR
+
+    @property
+    def code(self) -> str:
+        """The stable string discriminant for this finding kind (the ``tag``)."""
+        return cast("str", type(self).__struct_config__.tag)
+
+    def __str__(self) -> str:
+        raise NotImplementedError
+
+
+class DomainMissingAxis(_Issue, frozen=True, tag="domain.missing-axis"):
+    """A required axis for the domain's type is absent."""
+
+    domain_type: str
+    axis: str
+
+    def __str__(self) -> str:
+        return f"{self.domain_type} domain requires a {self.axis!r} axis"
+
+
+class DomainAxisNotSingle(_Issue, frozen=True, tag="domain.axis-not-single"):
+    """An axis the domain type requires to be single-valued carries several."""
+
+    domain_type: str
+    axis: str
+
+    def __str__(self) -> str:
+        return f"{self.domain_type} domain requires a single {self.axis!r} value"
+
+
+class DomainCompositeDataType(_Issue, frozen=True, tag="domain.composite-data-type"):
+    """The ``composite`` axis declares the wrong ``dataType`` for the domain type."""
+
+    domain_type: str
+    expected: Literal["tuple", "polygon"]
+
+    def __str__(self) -> str:
+        return f"{self.domain_type} domain requires a {self.expected!r} composite axis"
+
+
+class DomainExtraAxisNotSingle(_Issue, frozen=True, tag="domain.extra-axis-not-single"):
+    """A surplus axis outside the domain type's set is multi-valued (MUST be single)."""
+
+    domain_type: str
+    axis: str
+
+    def __str__(self) -> str:
+        return (
+            f"{self.domain_type} domain may only add single-valued axes, "
+            f"but {self.axis!r} has multiple values"
+        )
+
+
+class DomainMissingReferencing(_Issue, frozen=True, tag="domain.missing-referencing"):
+    """The domain carries no ``referencing`` in scope."""
+
+    def __str__(self) -> str:
+        return "domain must have a 'referencing' member"
+
+
+class NdArrayShapeRank(_Issue, frozen=True, tag="ndarray.shape-rank"):
+    """An `NdArray`'s ``shape`` and ``axisNames`` differ in length."""
+
+    def __str__(self) -> str:
+        return "shape and axisNames must have the same length"
+
+
+class NdArrayValueCount(_Issue, frozen=True, tag="ndarray.value-count"):
+    """An `NdArray`'s value count disagrees with the product of its ``shape``."""
+
+    expected: int
+    shape: tuple[int, ...]
+    got: int
+
+    def __str__(self) -> str:
+        return (
+            f"expected {self.expected} value(s) for shape {self.shape}, got {self.got}"
+        )
+
+
+class TiledNdArrayShapeRank(_Issue, frozen=True, tag="tiled-ndarray.shape-rank"):
+    """A `TiledNdArray`'s ``shape`` and ``axisNames`` differ in length."""
+
+    def __str__(self) -> str:
+        return "shape and axisNames must have the same length"
+
+
+class TiledNdArrayTileShapeTooLarge(
+    _Issue, frozen=True, tag="tiled-ndarray.tile-shape-too-large"
+):
+    """A ``tileShape`` element exceeds the corresponding ``shape`` element."""
+
+    tile_dim: int
+    dim: int
+
+    def __str__(self) -> str:
+        return f"tileShape element {self.tile_dim} exceeds shape element {self.dim}"
+
+
+class TiledNdArrayTileShapeNotPositive(
+    _Issue, frozen=True, tag="tiled-ndarray.tile-shape-not-positive"
+):
+    """A ``tileShape`` element is not a positive integer."""
+
+    tile_dim: int
+
+    def __str__(self) -> str:
+        return f"tileShape element {self.tile_dim} must be a positive integer"
+
+
+class TiledNdArrayUrlTemplateMissingVariable(
+    _Issue, frozen=True, tag="tiled-ndarray.url-template-missing-variable"
+):
+    """The ``urlTemplate`` omits a variable for a subdivided axis."""
+
+    axis: str
+
+    def __str__(self) -> str:
+        return (
+            f"urlTemplate must contain a variable for the subdivided {self.axis!r} axis"
+        )
+
+
+class TiledNdArrayUrlTemplateUnknownVariable(
+    _Issue, frozen=True, tag="tiled-ndarray.url-template-unknown-variable"
+):
+    """The ``urlTemplate`` names a variable that is not a subdivided axis."""
+
+    variable: str
+
+    def __str__(self) -> str:
+        return (
+            f"urlTemplate references {self.variable!r}, which is not a subdivided axis"
+        )
+
+
+class CoverageMissingParameters(_Issue, frozen=True, tag="coverage.missing-parameters"):
+    """The coverage carries no ``parameters`` in scope."""
+
+    def __str__(self) -> str:
+        return "coverage must have a 'parameters' member"
+
+
+class CoverageRangeWithoutParameter(
+    _Issue, frozen=True, tag="coverage.range-without-parameter"
+):
+    """A range name matches no parameter in scope."""
+
+    key: str
+
+    def __str__(self) -> str:
+        return f"range {self.key!r} has no matching parameter"
+
+
+class CoverageRangeAxisNotInDomain(
+    _Issue, frozen=True, tag="coverage.range-axis-not-in-domain"
+):
+    """A range axis names no axis of the domain."""
+
+    axis: str
+
+    def __str__(self) -> str:
+        return f"range axis {self.axis!r} is not a domain axis"
+
+
+class CoverageRangeShapeMismatch(
+    _Issue, frozen=True, tag="coverage.range-shape-mismatch"
+):
+    """A range's size along an axis differs from the domain axis's length."""
+
+    axis: str
+    range_size: int
+    domain_size: int
+
+    def __str__(self) -> str:
+        return (
+            f"range axis {self.axis!r} has size {self.range_size} "
+            f"but the domain axis has {self.domain_size}"
+        )
+
+
+class RangeValueTypeMismatch(_Issue, frozen=True, tag="range.value-type-mismatch"):
+    """A range value does not match the declared ``dataType``."""
+
+    value: float | int | str
+    data_type: str
+
+    def __str__(self) -> str:
+        return f"value {self.value!r} is not a valid {self.data_type} value"
+
+
+class RangeInvalidCategoryCode(_Issue, frozen=True, tag="range.invalid-category-code"):
+    """A categorical range value is not a defined category code."""
+
+    value: float | int | str
+
+    def __str__(self) -> str:
+        return f"value {self.value!r} is not a defined category code"
+
+
+class ParameterGroupUnknownMember(
+    _Issue, frozen=True, tag="parameter-group.unknown-member"
+):
+    """A parameter group references a member absent from ``parameters``."""
+
+    member: str
+
+    def __str__(self) -> str:
+        return f"parameter group references unknown member {self.member!r}"
+
+
+class I18nInvalidLanguageTag(_Issue, frozen=True, tag="i18n.invalid-language-tag"):
+    """An i18n object key is not a valid BCP 47 language tag."""
+
+    lang: str
+
+    def __str__(self) -> str:
+        return f"{self.lang!r} is not a valid BCP 47 language tag"
+
+
+class I18nEmpty(_Issue, frozen=True, tag="i18n.empty"):
+    """A present i18n object has no language-tagged entries."""
+
+    def __str__(self) -> str:
+        return "i18n object must have at least one language-tagged entry"
+
+
+# The closed set of validation findings. `validate` returns a ``list[Issue]``;
+# a consumer matches on the concrete variant (`match` / `assert_never` for
+# exhaustiveness, or `isinstance` to read a variant's typed payload) and uses
+# `~_Issue.code` only for stringly work (aggregation, logging, the wire tag).
+# The union is a msgspec tagged union keyed on ``code``, so a report encodes to
+# JSON and decodes back to these exact types.
+Issue = (
+    DomainMissingAxis
+    | DomainAxisNotSingle
+    | DomainCompositeDataType
+    | DomainExtraAxisNotSingle
+    | DomainMissingReferencing
+    | NdArrayShapeRank
+    | NdArrayValueCount
+    | TiledNdArrayShapeRank
+    | TiledNdArrayTileShapeTooLarge
+    | TiledNdArrayTileShapeNotPositive
+    | TiledNdArrayUrlTemplateMissingVariable
+    | TiledNdArrayUrlTemplateUnknownVariable
+    | CoverageMissingParameters
+    | CoverageRangeWithoutParameter
+    | CoverageRangeAxisNotInDomain
+    | CoverageRangeShapeMismatch
+    | RangeValueTypeMismatch
+    | RangeInvalidCategoryCode
+    | ParameterGroupUnknownMember
+    | I18nInvalidLanguageTag
+    | I18nEmpty
+)
 
 
 class CovJSONValidationError(Exception):
@@ -160,10 +407,10 @@ class CovJSONValidationError(Exception):
     """
 
     def __init__(self, issues: tuple[Issue, ...]) -> None:
-        """Store the error issues and build a summary message from the first one."""
+        """Store the error issues and build a summary from the first one's message."""
         self.issues = tuple(issues)
         count = len(self.issues)
-        summary = self.issues[0].message if self.issues else "validation failed"
+        summary = str(self.issues[0]) if self.issues else "validation failed"
         suffix = "" if count <= 1 else f" (and {count - 1} more)"
         super().__init__(f"{summary}{suffix}")
 
@@ -359,21 +606,21 @@ def validate(
     A domain with no ``referencing`` in scope is a spec violation (an error):
 
     >>> bare = Domain.grid(x=Axis.regular(0, 10, 3), y=Axis.regular(0, 10, 3))
-    >>> validate(bare)[0].code == IssueCode.DOMAIN_MISSING_REFERENCING
+    >>> validate(bare)[0].code == "domain.missing-referencing"
     True
 
-    A Grid domain missing its ``y`` axis yields an error issue. Built-in checks
-    emit `IssueCode` members; a member is a ``str``, so match on either form:
+    A Grid domain missing its ``y`` axis yields an error. Match the string
+    ``code``, or narrow with ``isinstance`` to read a variant's typed payload:
 
     >>> incomplete = Domain(
     ...     axes={"x": Axis.listed((1.0,))}, domain_type="Grid", referencing=[ref]
     ... )
     >>> issue = validate(incomplete)[0]
-    >>> issue.code == IssueCode.DOMAIN_MISSING_AXIS
-    True
     >>> issue.code == "domain.missing-axis"
     True
-    >>> issue.path
+    >>> issue.axis if isinstance(issue, DomainMissingAxis) else None
+    'y'
+    >>> issue.at
     '/axes/y'
 
     In ``"raise"`` mode the same document raises:
@@ -395,7 +642,7 @@ def validate(
     ...     parameters={},
     ... )
     >>> issue = validate(cov)[0]
-    >>> issue.code == IssueCode.COVERAGE_RANGE_WITHOUT_PARAMETER
+    >>> issue.code == "coverage.range-without-parameter"
     True
     >>> issue.severity.value
     'error'
@@ -403,7 +650,7 @@ def validate(
     A coverage with no ``parameters`` member at all is likewise an error:
 
     >>> cov = Coverage(domain=point, ranges={})
-    >>> validate(cov)[0].code == IssueCode.COVERAGE_MISSING_PARAMETERS
+    >>> validate(cov)[0].code == "coverage.missing-parameters"
     True
     """
     issues = list(_issues(obj, check_values))
@@ -442,8 +689,8 @@ def _issues(obj: CoverageJSON, check_values: bool) -> Iterator[Issue]:
     >>> from covjson_msgspec import Axis, Domain
     >>> dom = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
     >>> [issue.code for issue in _issues(dom, False)] == [
-    ...     IssueCode.DOMAIN_MISSING_AXIS,
-    ...     IssueCode.DOMAIN_MISSING_REFERENCING,
+    ...     "domain.missing-axis",
+    ...     "domain.missing-referencing",
     ... ]
     True
     """
@@ -468,7 +715,7 @@ def _issues(obj: CoverageJSON, check_values: bool) -> Iterator[Issue]:
 
 
 def _ptr(prefix: str, *parts: str | int) -> str:
-    """Join ``prefix`` and ``parts`` into a JSON Pointer for an `Issue.path`.
+    """Join ``prefix`` and ``parts`` into a JSON Pointer for an issue's ``at``.
 
     Each part is appended as a ``/``-separated reference token. Per RFC 6901, a
     literal ``~`` and ``/`` inside a string token are escaped to ``~0`` and
@@ -500,9 +747,11 @@ def _ptr(prefix: str, *parts: str | int) -> str:
     """
     # Build a JSON Pointer, escaping "~" and "/" in string tokens (RFC 6901).
     escaped = (
-        part.replace("~", "~0").replace("/", "~1")
-        if isinstance(part, str)
-        else str(part)
+        (
+            part.replace("~", "~0").replace("/", "~1")
+            if isinstance(part, str)
+            else str(part)
+        )
         for part in parts
     )
 
@@ -535,14 +784,12 @@ def _missing_axis_issues(
     >>> from covjson_msgspec import Axis, Domain
     >>> rule = DOMAIN_TYPE_RULES["Grid"]
     >>> dom = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
-    >>> [issue.path for issue in _missing_axis_issues(dom, "Grid", rule, "")]
+    >>> [issue.at for issue in _missing_axis_issues(dom, "Grid", rule, "")]
     ['/axes/y']
     """
     return (
-        Issue(
-            code=IssueCode.DOMAIN_MISSING_AXIS,
-            message=f"{domain_type} domain requires a {name!r} axis",
-            path=_ptr(path, "axes", name),
+        DomainMissingAxis(
+            domain_type=domain_type, axis=name, at=_ptr(path, "axes", name)
         )
         for name in rule.required_axes
         if name not in domain.axes
@@ -583,14 +830,12 @@ def _non_single_axis_issues(
     ...     axes={"x": Axis.listed((1.0, 2.0)), "y": Axis.listed((3.0,))},
     ...     domain_type="Point",
     ... )
-    >>> [issue.path for issue in _non_single_axis_issues(dom, "Point", rule, "")]
+    >>> [issue.at for issue in _non_single_axis_issues(dom, "Point", rule, "")]
     ['/axes/x']
     """
     return (
-        Issue(
-            code=IssueCode.DOMAIN_AXIS_NOT_SINGLE,
-            message=f"{domain_type} domain requires a single {name!r} value",
-            path=_ptr(path, "axes", name),
+        DomainAxisNotSingle(
+            domain_type=domain_type, axis=name, at=_ptr(path, "axes", name)
         )
         for name in rule.single_valued_axes
         if (axis := domain.axes.get(name)) is not None and len(axis) != 1
@@ -632,7 +877,7 @@ def _composite_data_type_issue(
     ... )
     >>> dom = Domain(axes={"composite": composite}, domain_type="Trajectory")
     >>> issue = _composite_data_type_issue(dom, "Trajectory", rule, "")
-    >>> issue.code == IssueCode.DOMAIN_COMPOSITE_DATA_TYPE
+    >>> issue.code == "domain.composite-data-type"
     True
     """
     composite = domain.axes.get("composite")
@@ -642,13 +887,10 @@ def _composite_data_type_issue(
         and composite is not None
         and composite.data_type != rule.composite_data_type
     ):
-        return Issue(
-            code=IssueCode.DOMAIN_COMPOSITE_DATA_TYPE,
-            message=(
-                f"{domain_type} domain requires a "
-                f"{rule.composite_data_type!r} composite axis"
-            ),
-            path=_ptr(path, "axes", "composite"),
+        return DomainCompositeDataType(
+            domain_type=domain_type,
+            expected=rule.composite_data_type,
+            at=_ptr(path, "axes", "composite"),
         )
 
     return None
@@ -690,7 +932,7 @@ def _unexpected_axis_issues(
     ...     },
     ...     domain_type="Grid",
     ... )
-    >>> [issue.path for issue in _unexpected_axis_issues(dom, "Grid", rule, "")]
+    >>> [issue.at for issue in _unexpected_axis_issues(dom, "Grid", rule, "")]
     ['/axes/bogus']
     """
     allowed = set(rule.required_axes) | set(rule.optional_axes)
@@ -708,13 +950,8 @@ def _unexpected_axis_issues(
     # So a surplus single-valued axis is conformant (no issue); a surplus
     # multi-valued one is a MUST violation (error).
     return (
-        Issue(
-            code=IssueCode.DOMAIN_EXTRA_AXIS_NOT_SINGLE,
-            message=(
-                f"{domain_type} domain may only add single-valued axes, "
-                f"but {name!r} has multiple values"
-            ),
-            path=_ptr(path, "axes", name),
+        DomainExtraAxisNotSingle(
+            domain_type=domain_type, axis=name, at=_ptr(path, "axes", name)
         )
         for name in domain.axes
         if name not in allowed and len(domain.axes[name]) != 1
@@ -754,7 +991,7 @@ def _domain_issues(
     >>> rule = DOMAIN_TYPE_RULES["Grid"]
     >>> dom = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
     >>> [issue.code for issue in _domain_issues(dom, "Grid", rule, "")] == [
-    ...     IssueCode.DOMAIN_MISSING_AXIS
+    ...     "domain.missing-axis"
     ... ]
     True
     """
@@ -785,7 +1022,7 @@ def _is_valid_language_tag(tag: str) -> bool:
     `_BCP47_CHARSET_RE` guards the wire-format character set (letters,
     digits, and ``-`` only), and `langcodes.tag_is_valid` checks the parsed
     tag against the actual IANA subtag registry (catching, for example,
-    ``"jp"``, which is well-formed but not a real language code -- a check no
+    ``"jp"``, which is well-formed but not a real language code: a check no
     regex alone can do). Both are needed: `langcodes.tag_is_valid` alone would
     accept ``"en_US"`` (it normalizes the underscore before validating, since
     its primary purpose is locale matching, not strict wire-format
@@ -854,31 +1091,23 @@ def _language_tag_issues(tags: I18n | None, path: str) -> Iterator[Issue]:
     A present-but-empty map is reported once, at the map's own path:
 
     >>> issue = next(_language_tag_issues({}, "#/label"))
-    >>> issue.code, issue.path
-    (<IssueCode.I18N_EMPTY: 'i18n.empty'>, '#/label')
+    >>> issue.code, issue.at
+    ('i18n.empty', '#/label')
 
     A malformed separator and an unregistered subtag are both reported:
 
-    >>> [i.path for i in _language_tag_issues({"en_US": "x", "jp": "y"}, "#/label")]
+    >>> [i.at for i in _language_tag_issues({"en_US": "x", "jp": "y"}, "#/label")]
     ['#/label/en_US', '#/label/jp']
     """
     if tags is None:
         return
 
     if not tags:
-        yield Issue(
-            code=IssueCode.I18N_EMPTY,
-            message="i18n object must have at least one language-tagged entry",
-            path=path,
-        )
+        yield I18nEmpty(at=path)
         return
 
     yield from (
-        Issue(
-            code=IssueCode.I18N_INVALID_LANGUAGE_TAG,
-            message=f"{tag!r} is not a valid BCP 47 language tag",
-            path=_ptr(path, tag),
-        )
+        I18nInvalidLanguageTag(lang=tag, at=_ptr(path, tag))
         for tag in tags
         if not _is_valid_language_tag(tag)
     )
@@ -913,7 +1142,7 @@ def _label_description_i18n_issues(
     >>> issues = _label_description_i18n_issues(
     ...     {"en_US": "x"}, {"jp": "y"}, "#/parameters/t"
     ... )
-    >>> [i.path for i in issues]
+    >>> [i.at for i in issues]
     ['#/parameters/t/label/en_US', '#/parameters/t/description/jp']
     """
     yield from _language_tag_issues(label, _ptr(path, "label"))
@@ -939,7 +1168,7 @@ def _concept_i18n_issues(concept: Concept, path: str) -> Iterator[Issue]:
     Examples
     --------
     >>> bad = Concept(label={"en_US": "Water"})
-    >>> [i.path for i in _concept_i18n_issues(bad, "#/targetConcept")]
+    >>> [i.at for i in _concept_i18n_issues(bad, "#/targetConcept")]
     ['#/targetConcept/label/en_US']
     """
     yield from _label_description_i18n_issues(concept.label, concept.description, path)
@@ -970,7 +1199,7 @@ def _reference_system_i18n_issues(
     Examples
     --------
     >>> crs = GeographicCRS(description={"en_US": "WGS 84"})
-    >>> [i.path for i in _reference_system_i18n_issues(crs, "#/referencing/0/system")]
+    >>> [i.at for i in _reference_system_i18n_issues(crs, "#/referencing/0/system")]
     ['#/referencing/0/system/description/en_US']
 
     A `TemporalRS` has no i18n fields, so it yields nothing:
@@ -1034,8 +1263,8 @@ def _validate_domain(
     >>> from covjson_msgspec import Axis, Domain
     >>> dom = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
     >>> [issue.code for issue in _validate_domain(dom, "Grid", "")] == [
-    ...     IssueCode.DOMAIN_MISSING_AXIS,
-    ...     IssueCode.DOMAIN_MISSING_REFERENCING,
+    ...     "domain.missing-axis",
+    ...     "domain.missing-referencing",
     ... ]
     True
     """
@@ -1057,11 +1286,7 @@ def _validate_domain(
     # scope. A URL-reference domain never reaches this function (it is unfetched),
     # so the check applies only where a referencing array could actually exist.
     if not domain.referencing:
-        yield Issue(
-            code=IssueCode.DOMAIN_MISSING_REFERENCING,
-            message="domain must have a 'referencing' member",
-            path=_ptr(path, "referencing"),
-        )
+        yield DomainMissingReferencing(at=_ptr(path, "referencing"))
 
     # Spec 2: each reference system's i18n objects must be non-empty and their
     # keys must be valid BCP 47 tags.
@@ -1102,7 +1327,7 @@ def _validate_ndarray(arr: NdArray, path: str) -> Iterator[Issue]:
     ...     data_type="float", values=(1.0, 2.0), shape=(3,), axis_names=("x",)
     ... )
     >>> [issue.code for issue in _validate_ndarray(arr, "#/ranges/v")] == [
-    ...     IssueCode.NDARRAY_VALUE_COUNT
+    ...     "ndarray.value-count"
     ... ]
     True
 
@@ -1115,23 +1340,17 @@ def _validate_ndarray(arr: NdArray, path: str) -> Iterator[Issue]:
     []
     """
     if len(arr.axis_names) != len(arr.shape):
-        yield Issue(
-            code=IssueCode.NDARRAY_SHAPE_RANK,
-            message="shape and axisNames must have the same length",
-            path=_ptr(path, "shape"),
-        )
+        yield NdArrayShapeRank(at=_ptr(path, "shape"))
 
     # math.prod(()) == 1, so a 0-dimensional array must hold a single value.
     expected = math.prod(arr.shape)
 
     if len(arr.values) != expected:
-        yield Issue(
-            code=IssueCode.NDARRAY_VALUE_COUNT,
-            message=(
-                f"expected {expected} value(s) for shape {tuple(arr.shape)}, "
-                f"got {len(arr.values)}"
-            ),
-            path=_ptr(path, "values"),
+        yield NdArrayValueCount(
+            expected=expected,
+            shape=tuple(arr.shape),
+            got=len(arr.values),
+            at=_ptr(path, "values"),
         )
 
 
@@ -1179,7 +1398,7 @@ def _tile_set_issues(
     ... )
     >>> tile_set = arr.tile_sets[0]
     >>> [i.code for i in _tile_set_issues(arr, 0, tile_set, "#", rank_ok=True)] == [
-    ...     IssueCode.TILED_NDARRAY_TILE_SHAPE_TOO_LARGE
+    ...     "tiled-ndarray.tile-shape-too-large"
     ... ]
     True
     """
@@ -1187,10 +1406,8 @@ def _tile_set_issues(
     # A non-null tile size must be a positive integer (the tile layout divides each
     # axis by it) not exceeding the corresponding axis.
     yield from (
-        Issue(
-            code=IssueCode.TILED_NDARRAY_TILE_SHAPE_TOO_LARGE,
-            message=f"tileShape element {tile_dim} exceeds shape element {dim}",
-            path=_ptr(path, "tileSets", ts, "tileShape", i),
+        TiledNdArrayTileShapeTooLarge(
+            tile_dim=tile_dim, dim=dim, at=_ptr(path, "tileSets", ts, "tileShape", i)
         )
         for i, (tile_dim, dim) in enumerate(
             zip(tile_set.tile_shape, arr.shape, strict=True)
@@ -1199,10 +1416,8 @@ def _tile_set_issues(
     )
 
     yield from (
-        Issue(
-            code=IssueCode.TILED_NDARRAY_TILE_SHAPE_NOT_POSITIVE,
-            message=f"tileShape element {tile_dim} must be a positive integer",
-            path=_ptr(path, "tileSets", ts, "tileShape", i),
+        TiledNdArrayTileShapeNotPositive(
+            tile_dim=tile_dim, at=_ptr(path, "tileSets", ts, "tileShape", i)
         )
         for i, tile_dim in enumerate(tile_set.tile_shape)
         if tile_dim is not None and tile_dim < 1
@@ -1213,14 +1428,10 @@ def _tile_set_issues(
 
     # A subdivided axis (non-null tileShape) MUST have a template variable. When
     # axisNames does not rank-match shape, this zip is intentionally non-strict so
-    # it cannot raise -- validate() reports issues rather than raising.
+    # it cannot raise: validate() reports issues rather than raising.
     yield from (
-        Issue(
-            code=IssueCode.TILED_NDARRAY_URL_TEMPLATE_MISSING_VARIABLE,
-            message=(
-                f"urlTemplate must contain a variable for the subdivided {name!r} axis"
-            ),
-            path=_ptr(path, "tileSets", ts, "urlTemplate"),
+        TiledNdArrayUrlTemplateMissingVariable(
+            axis=name, at=_ptr(path, "tileSets", ts, "urlTemplate")
         )
         for name, tile_dim in zip(arr.axis_names, tile_set.tile_shape, strict=False)
         if tile_dim is not None and name not in present
@@ -1236,12 +1447,8 @@ def _tile_set_issues(
             if tile_dim is not None
         }
         yield from (
-            Issue(
-                code=IssueCode.TILED_NDARRAY_URL_TEMPLATE_UNKNOWN_VARIABLE,
-                message=(
-                    f"urlTemplate references {name!r}, which is not a subdivided axis"
-                ),
-                path=_ptr(path, "tileSets", ts, "urlTemplate"),
+            TiledNdArrayUrlTemplateUnknownVariable(
+                variable=name, at=_ptr(path, "tileSets", ts, "urlTemplate")
             )
             for name in dict.fromkeys(present_names)
             if name not in subdivided
@@ -1296,9 +1503,9 @@ def _validate_tiled_ndarray(arr: TiledNdArray, path: str) -> Iterator[Issue]:
     ...     tile_sets=(TileSet(tile_shape=(5, None), url_template="{t}.covjson"),),
     ... )
     >>> (issue,) = _validate_tiled_ndarray(arr, "#")
-    >>> issue.code == IssueCode.TILED_NDARRAY_TILE_SHAPE_TOO_LARGE
+    >>> issue.code == "tiled-ndarray.tile-shape-too-large"
     True
-    >>> issue.path
+    >>> issue.at
     '#/tileSets/0/tileShape/0'
 
     A subdivided axis whose ordinal the template omits is flagged:
@@ -1310,9 +1517,9 @@ def _validate_tiled_ndarray(arr: TiledNdArray, path: str) -> Iterator[Issue]:
     ...     tile_sets=(TileSet(tile_shape=(1, None), url_template="tile.covjson"),),
     ... )
     >>> (issue,) = _validate_tiled_ndarray(arr, "#")
-    >>> issue.code == IssueCode.TILED_NDARRAY_URL_TEMPLATE_MISSING_VARIABLE
+    >>> issue.code == "tiled-ndarray.url-template-missing-variable"
     True
-    >>> issue.path
+    >>> issue.at
     '#/tileSets/0/urlTemplate'
 
     A template variable that names no subdivided axis is flagged too:
@@ -1324,9 +1531,9 @@ def _validate_tiled_ndarray(arr: TiledNdArray, path: str) -> Iterator[Issue]:
     ...     tile_sets=(TileSet(tile_shape=(1, None), url_template="{t}-{z}.cov"),),
     ... )
     >>> (issue,) = _validate_tiled_ndarray(arr, "#")
-    >>> issue.code == IssueCode.TILED_NDARRAY_URL_TEMPLATE_UNKNOWN_VARIABLE
+    >>> issue.code == "tiled-ndarray.url-template-unknown-variable"
     True
-    >>> issue.path
+    >>> issue.at
     '#/tileSets/0/urlTemplate'
     """
     rank_ok = len(arr.axis_names) == len(arr.shape)
@@ -1335,15 +1542,7 @@ def _validate_tiled_ndarray(arr: TiledNdArray, path: str) -> Iterator[Issue]:
     # tileShape to shape's rank but not axisNames, so a mismatch surfaces here. The
     # per-tile-set rules are delegated to `_tile_set_issues`.
     shape_rank: tuple[Issue, ...] = (
-        ()
-        if rank_ok
-        else (
-            Issue(
-                code=IssueCode.TILED_NDARRAY_SHAPE_RANK,
-                message="shape and axisNames must have the same length",
-                path=_ptr(path, "shape"),
-            ),
-        )
+        () if rank_ok else (TiledNdArrayShapeRank(at=_ptr(path, "shape")),)
     )
 
     return chain(
@@ -1389,27 +1588,23 @@ def _range_axis_issue(
     >>> dom = Domain.grid(x=Axis.regular(0.0, 10.0, 3), y=Axis.regular(0.0, 10.0, 2))
     >>> arr = NdArray(data_type="float", values=(1.0,), shape=(9,), axis_names=("x",))
     >>> issue = _range_axis_issue(arr, dom, 0, "x", "#/ranges/v")
-    >>> issue.code == IssueCode.COVERAGE_RANGE_SHAPE_MISMATCH
+    >>> issue.code == "coverage.range-shape-mismatch"
     True
     """
     if name not in domain.axes:
-        return Issue(
-            code=IssueCode.COVERAGE_RANGE_AXIS_NOT_IN_DOMAIN,
-            message=f"range axis {name!r} is not a domain axis",
-            path=_ptr(path, "axisNames", index),
+        return CoverageRangeAxisNotInDomain(
+            axis=name, at=_ptr(path, "axisNames", index)
         )
 
     if index < len(arr.shape):
         axis_len = len(domain.axes[name])
 
         if arr.shape[index] != axis_len:
-            return Issue(
-                code=IssueCode.COVERAGE_RANGE_SHAPE_MISMATCH,
-                message=(
-                    f"range axis {name!r} has size {arr.shape[index]} but the "
-                    f"domain axis has {axis_len}"
-                ),
-                path=_ptr(path, "shape", index),
+            return CoverageRangeShapeMismatch(
+                axis=name,
+                range_size=arr.shape[index],
+                domain_size=axis_len,
+                at=_ptr(path, "shape", index),
             )
 
     return None
@@ -1446,7 +1641,7 @@ def _check_range_against_domain(
     ...     data_type="float", values=(1.0, 2.0), shape=(2,), axis_names=("q",)
     ... )
     >>> [i.code for i in _check_range_against_domain(arr, dom, "#/ranges/v")] == [
-    ...     IssueCode.COVERAGE_RANGE_AXIS_NOT_IN_DOMAIN
+    ...     "coverage.range-axis-not-in-domain"
     ... ]
     True
     """
@@ -1498,11 +1693,7 @@ def _check_categorical_codes(
     }
 
     yield from (
-        Issue(
-            code=IssueCode.RANGE_INVALID_CATEGORY_CODE,
-            message=f"value {value!r} is not a defined category code",
-            path=_ptr(path, "values", i),
-        )
+        RangeInvalidCategoryCode(value=value, at=_ptr(path, "values", i))
         for i, value in enumerate(arr.values)
         if value is not None and (not isinstance(value, int) or value not in valid)
     )
@@ -1581,9 +1772,9 @@ def _check_value_data_types(arr: NdArray, path: str) -> Iterator[Issue]:
 
     >>> arr = NdArray(data_type="integer", values=(1, 1.5, None))
     >>> (issue,) = _check_value_data_types(arr, "#/ranges/v")
-    >>> issue.code == IssueCode.RANGE_VALUE_TYPE_MISMATCH
+    >>> issue.code == "range.value-type-mismatch"
     True
-    >>> issue.path
+    >>> issue.at
     '#/ranges/v/values/1'
 
     A ``"float"`` range accepts integer-written values (no issues):
@@ -1595,10 +1786,8 @@ def _check_value_data_types(arr: NdArray, path: str) -> Iterator[Issue]:
     data_type = arr.data_type
 
     return (
-        Issue(
-            code=IssueCode.RANGE_VALUE_TYPE_MISMATCH,
-            message=f"value {value!r} is not a valid {data_type} value",
-            path=_ptr(path, "values", i),
+        RangeValueTypeMismatch(
+            value=value, data_type=data_type, at=_ptr(path, "values", i)
         )
         for i, value in enumerate(arr.values)
         if value is not None and not _matches_data_type(value, data_type)
@@ -1625,7 +1814,7 @@ def _unit_i18n_issues(unit: Unit | None, path: str) -> Iterator[Issue]:
     >>> list(_unit_i18n_issues(Unit(symbol="K"), "#/unit"))
     []
     >>> bad = Unit(label={"en_US": "kelvin"})
-    >>> [i.path for i in _unit_i18n_issues(bad, "#/unit")]
+    >>> [i.at for i in _unit_i18n_issues(bad, "#/unit")]
     ['#/unit/label/en_US']
     """
     if unit is None:
@@ -1652,7 +1841,7 @@ def _category_i18n_issues(category: Category, path: str) -> Iterator[Issue]:
     Examples
     --------
     >>> bad = Category(id="1", label={"en_US": "Water"})
-    >>> [i.path for i in _category_i18n_issues(bad, "#/categories/0")]
+    >>> [i.at for i in _category_i18n_issues(bad, "#/categories/0")]
     ['#/categories/0/label/en_US']
     """
     yield from _label_description_i18n_issues(
@@ -1686,7 +1875,7 @@ def _observed_property_i18n_issues(
     ...     categories=(Category(id="1", label={"en_US": "Water"}),),
     ... )
     >>> issues = _observed_property_i18n_issues(land_cover, "#/observedProperty")
-    >>> [i.path for i in issues]
+    >>> [i.at for i in issues]
     ['#/observedProperty/categories/0/label/en_US']
     """
     if op is None:
@@ -1725,7 +1914,7 @@ def _parameter_i18n_issues(param: Parameter, path: str) -> Iterator[Issue]:
     ...     ObservedProperty(label=i18n("Air temperature")),
     ...     Unit(label={"en_US": "kelvin"}),
     ... )
-    >>> [i.path for i in _parameter_i18n_issues(temp, "#/parameters/t")]
+    >>> [i.at for i in _parameter_i18n_issues(temp, "#/parameters/t")]
     ['#/parameters/t/unit/label/en_US']
     """
     yield from _observed_property_i18n_issues(
@@ -1756,7 +1945,7 @@ def _parameter_group_i18n_issues(group: ParameterGroup, path: str) -> Iterator[I
     Examples
     --------
     >>> bad = ParameterGroup(members=("u", "v"), label={"en_US": "Wind"})
-    >>> [i.path for i in _parameter_group_i18n_issues(bad, "#/parameterGroups/0")]
+    >>> [i.at for i in _parameter_group_i18n_issues(bad, "#/parameterGroups/0")]
     ['#/parameterGroups/0/label/en_US']
     """
     yield from _label_description_i18n_issues(group.label, group.description, path)
@@ -1791,10 +1980,8 @@ def _validate_parameter_groups(
     """
     for i, group in enumerate(coverage.parameter_groups or ()):
         yield from (
-            Issue(
-                code=IssueCode.PARAMETER_GROUP_UNKNOWN_MEMBER,
-                message=f"parameter group references unknown member {member!r}",
-                path=_ptr(path, "parameterGroups", i),
+            ParameterGroupUnknownMember(
+                member=member, at=_ptr(path, "parameterGroups", i)
             )
             for member in group.members
             if member not in parameters
@@ -1844,11 +2031,7 @@ def _validate_ranges(
         range_path = _ptr(path, "ranges", key)
 
         if parameters is not None and key not in parameters:
-            yield Issue(
-                code=IssueCode.COVERAGE_RANGE_WITHOUT_PARAMETER,
-                message=f"range {key!r} has no matching parameter",
-                path=range_path,
-            )
+            yield CoverageRangeWithoutParameter(key=key, at=range_path)
 
         if isinstance(range_, NdArray):
             yield from _validate_ndarray(range_, range_path)
@@ -1877,7 +2060,7 @@ def _validate_coverage(
     ``coverage.missing-parameters`` issue) or its parameter groups
     (`_validate_parameter_groups`), each parameter's and parameter group's
     language-tag issues (`_parameter_i18n_issues` / `_parameter_group_i18n_issues`,
-    run unconditionally -- a group's own label is checkable even when
+    run unconditionally: a group's own label is checkable even when
     ``coverage.missing-parameters`` also fires), and every range
     (`_validate_ranges`). A URL-reference domain contributes no domain or
     range-vs-domain issues silently (it is unfetched yet spec-valid; see
@@ -1913,13 +2096,7 @@ def _validate_coverage(
     # is in scope. Unlike referencing, this does not depend on the domain form: a
     # URL-reference domain still needs the coverage's own parameters.
     parameter_issues: Iterable[Issue] = (
-        (
-            Issue(
-                code=IssueCode.COVERAGE_MISSING_PARAMETERS,
-                message="coverage must have a 'parameters' member",
-                path=_ptr(path, "parameters"),
-            ),
-        )
+        (CoverageMissingParameters(at=_ptr(path, "parameters")),)
         if parameters is None
         else _validate_parameter_groups(coverage, parameters, path)
     )

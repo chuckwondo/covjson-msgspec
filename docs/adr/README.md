@@ -21,25 +21,29 @@ so it never consumes a sequence number.
 
 Each ADR follows the lightweight template in [template.md](template.md):
 
-- **Title** -- `# ADR-NNNN: <decision>`.
-- **Status** -- `Accepted` or `Superseded by ADR-NNNN`.
-- **Context** -- the forces at play; what made this a decision worth recording.
-- **Decision** -- what we chose, stated plainly.
-- **Alternatives considered** -- the real rejected options and why they lost.
-- **Consequences** -- what follows, including the costs we accept.
+- **Title**: `# ADR-NNNN: <decision>`.
+- **Status**: `Accepted` or `Superseded by ADR-NNNN`.
+- **Context**: the forces at play; what made this a decision worth recording.
+- **Decision**: what we chose, stated plainly.
+- **Alternatives considered**: the real rejected options and why they lost.
+- **Consequences**: what follows, including the costs we accept.
 
 Keep each ADR self-contained, and do not restate conventions already in
 CLAUDE.md.
 
 ## Index
 
-- [ADR-0001](0001-python-3-11-floor.md) -- Python 3.11 floor, coupled to titiler
-- [ADR-0002](0002-opt-in-tiered-validation.md) -- Cross-cutting checks live in
+- [ADR-0001](0001-python-3-11-floor.md): Python 3.11 floor, coupled to titiler
+- [ADR-0002](0002-opt-in-tiered-validation.md): Cross-cutting checks live in
   opt-in `validate()`, not `__post_init__`
-- [ADR-0003](0003-issue-code-enum.md) -- `IssueCode` enum, closed because the
-  library owns the codes; category matching deferred
-- [ADR-0004](0004-ndarray-single-non-generic-class.md) -- `NdArray` as a
+- [ADR-0003](0003-issue-code-enum.md): `IssueCode` enum, closed because the
+  library owns the codes; category matching deferred (superseded by ADR-0006)
+- [ADR-0004](0004-ndarray-single-non-generic-class.md): `NdArray` as a
   single, non-generic class; element typing via `validate(check_values=True)`
+- [ADR-0005](0005-langcodes-core-dependency.md): `langcodes` cleared the bar
+  for a core dependency, backing the BCP 47 language-tag check
+- [ADR-0006](0006-validation-findings-sum-type.md): validation findings as a
+  closed sum type (typed variants + tagged union); replaces the `IssueCode` enum
 
 Some decisions are recorded in ADRs that land with their implementation rather
 than here; see the issue tracker for the in-flight set.

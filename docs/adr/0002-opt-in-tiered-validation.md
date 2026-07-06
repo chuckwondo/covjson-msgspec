@@ -11,13 +11,13 @@ single struct (an `Axis` needs exactly one form; a `Unit` needs a label or a
 symbol; a `TiledNdArray` tile shape has a fixed rank). Others are cross-cutting
 and only checkable with a whole-document view (a domain's axes against its
 `domainType`, ranges aligned to their domain, parameter-group members against
-the coverage's parameters, and -- when scanning values -- each value against its
+the coverage's parameters, and (when scanning values) each value against its
 range's `dataType` and categorical codes being defined).
 
 The library validates in three tiers: (1) structural and field-level checks by
 msgspec on decode; (2) cheap local per-struct invariants in each
 `__post_init__`; (3) cross-cutting document-level rules in `validate`. A natural
-question is why tier 3 is not simply folded into tier 2 -- run (almost) all
+question is why tier 3 is not simply folded into tier 2: run (almost) all
 validation at construction, excluding only the costly range-value scan. The
 answer is not about cost. The split is local vs. cross-cutting, and
 `__post_init__` is the wrong instrument for cross-cutting checks for reasons
@@ -30,13 +30,13 @@ implemented internally (the shape of its traversal) is out of scope.
 
 Keep `__post_init__` for local, O(1), single-struct invariants only. Put every
 cross-cutting, document-level rule in an opt-in `validate()` that returns a
-collection of `Issue` records -- each with a stable `code`, a JSON Pointer
-`path`, and a severity -- and never raises on its own.
+collection of `Issue` records (each with a stable `code`, a JSON Pointer
+`path`, and a severity) and never raises on its own.
 
 Severity tracks the spec's own normative force. An *error* marks a MUST / MUST
 NOT violation: the document is non-conformant, or not usable as the type it
 claims to be. A *warning* marks a SHOULD / RECOMMENDED violation: the document
-is still spec-conformant but does something the spec discourages -- for example
+is still spec-conformant but does something the spec discourages, for example
 a domain missing the recommended `domainType`, or a temporal value outside
 ISO 8601 lexical form. Retaining both severities is a deliberate choice; the
 errors-only alternative is discussed below.
@@ -58,11 +58,11 @@ what these checks require:
   way to report anything: raise, which rejects the object. There is no channel
   for "construct this, but flag it," so folding the checks in would force every
   SHOULD violation to be fatal-or-silent, collapsing a deliberate distinction.
-  (A constructor *can* collect several errors and raise them together -- that is
+  (A constructor *can* collect several errors and raise them together, that is
   not the obstacle; returning a finding without aborting is.)
 - *Raising is all-or-nothing: it cannot hand back a usable-but-imperfect
-  object.* `validate` returns its findings as `Issue` values -- each with a
-  stable code and a JSON Pointer path -- alongside the decoded object, so a
+  object.* `validate` returns its findings as `Issue` values (each with a
+  stable code and a JSON Pointer path) alongside the decoded object, so a
   caller can inspect them programmatically, filter by severity, or act on some
   and ignore others while still holding the object. A raising constructor
   forecloses that: you get a fully conformant object or an exception, nothing in
@@ -97,7 +97,7 @@ compliant" state. The
 flaw is that the spec itself defines exactly that state: a SHOULD / RECOMMENDED
 requirement is, by RFC 2119, one a conformant document may violate. A document
 missing the recommended `domainType`, or carrying a temporal value outside the
-recommended ISO 8601 lexical form, is spec-conformant yet worth surfacing -- it
+recommended ISO 8601 lexical form, is spec-conformant yet worth surfacing: it
 is a warning, not an error, and not nothing. Collapsing to errors-only would
 either drop those findings or wrongly brand conformant documents as broken. (The
 finding that prompted this question was that the two checks initially filed as

@@ -18,7 +18,7 @@ The architecture's stated tenet is that the core depends only on msgspec;
 every other dependency (numpy, xarray, pandas, geopandas) lives behind an
 opt-in bridge extra, lazy-imported inside helper bodies. The first plan for
 this check honored that tenet literally: a dependency-free regex approximating
-the RFC 5646 grammar. But a regex can only check *shape* -- it cannot tell
+the RFC 5646 grammar. But a regex can only check *shape*: it cannot tell
 `"jp"` (well-formed, but not a real IANA-registered language subtag; the real
 code for Japanese is `"ja"`) from `"ja"`. For a MUST spec-conformance check,
 that is a real correctness gap, not a cosmetic one: `validate()`'s whole
@@ -29,7 +29,7 @@ The msgspec-only tenet exists to keep the *install* light: no heavy or native
 dependencies pulled in for a caller who only wants to decode and encode
 documents. That reason doesn't automatically rule out every possible
 dependency; it rules out the kind of dependency the bridges carry (numpy,
-xarray, geopandas -- large, sometimes native-compiled, each behind its own
+xarray, geopandas: large, sometimes native-compiled, each behind its own
 extra). A candidate library that is itself small, pure Python, and adds no
 further transitive dependencies in its base install doesn't compromise that
 reason, so it's a different question from "should the core stay msgspec-only
@@ -37,7 +37,7 @@ no matter what."
 
 `langcodes` (verified at 3.5.1) fits that profile: its base install (without
 the optional `[data]` extra, which pulls in `language_data` for language
-*display names* and demographics -- not needed here) has zero runtime
+*display names* and demographics, not needed here) has zero runtime
 dependencies, is pure Python, MIT-licensed, ships a `py.typed` marker
 (confirmed: mypy and basedpyright both pass with no override needed), and its
 `tag_is_valid()` checks a parsed tag's language/script/region/variant subtags
@@ -46,7 +46,7 @@ against the real IANA registry data bundled in the base package.
 One further wrinkle surfaced during implementation: `langcodes.tag_is_valid()`
 alone is *too* lenient for this use case. Its primary purpose is locale
 matching, so `Language.get()` normalizes POSIX-style underscores before
-validating (`"en_US"` parses identically to `"en-US"`) -- meaning a bare call
+validating (`"en_US"` parses identically to `"en-US"`), meaning a bare call
 would silently accept `"en_US"`, which is not valid BCP 47 wire syntax (RFC
 5646 only allows `-` as the subtag separator). So the check that shipped is a
 conjunction: a small structural regex restricting the character set to
@@ -57,7 +57,7 @@ then `langcodes.tag_is_valid()` for the registry-aware semantic check.
 
 Add `langcodes>=3.5` to the core `dependencies` in `pyproject.toml` (not a
 bridge extra), imported directly at the top of `validation.py` like `msgspec`
-itself -- not lazy-imported inside a function, since this is core validation
+itself, not lazy-imported inside a function, since this is core validation
 code, not an opt-in bridge. The validity predicate
 (`_is_valid_language_tag` in `validation.py`, `@cache`-wrapped since a
 document commonly repeats the same handful of tags) combines a structural

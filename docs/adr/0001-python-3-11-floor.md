@@ -16,7 +16,7 @@ The library is built to slot into the titiler-covjson ecosystem (it is the
 intended CoverageJSON layer under a titiler-based server). `titiler.core` is
 `requires-python >=3.11` (verified against 0.26.0, Nov 2025, whose classifiers
 run 3.11 through 3.14). Raising our floor above titiler's would cut the library
-off from its primary intended consumers running on 3.11 -- the exact outcome the
+off from its primary intended consumers running on 3.11, the exact outcome the
 floor choice exists to avoid.
 
 The tempting reason to bump to 3.12 would be precise composite typing for the
@@ -29,7 +29,7 @@ while analyzing a type`. Independently, msgspec's version-independent "at most
 one array-like member per union" rule blocks unioning the tuple form and the
 polygon form without collapsing the element back to a recursive alias (the same
 `RecursionError`) or to `Any`. So the composite-typing precision is gated on
-both a 3.12+ floor *and* a future msgspec that resolves recursive types -- 3.12
+both a 3.12+ floor *and* a future msgspec that resolves recursive types; 3.12
 alone delivers none of it.
 
 ## Decision

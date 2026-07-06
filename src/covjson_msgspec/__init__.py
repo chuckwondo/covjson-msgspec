@@ -61,7 +61,6 @@ from covjson_msgspec.validation import (
     DomainType,
     DomainTypeRule,
     Issue,
-    IssueCode,
     Severity,
     validate,
 )
@@ -97,7 +96,6 @@ __all__ = [
     "I18n",
     "IdentifierRS",
     "Issue",
-    "IssueCode",
     "NdArray",
     "ObservedProperty",
     "Parameter",

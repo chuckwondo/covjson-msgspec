@@ -2,7 +2,15 @@
 
 ## Status
 
-Accepted
+Superseded by ADR-0006
+
+ADR-0006 removes the `IssueCode` enum, modelling each finding as its own frozen
+struct in a closed union `Issue`. The core finding of this ADR still holds (the
+code set is *closed* because the library owns every code), but ADR-0006
+relocates that closure from an enum to the union's member *types*, with each
+variant's msgspec `tag` carrying the code string and a `code` property exposing
+it. The `range.*` / `coverage.range-*` category overlap discussed below is now
+resolvable by matching on the variant type (see ADR-0006), not a stored field.
 
 ## Context
 
@@ -11,7 +19,7 @@ filter, suppress, route, or assert in a test. It is deliberately decoupled from
 the human-rewordable `message` and the location-bearing `path`. Originally each
 built-in check passed a bare string literal (`code="domain.missing-axis"`), so
 the set of codes, their spelling, and their `category.key` shape were enforced
-only by convention -- not discoverable, not typo-safe, not autocompletable.
+only by convention: not discoverable, not typo-safe, not autocompletable.
 
 Two questions surfaced while reviewing the validation codes:
 
@@ -33,7 +41,7 @@ of every code. The one extension seam, `DOMAIN_TYPE_RULES`, supplies only
 axis-constraint *data* (`DomainTypeRule`: required/optional/single-valued axes);
 the built-in check functions interpret that data and emit the library's own
 codes. Registering a custom domain-type rule reuses those functions and so
-yields existing codes (`domain.missing-axis`, ...) -- it cannot introduce a new
+yields existing codes (`domain.missing-axis`, ...): it cannot introduce a new
 one. The set of codes is therefore closed in fact, not merely by convention.
 
 (`Issue` is not a CoverageJSON wire type; it is an in-process validation report.
@@ -42,7 +50,7 @@ How it might serialize is out of scope for this decision.)
 ## Decision
 
 Add `IssueCode(StrEnum)` enumerating every validation code, emit members from
-every check, and type the field **`Issue.code: IssueCode`** -- closed, because
+every check, and type the field **`Issue.code: IssueCode`**, closed, because
 the library owns the entire set. A `StrEnum` member is a `str`, so consumers may
 match a code with `==` against either the member (`IssueCode.DOMAIN_MISSING_AXIS`)
 or its plain-string literal (`"domain.missing-axis"`), and the closed type
@@ -61,7 +69,7 @@ codes do not face: there is no external producer, so an open field would type
 the contract less precisely than the library can actually guarantee, and would
 forgo consumer-side exhaustiveness. Keeping it open would only be justified as a
 *hedge* for a hypothetical future seam where third-party check callables emit
-their own codes -- a capability that does not exist, is not on the roadmap, and
+their own codes: a capability that does not exist, is not on the roadmap, and
 would in any case be a deliberate, versioned API expansion (widening
 `IssueCode` back to `str`) rather than something to pre-pay for now.
 
@@ -93,8 +101,8 @@ nothing is blocked by waiting.
 - Matching is unaffected by the close: a `StrEnum` member is a `str`, so
   `issue.code == "domain.missing-axis"`, `== IssueCode.DOMAIN_MISSING_AXIS`, and
   set membership all keep working.
-- Adding a new code is a member addition (backward-compatible). The reverse --
-  ever needing to admit a code the library does not define -- would mean
+- Adding a new code is a member addition (backward-compatible). The reverse
+  (ever needing to admit a code the library does not define) would mean
   widening the field away from `IssueCode`, a deliberate breaking change gated
   on a real custom-check-plugin design.
 - Broad category matching and the `range.*` / `coverage.range-*` taxonomy
