@@ -38,6 +38,19 @@ AsyncFetch = Callable[[str], Awaitable[bytes]]
 _T = TypeVar("_T")
 
 
+class ReferencedDocumentError(ValueError):
+    """A document fetched from a URL did not decode to valid CoverageJSON.
+
+    Raised while resolving a URL reference or assembling a tiled array when the
+    bytes returned for a referenced document are not valid CoverageJSON of the
+    expected type. It subclasses `ValueError` (so ``except ValueError`` keeps
+    working), while the dedicated type distinguishes a *decode* failure (the
+    document is malformed, so retrying will not help) from a *fetch* failure a
+    caller's own fetcher may raise (which may be transient, and may itself be a
+    bare `ValueError`).
+    """
+
+
 def fetch_and_decode(fetch: Fetch, url: str, decoder: msgspec.json.Decoder[_T]) -> _T:
     """Fetch the document at ``url`` and decode it with ``decoder``.
 
@@ -64,8 +77,9 @@ def fetch_and_decode(fetch: Fetch, url: str, decoder: msgspec.json.Decoder[_T]) 
 
     Raises
     ------
-    ValueError
-        If the fetched bytes do not decode to the expected type.
+    ReferencedDocumentError
+        If the fetched bytes do not decode to the expected type (a subclass of
+        `ValueError`).
 
     Examples
     --------
@@ -80,10 +94,11 @@ def fetch_and_decode(fetch: Fetch, url: str, decoder: msgspec.json.Decoder[_T]) 
 
     A document that does not match the expected type is reported against its URL:
 
-    >>> fetch_and_decode({"u": b"not json"}.__getitem__, "u", decoder)
-    Traceback (most recent call last):
-        ...
-    ValueError: document fetched from 'u' is not valid CoverageJSON: ...
+    >>> try:
+    ...     fetch_and_decode({"u": b"not json"}.__getitem__, "u", decoder)
+    ... except ReferencedDocumentError as exc:
+    ...     print(exc)
+    document fetched from 'u' is not valid CoverageJSON: ...
     """
     raw = fetch(url)
 
@@ -91,7 +106,7 @@ def fetch_and_decode(fetch: Fetch, url: str, decoder: msgspec.json.Decoder[_T]) 
         return decoder.decode(raw)
     except msgspec.DecodeError as exc:
         msg = f"document fetched from {url!r} is not valid CoverageJSON: {exc}"
-        raise ValueError(msg) from exc
+        raise ReferencedDocumentError(msg) from exc
 
 
 async def fetch_and_decode_async(
@@ -122,8 +137,9 @@ async def fetch_and_decode_async(
 
     Raises
     ------
-    ValueError
-        If the fetched bytes do not decode to the expected type.
+    ReferencedDocumentError
+        If the fetched bytes do not decode to the expected type (a subclass of
+        `ValueError`).
 
     Examples
     --------
@@ -145,4 +161,4 @@ async def fetch_and_decode_async(
         return decoder.decode(raw)
     except msgspec.DecodeError as exc:
         msg = f"document fetched from {url!r} is not valid CoverageJSON: {exc}"
-        raise ValueError(msg) from exc
+        raise ReferencedDocumentError(msg) from exc
