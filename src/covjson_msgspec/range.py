@@ -22,7 +22,6 @@ Spec: [NdArray objects][spec-ndarray] and [TiledNdArray objects][spec-tiled].
 
 from __future__ import annotations
 
-import asyncio
 import itertools
 import math
 import re
@@ -32,6 +31,14 @@ from typing import TYPE_CHECKING, Any, Final, Literal
 import msgspec
 
 from covjson_msgspec._base import CovJSONStruct
+from covjson_msgspec._best_effort import (
+    FailureKind,
+    FailureStrategy,
+    FetchFailure,
+    collect,
+    collect_async,
+    fail_fast,
+)
 from covjson_msgspec._fetch import (
     AsyncFetch,
     Fetch,
@@ -314,6 +321,58 @@ class TileSet(CovJSONStruct, frozen=True):
     url_template: str
 
 
+class TileFailure(FetchFailure, frozen=True, kw_only=True):
+    """A tile that failed to fetch or decode during best-effort assembly.
+
+    Extends `FetchFailure` (the URL, `~covjson_msgspec.FailureKind`, and message)
+    with ``offsets``, the tile's start index along *each* axis of the full array
+    (one entry per axis, ``0`` on axes the tile set does not subdivide). Collected
+    by `TiledNdArray.assemble` when a best-effort strategy tolerates the failure;
+    see `AssembleResult`.
+
+    Examples
+    --------
+    A tile of a ``(t, y, x)`` array whose tile set subdivides only ``t``: the URL
+    names that one axis, while ``offsets`` gives the start on all three.
+
+    >>> from covjson_msgspec import FailureKind
+    >>> failure = TileFailure(
+    ...     url="tiles/2.covjson",
+    ...     offsets=(2, 0, 0),
+    ...     kind=FailureKind.TRANSIENT,
+    ...     message="timed out",
+    ... )
+    >>> failure.offsets
+    (2, 0, 0)
+    >>> str(failure)
+    'transient fetching tiles/2.covjson: timed out'
+    """
+
+    offsets: tuple[int, ...]
+
+
+class AssembleResult(msgspec.Struct, frozen=True):
+    """A tiled assembly's array plus any tiles a best-effort strategy tolerated.
+
+    Returned by `TiledNdArray.assemble` and `~TiledNdArray.assemble_async`.
+    ``array`` holds every tile that loaded, with ``None`` at positions whose tile
+    failed under a collecting strategy (a still-valid `NdArray`); ``failures``
+    reports those failed tiles. Under the default `~covjson_msgspec.fail_fast`
+    strategy ``failures`` is empty -- the first failed tile raises a
+    `~covjson_msgspec.FetchError` instead of being collected.
+
+    Attributes
+    ----------
+    array
+        The assembled array, with ``None`` holes where tiles failed to load.
+    failures
+        The tiles that failed, one `TileFailure` each (empty under `fail_fast`).
+    """
+
+    array: NdArray
+    failures: tuple[TileFailure, ...]
+
+
 class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
     """An N-dimensional array whose values are split across external tiles.
 
@@ -367,13 +426,27 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
                 msg = "each tileSet's tileShape must have the same length as shape"
                 raise ValueError(msg)
 
-    def assemble(self, fetch: Fetch, tileset: int | None = None) -> NdArray:
-        """Fetch this array's tiles and stitch them into a single inline `NdArray`.
+    def assemble(
+        self,
+        fetch: Fetch,
+        tileset: int | None = None,
+        *,
+        strategy: FailureStrategy[TileFailure] = fail_fast,
+    ) -> AssembleResult:
+        """Fetch this array's tiles and stitch them into an inline `NdArray`.
 
         A `TiledNdArray`'s values live in external tile documents rather than
         inline. Given a fetcher, this retrieves every tile of one tile set and
         places it into a full-shape `NdArray`. Fetching is injected: ``fetch``
         maps a tile's URL to its raw bytes, so this performs no I/O of its own.
+        The array is returned inside an `AssembleResult` (read ``result.array``),
+        alongside any tiles a best-effort strategy tolerated.
+
+        How a failed tile is handled is the ``strategy``. The default
+        `~covjson_msgspec.fail_fast` aborts on the first failure, raising a
+        `~covjson_msgspec.FetchError` chained from the underlying exception; a
+        collecting strategy (`~covjson_msgspec.collect_all`, ...) instead returns
+        the tiles that loaded, with ``None`` holes and the failures reported.
 
         Parameters
         ----------
@@ -385,19 +458,33 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
             same array, so this only changes how many tiles are fetched, not the
             result; by default the one with the fewest tiles (fewest fetches) is
             chosen, and the first listed wins a tie.
+        strategy
+            How to respond to a tile that fails to fetch or decode. The default
+            `~covjson_msgspec.fail_fast` aborts on the first failure; a collecting
+            strategy (`~covjson_msgspec.collect_all`,
+            `~covjson_msgspec.halt_on_unrecoverable`, `~covjson_msgspec.stop_after`,
+            or any `~covjson_msgspec.FailureStrategy`) reports failures instead of
+            halting.
 
         Returns
         -------
-        NdArray
-            An inline array of this array's full ``shape`` and ``axis_names`` with
-            each tile's values placed at its position. Positions not covered by
-            any tile are ``None``.
+        AssembleResult
+            ``result.array`` is an inline `NdArray` of this array's full ``shape``
+            and ``axis_names`` with each loaded tile's values placed at its
+            position; positions not covered by any tile (or whose tile failed
+            under a collecting strategy) are ``None``. ``result.failures`` lists
+            the tiles that failed (empty unless a collecting strategy tolerated
+            some).
 
         Raises
         ------
         ValueError
-            If there are no tile sets, if ``tileset`` is out of range, or if a
-            fetched tile document is not a valid `NdArray`.
+            If there are no tile sets, or if ``tileset`` is out of range.
+        FetchError
+            When the ``strategy`` halts on a failure (the default
+            `~covjson_msgspec.fail_fast` halts on the first), chained from the
+            underlying fetch or `~covjson_msgspec.ReferencedDocumentError` decode
+            exception.
 
         Examples
         --------
@@ -417,30 +504,55 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         ...     shape=(2,),
         ...     tile_sets=(TileSet(tile_shape=(1,), url_template="{x}.covjson"),),
         ... )
-        >>> tiled.assemble(store.__getitem__).values
+        >>> tiled.assemble(store.__getitem__).array.values
         (10.0, 20.0)
+
+        With a best-effort strategy and a tile missing from the store, the tiles
+        that loaded are assembled (``None`` for the gap) and the failure reported:
+
+        >>> from covjson_msgspec import collect_all
+        >>> partial_store = {"0.covjson": tile(10.0)}
+        >>> partial = tiled.assemble(partial_store.__getitem__, strategy=collect_all)
+        >>> partial.array.values
+        (10.0, None)
+        >>> [failure.url for failure in partial.failures]
+        ['1.covjson']
         """
-        # Three phases, kept separate so the async variant reuses phases 1 and 3
-        # and differs only in the fetch: (1) lay out each tile's URL and offset,
-        # (2) fetch and decode every tile, (3) place the tiles into the full array.
+        # Three phases: (1) lay out each tile's URL and offset, (2) fetch and
+        # decode every tile through the strategy, (3) place the tiles into the
+        # full array. The async variant reuses phases 1 and 3.
         layout = _tile_layout(
             self.shape, self.axis_names, self._select_tile_set(tileset)
         )
-        tiles = [
-            (offsets, fetch_and_decode(fetch, url, _TILE_DECODER))
-            for url, offsets in layout
-        ]
 
-        return _assemble_tiles(self.data_type, self.axis_names, self.shape, tiles)
+        def fetch_one(
+            item: tuple[str, tuple[int, ...]],
+        ) -> tuple[tuple[int, ...], NdArray]:
+            url, offsets = item
+
+            return offsets, fetch_and_decode(fetch, url, _TILE_DECODER)
+
+        payloads, failures = collect(layout, fetch_one, _tile_failure, strategy)
+        array = _assemble_tiles(self.data_type, self.axis_names, self.shape, payloads)
+
+        return AssembleResult(array=array, failures=failures)
 
     async def assemble_async(
-        self, fetch: AsyncFetch, tileset: int | None = None
-    ) -> NdArray:
+        self,
+        fetch: AsyncFetch,
+        tileset: int | None = None,
+        *,
+        strategy: FailureStrategy[TileFailure] = fail_fast,
+    ) -> AssembleResult:
         """Concurrently fetch this array's tiles and stitch them into an `NdArray`.
 
-        The awaitable counterpart of `assemble` with identical semantics; only the
-        fetching differs. A tile set is typically dozens or hundreds of independent
-        tiles, so fetching them concurrently via `asyncio.gather` is the main win.
+        The awaitable counterpart of `assemble` with identical semantics
+        (including the ``strategy`` best-effort options); only the fetching
+        differs. A tile set is typically dozens or hundreds of independent tiles,
+        so fetching them concurrently via `asyncio.gather` is the main win. Every
+        tile is fetched before the strategy is applied (concurrency comes before
+        early-abort), so even the default `~covjson_msgspec.fail_fast` fetches the
+        whole batch before raising on the first failure.
 
         Parameters
         ----------
@@ -454,19 +566,24 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
             same array, so this only changes how many tiles are fetched, not the
             result; by default the one with the fewest tiles (fewest fetches) is
             chosen, and the first listed wins a tie.
+        strategy
+            How to respond to a tile that fails to fetch or decode; see `assemble`.
 
         Returns
         -------
-        NdArray
-            An inline array of this array's full ``shape`` and ``axis_names`` with
-            each tile's values placed at its position. Positions not covered by
-            any tile are ``None``.
+        AssembleResult
+            As for `assemble`: ``result.array`` with ``None`` holes where tiles
+            failed under a collecting strategy, and ``result.failures``.
 
         Raises
         ------
         ValueError
-            If there are no tile sets, if ``tileset`` is out of range, or if a
-            fetched tile document is not a valid `NdArray`.
+            If there are no tile sets, or if ``tileset`` is out of range.
+        FetchError
+            When the ``strategy`` halts on a failure (the default
+            `~covjson_msgspec.fail_fast` halts on the first), chained from the
+            underlying fetch or `~covjson_msgspec.ReferencedDocumentError` decode
+            exception.
 
         Examples
         --------
@@ -486,23 +603,40 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         ... )
         >>> async def fetch(url):
         ...     return store[url]
-        >>> asyncio.run(tiled.assemble_async(fetch)).values
+        >>> asyncio.run(tiled.assemble_async(fetch)).array.values
         (10.0, 20.0)
+
+        With a best-effort strategy and a tile missing from the store, the tiles
+        that loaded are assembled (``None`` for the gap) and the failure reported:
+
+        >>> from covjson_msgspec import collect_all
+        >>> async def fetch_partial(url):
+        ...     return {"0.covjson": tile(10.0)}[url]
+        >>> partial = asyncio.run(
+        ...     tiled.assemble_async(fetch_partial, strategy=collect_all)
+        ... )
+        >>> partial.array.values
+        (10.0, None)
+        >>> [failure.url for failure in partial.failures]
+        ['1.covjson']
         """
         layout = _tile_layout(
             self.shape, self.axis_names, self._select_tile_set(tileset)
         )
-        # gather, not TaskGroup, so a fetcher's own exception propagates unchanged
-        # (matching the sync seam); a TaskGroup would wrap it in an ExceptionGroup.
-        decoded = await asyncio.gather(
-            *(fetch_and_decode_async(fetch, url, _TILE_DECODER) for url, _ in layout)
-        )
-        tiles = [
-            (offsets, array)
-            for (_, offsets), array in zip(layout, decoded, strict=True)
-        ]
 
-        return _assemble_tiles(self.data_type, self.axis_names, self.shape, tiles)
+        async def fetch_one(
+            item: tuple[str, tuple[int, ...]],
+        ) -> tuple[tuple[int, ...], NdArray]:
+            url, offsets = item
+
+            return offsets, await fetch_and_decode_async(fetch, url, _TILE_DECODER)
+
+        payloads, failures = await collect_async(
+            layout, fetch_one, _tile_failure, strategy
+        )
+        array = _assemble_tiles(self.data_type, self.axis_names, self.shape, payloads)
+
+        return AssembleResult(array=array, failures=failures)
 
     def _select_tile_set(self, tileset: int | None) -> TileSet:
         """Choose the tile set to assemble: the explicit index, else the fewest tiles.
@@ -810,3 +944,39 @@ def _assemble_tiles(
         shape=shape,
         axis_names=axis_names,
     )
+
+
+def _tile_failure(
+    item: tuple[str, tuple[int, ...]], exc: Exception, kind: FailureKind
+) -> TileFailure:
+    """Build a `TileFailure` for a tile that failed to fetch or decode.
+
+    Adapts a ``(url, offsets)`` layout item, the raised exception, and its
+    classified `~covjson_msgspec.FailureKind` into the failure value that
+    best-effort assembly collects. Passed to the best-effort ``collect`` helpers
+    as the per-tile failure builder.
+
+    Parameters
+    ----------
+    item
+        The ``(url, offsets)`` layout entry for the tile.
+    exc
+        The exception the tile's fetch or decode raised.
+    kind
+        The classified failure kind.
+
+    Returns
+    -------
+    TileFailure
+        The failure value for the tile.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import FailureKind
+    >>> failure = _tile_failure(("u", (0,)), ValueError("boom"), FailureKind.TRANSIENT)
+    >>> failure.url, failure.offsets, failure.message
+    ('u', (0,), 'boom')
+    """
+    url, offsets = item
+
+    return TileFailure(url=url, offsets=offsets, kind=kind, message=str(exc))

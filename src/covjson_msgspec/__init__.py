@@ -10,7 +10,18 @@ https://github.com/covjson/specification/blob/master/domain-types.md.
 
 from importlib.metadata import PackageNotFoundError, version
 
-from covjson_msgspec._fetch import AsyncFetch, Fetch
+from covjson_msgspec._best_effort import (
+    FailureKind,
+    FailureStrategy,
+    FetchError,
+    FetchFailure,
+    Verdict,
+    collect_all,
+    fail_fast,
+    halt_on_unrecoverable,
+    stop_after,
+)
+from covjson_msgspec._fetch import AsyncFetch, Fetch, ReferencedDocumentError
 from covjson_msgspec.axis import Axis
 from covjson_msgspec.coverage import (
     Coverage,
@@ -42,7 +53,13 @@ from covjson_msgspec.parameter import (
     Symbol,
     Unit,
 )
-from covjson_msgspec.range import NdArray, TiledNdArray, TileSet
+from covjson_msgspec.range import (
+    AssembleResult,
+    NdArray,
+    TiledNdArray,
+    TileFailure,
+    TileSet,
+)
 from covjson_msgspec.references import resolve_references, resolve_references_async
 from covjson_msgspec.referencing import (
     Concept,
@@ -79,6 +96,7 @@ except PackageNotFoundError:  # pragma: no cover - only during local dev
 __all__ = [
     "DOMAIN_TYPE_RULES",
     "MEDIA_TYPE",
+    "AssembleResult",
     "AsyncFetch",
     "Axis",
     "Category",
@@ -91,7 +109,11 @@ __all__ = [
     "Domain",
     "DomainType",
     "DomainTypeRule",
+    "FailureKind",
+    "FailureStrategy",
     "Fetch",
+    "FetchError",
+    "FetchFailure",
     "GeographicCRS",
     "I18n",
     "IdentifierRS",
@@ -104,22 +126,28 @@ __all__ = [
     "Range",
     "ReferenceSystem",
     "ReferenceSystemConnection",
+    "ReferencedDocumentError",
     "Severity",
     "Symbol",
     "TemporalRS",
+    "TileFailure",
     "TileSet",
     "TiledNdArray",
     "Unit",
+    "Verdict",
     "VerticalCRS",
     "__version__",
+    "collect_all",
     "decode",
     "decode_coverage",
     "decode_coverage_collection",
     "decode_response",
     "encode",
     "encode_response",
+    "fail_fast",
     "from_datatree",
     "from_xarray",
+    "halt_on_unrecoverable",
     "i18n",
     "is_coverage_json_media_type",
     "isel",
@@ -127,6 +155,7 @@ __all__ = [
     "resolve_references",
     "resolve_references_async",
     "sel",
+    "stop_after",
     "to_datatree",
     "to_geojson",
     "to_geopandas",

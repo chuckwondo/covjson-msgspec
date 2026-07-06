@@ -7,7 +7,18 @@ import msgspec
 import numpy as np
 import pytest
 
-from covjson_msgspec import NdArray, TiledNdArray, TileSet, encode
+from covjson_msgspec import (
+    FailureKind,
+    FetchError,
+    NdArray,
+    ReferencedDocumentError,
+    TiledNdArray,
+    TileSet,
+    collect_all,
+    encode,
+    halt_on_unrecoverable,
+    stop_after,
+)
 from fetchers import async_store_fetcher, store_fetcher
 
 
@@ -105,7 +116,7 @@ def test_assemble_reconstructs_full_array_for_each_tileset(index: int) -> None:
     full = np.arange(100, dtype=float).reshape(2, 5, 10)
     tiled = _spec_tiled()
     store = _tile_store(full, tiled, index)
-    result = tiled.assemble(store_fetcher(store), tileset=index)
+    result = tiled.assemble(store_fetcher(store), tileset=index).array
 
     assert result.shape == (2, 5, 10)
     assert result.axis_names == ("t", "y", "x")
@@ -119,7 +130,7 @@ def test_assemble_default_picks_the_fewest_tiles() -> None:
     # so never request a URL from the 2-tile or 12-tile sets).
     store = _tile_store(full, tiled, 0)
 
-    result = tiled.assemble(store_fetcher(store))
+    result = tiled.assemble(store_fetcher(store)).array
 
     assert result.values == tuple(full.ravel(order="C").tolist())
 
@@ -138,7 +149,7 @@ def test_assemble_handles_remainder_tiles() -> None:
         "2.covjson": encode(NdArray.from_numpy(full[4:5], ("x",))),
     }
 
-    result = tiled.assemble(store_fetcher(store))
+    result = tiled.assemble(store_fetcher(store)).array
 
     assert result.shape == (5,)
     assert result.values == (0.0, 1.0, 2.0, 3.0, 4.0)
@@ -160,15 +171,16 @@ def test_assemble_tileset_index_out_of_range_errors() -> None:
 
 
 def test_assemble_invalid_tile_document_reports_url() -> None:
-    tiled = TiledNdArray(
-        data_type="float",
-        axis_names=("x",),
-        shape=(1,),
-        tile_sets=(TileSet(tile_shape=(1,), url_template="{x}.covjson"),),
-    )
+    tiled = _one_d_tiled(1)
 
-    with pytest.raises(ValueError, match="not valid CoverageJSON"):
+    # An undecodable tile is an unrecoverable failure; fail_fast raises a
+    # FetchError chained from the ReferencedDocumentError, naming the tile's URL.
+    with pytest.raises(FetchError, match="not valid CoverageJSON") as excinfo:
         tiled.assemble(store_fetcher({"0.covjson": b"nope"}))
+
+    assert isinstance(excinfo.value.__cause__, ReferencedDocumentError)
+    assert excinfo.value.failures[0].kind is FailureKind.UNRECOVERABLE
+    assert excinfo.value.failures[0].url == "0.covjson"
 
 
 @pytest.mark.parametrize("index", range(len(_spec_tiled().tile_sets)))
@@ -178,7 +190,7 @@ def test_assemble_async_matches_sync_for_each_tileset(index: int) -> None:
     store = _tile_store(full, tiled, index)
     result = asyncio.run(
         tiled.assemble_async(async_store_fetcher(store), tileset=index)
-    )
+    ).array
 
     assert result.shape == (2, 5, 10)
     assert result.axis_names == ("t", "y", "x")
@@ -191,7 +203,7 @@ def test_assemble_async_default_picks_the_fewest_tiles() -> None:
     # Tile set 0 is the whole array in one tile; the default must reproduce it.
     store = _tile_store(full, tiled, 0)
 
-    result = asyncio.run(tiled.assemble_async(async_store_fetcher(store)))
+    result = asyncio.run(tiled.assemble_async(async_store_fetcher(store))).array
 
     assert result.values == tuple(full.ravel(order="C").tolist())
 
@@ -213,15 +225,133 @@ def test_assemble_async_tileset_index_out_of_range_errors() -> None:
 
 
 def test_assemble_async_invalid_tile_document_reports_url() -> None:
-    tiled = TiledNdArray(
-        data_type="float",
-        axis_names=("x",),
-        shape=(1,),
-        tile_sets=(TileSet(tile_shape=(1,), url_template="{x}.covjson"),),
+    tiled = _one_d_tiled(1)
+    fetch = async_store_fetcher({"0.covjson": b"nope"})
+
+    with pytest.raises(FetchError, match="not valid CoverageJSON") as excinfo:
+        asyncio.run(tiled.assemble_async(fetch))
+
+    assert isinstance(excinfo.value.__cause__, ReferencedDocumentError)
+    assert excinfo.value.failures[0].kind is FailureKind.UNRECOVERABLE
+
+
+def test_assemble_fail_fast_raises_fetcherror_chaining_cause() -> None:
+    tiled = _one_d_tiled(3)
+    store = {"0.covjson": _scalar_tile(0.0)}  # tiles 1 and 2 are missing
+
+    # The default fail_fast halts on the first failed tile (here "1.covjson"),
+    # raising a FetchError chained from the fetcher's own KeyError.
+    with pytest.raises(FetchError) as excinfo:
+        tiled.assemble(store_fetcher(store))
+
+    assert isinstance(excinfo.value.__cause__, KeyError)
+    assert len(excinfo.value.failures) == 1
+    assert excinfo.value.failures[0].url == "1.covjson"
+
+
+def test_assemble_collect_all_returns_partial_array_with_holes() -> None:
+    tiled = _one_d_tiled(3)
+    store = {"0.covjson": _scalar_tile(10.0), "2.covjson": _scalar_tile(30.0)}
+
+    result = tiled.assemble(store_fetcher(store), strategy=collect_all)
+
+    assert result.array.values == (10.0, None, 30.0)
+    assert [failure.url for failure in result.failures] == ["1.covjson"]
+    assert result.failures[0].kind is FailureKind.TRANSIENT
+    assert result.failures[0].offsets == (1,)
+
+
+def test_assemble_collect_all_clean_has_no_failures() -> None:
+    tiled = _one_d_tiled(2)
+    store = {"0.covjson": _scalar_tile(1.0), "1.covjson": _scalar_tile(2.0)}
+
+    result = tiled.assemble(store_fetcher(store), strategy=collect_all)
+
+    assert result.failures == ()
+    assert result.array.values == (1.0, 2.0)
+
+
+def test_assemble_halt_on_unrecoverable_raises_on_malformed_tile() -> None:
+    tiled = _one_d_tiled(2)
+    store = {"0.covjson": b"nope", "1.covjson": _scalar_tile(2.0)}
+
+    with pytest.raises(FetchError) as excinfo:
+        tiled.assemble(store_fetcher(store), strategy=halt_on_unrecoverable)
+
+    assert excinfo.value.failures[0].kind is FailureKind.UNRECOVERABLE
+
+
+@pytest.mark.parametrize("limit", [1, 2, 3])
+def test_assemble_stop_after_collects_exactly_limit(limit: int) -> None:
+    tiled = _one_d_tiled(5)
+    empty: dict[str, bytes] = {}  # every tile fails to fetch
+
+    with pytest.raises(FetchError) as excinfo:
+        tiled.assemble(store_fetcher(empty), strategy=stop_after(limit))
+
+    assert len(excinfo.value.failures) == limit
+
+
+def test_assemble_collect_all_classifies_fetch_vs_decode() -> None:
+    tiled = _one_d_tiled(2)
+    store = {"1.covjson": b"nope"}  # tile 0 missing (fetch), tile 1 malformed (decode)
+
+    result = tiled.assemble(store_fetcher(store), strategy=collect_all)
+
+    kinds = {failure.url: failure.kind for failure in result.failures}
+    assert kinds == {
+        "0.covjson": FailureKind.TRANSIENT,
+        "1.covjson": FailureKind.UNRECOVERABLE,
+    }
+
+
+def test_assemble_is_lazy_and_stops_fetching_on_halt() -> None:
+    tiled = _one_d_tiled(5)
+    seen: list[str] = []
+
+    def fetch(url: str) -> bytes:
+        seen.append(url)
+        raise KeyError(url)
+
+    with pytest.raises(FetchError):
+        tiled.assemble(fetch, strategy=stop_after(1))
+
+    # Lazy: the halt on the first tile stops before the remaining four are fetched.
+    assert len(seen) == 1
+
+
+def test_assemble_async_collect_all_returns_partial_array_with_holes() -> None:
+    tiled = _one_d_tiled(3)
+    store = {"0.covjson": _scalar_tile(10.0), "2.covjson": _scalar_tile(30.0)}
+
+    result = asyncio.run(
+        tiled.assemble_async(async_store_fetcher(store), strategy=collect_all)
     )
 
-    with pytest.raises(ValueError, match="not valid CoverageJSON"):
-        asyncio.run(tiled.assemble_async(async_store_fetcher({"0.covjson": b"nope"})))
+    assert result.array.values == (10.0, None, 30.0)
+    assert [failure.url for failure in result.failures] == ["1.covjson"]
+
+
+def test_assemble_async_fail_fast_raises_fetcherror_chaining_cause() -> None:
+    tiled = _one_d_tiled(2)
+
+    async def fetch(url: str) -> bytes:
+        raise KeyError(url)
+
+    with pytest.raises(FetchError) as excinfo:
+        asyncio.run(tiled.assemble_async(fetch))
+
+    assert isinstance(excinfo.value.__cause__, KeyError)
+
+
+def test_assemble_async_does_not_swallow_cancellation() -> None:
+    tiled = _one_d_tiled(2)
+
+    async def fetch(url: str) -> bytes:
+        raise asyncio.CancelledError
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(tiled.assemble_async(fetch, strategy=collect_all))
 
 
 def _tile_store(
@@ -262,3 +392,20 @@ def _tile_store(
         store[url] = encode(NdArray.from_numpy(full[slices], tiled.axis_names))
 
     return store
+
+
+def _one_d_tiled(size: int) -> TiledNdArray:
+    """A 1-D float array of ``size`` single-element tiles keyed ``{x}.covjson``."""
+    return TiledNdArray(
+        data_type="float",
+        axis_names=("x",),
+        shape=(size,),
+        tile_sets=(TileSet(tile_shape=(1,), url_template="{x}.covjson"),),
+    )
+
+
+def _scalar_tile(value: float) -> bytes:
+    """Encode a single-element float tile, as `_one_d_tiled` expects per position."""
+    tile = NdArray(data_type="float", values=(value,), shape=(1,), axis_names=("x",))
+
+    return encode(tile)

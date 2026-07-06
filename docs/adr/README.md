@@ -44,6 +44,9 @@ CLAUDE.md.
   for a core dependency, backing the BCP 47 language-tag check
 - [ADR-0006](0006-validation-findings-sum-type.md): validation findings as a
   closed sum type (typed variants + tagged union); replaces the `IssueCode` enum
+- [ADR-0007](0007-functional-core-errors-as-values.md): best-effort fetching as
+  a functional core; failures are `FetchFailure` values, a pure strategy reducer,
+  a `FetchError` raise bridge
 
 Some decisions are recorded in ADRs that land with their implementation rather
 than here; see the issue tracker for the in-flight set.
