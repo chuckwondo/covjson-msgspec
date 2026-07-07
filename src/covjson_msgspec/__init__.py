@@ -77,6 +77,7 @@ from covjson_msgspec.referencing import (
     VerticalCRS,
 )
 from covjson_msgspec.subset import isel, sel
+from covjson_msgspec.temporal import to_datetime
 from covjson_msgspec.validation import (
     DOMAIN_TYPE_RULES,
     CovJSONValidationError,
@@ -164,6 +165,7 @@ __all__ = [
     "sel",
     "stop_after",
     "to_datatree",
+    "to_datetime",
     "to_geojson",
     "to_geopandas",
     "to_pandas",

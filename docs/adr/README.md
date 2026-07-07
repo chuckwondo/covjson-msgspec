@@ -47,6 +47,9 @@ CLAUDE.md.
 - [ADR-0007](0007-functional-core-errors-as-values.md): best-effort fetching as
   a functional core; failures are `FetchFailure` values, a pure strategy reducer,
   a `FetchError` raise bridge
+- [ADR-0008](0008-temporal-conversion-result-projection.md): temporal string
+  conversion as a faithful `TemporalResult` sum type + opt-in lexical `validate()`
+  check; `to_datetime` the stdlib convenience
 
 Some decisions are recorded in ADRs that land with their implementation rather
 than here; see the issue tracker for the in-flight set.
