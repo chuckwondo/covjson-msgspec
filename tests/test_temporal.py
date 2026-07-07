@@ -46,11 +46,18 @@ _UTC_PLUS_2 = timezone(timedelta(hours=2))
         ("-00100", Unrepresentable("-00100")),
         ("0000", Unrepresentable("0000")),
         ("0000-01-01", Unrepresentable("0000-01-01")),
+        # Year 0 is a proleptic-Gregorian leap year, so its leap day is a valid
+        # (if unrepresentable) date, not a malformed one.
+        ("0000-02-29", Unrepresentable("0000-02-29")),
         ("2016-12-31T23:59:60Z", Unrepresentable("2016-12-31T23:59:60Z")),
         # Malformed: matches none of the five forms.
         ("2010-13-99", Malformed("2010-13-99")),
         ("2020-13", Malformed("2020-13")),
         ("2020-02-30", Malformed("2020-02-30")),
+        # A malformed year-0000 date is malformed like any other year, not
+        # misclassified as an unrepresentable-but-valid form.
+        ("0000-13-01", Malformed("0000-13-01")),
+        ("0000-02-30", Malformed("0000-02-30")),
         ("2021-02-29", Malformed("2021-02-29")),
         ("2020-01-01T00:00:00", Malformed("2020-01-01T00:00:00")),
         ("not-a-date", Malformed("not-a-date")),

@@ -261,9 +261,13 @@ def _from_isoformat(value: str, precision: Precision) -> TemporalResult:
 
     Used for the ``YYYY-MM-DD`` and ``YYYY-MM-DDThh:mm:ssZ`` forms, whose plain
     four-digit year lets ``fromisoformat`` do the month / day / leap-year / offset
-    validation. A ``"0000"`` year is pre-empted to `Unrepresentable`
-    (``fromisoformat`` raises on year 0); any other parse failure is a
-    `Malformed` value.
+    validation. ``fromisoformat`` rejects year ``0000`` outright, so a ``"0000"``
+    value is validated under a substituted in-range leap year (``2000``, which
+    shares year 0's proleptic-Gregorian leap status, so ``"0000-02-29"`` stays
+    valid): a well-formed year-0000 value is then `Unrepresentable` (a valid form
+    a `datetime` cannot hold), while a malformed one (an out-of-range month or
+    day) is `Malformed`, exactly as for any other year. Any other parse failure
+    is likewise `Malformed`.
 
     Examples
     --------
@@ -271,11 +275,21 @@ def _from_isoformat(value: str, precision: Precision) -> TemporalResult:
     Moment(when=datetime.datetime(2020, 1, 1, 0, 0), precision=<Precision.DAY: 'day'>)
     >>> _from_isoformat("2020-02-30", Precision.DAY)
     Malformed(value='2020-02-30')
+
+    A year-0000 value splits on well-formedness: a real date is unrepresentable,
+    an invalid month or day is malformed (not silently unrepresentable):
+
+    >>> _from_isoformat("0000-06-15", Precision.DAY)
+    Unrepresentable(value='0000-06-15')
+    >>> _from_isoformat("0000-13-01", Precision.DAY)
+    Malformed(value='0000-13-01')
     """
-    if value.startswith("0000"):
-        return Unrepresentable(value)
+    is_year_zero = value.startswith("0000")
+    probe = f"2000{value[4:]}" if is_year_zero else value
 
     try:
-        return Moment(datetime.fromisoformat(value), precision)
+        parsed = datetime.fromisoformat(probe)
     except ValueError:
         return Malformed(value)
+
+    return Unrepresentable(value) if is_year_zero else Moment(parsed, precision)

@@ -369,6 +369,27 @@ def test_temporal_lexical_form_check_is_opt_in() -> None:
     assert issue.severity is Severity.WARNING
 
 
+def test_temporal_check_flags_malformed_year_zero_date() -> None:
+    # A year-0000 date with an invalid month is malformed, not an
+    # unrepresentable-but-valid form, so check_values must flag it (it would slip
+    # through if resolve mislabeled it Unrepresentable).
+    domain = Domain(
+        axes={"t": Axis.listed(("0000-13-01",))},
+        referencing=(
+            ReferenceSystemConnection(
+                coordinates=("t",), system=TemporalRS(calendar="Gregorian")
+            ),
+        ),
+    )
+
+    issues = validate(domain, check_values=True)
+    (issue,) = [i for i in issues if i.code == "temporal.lexical-form"]
+
+    assert isinstance(issue, TemporalLexicalForm)
+    assert issue.value == "0000-13-01"
+    assert issue.at == "/axes/t/values/0"
+
+
 def test_temporal_check_skips_non_gregorian_calendar() -> None:
     # "2020-02-30" is malformed under Gregorian but valid in a 360_day calendar;
     # temporal_coordinates excludes non-standard calendars, so it is never scanned.
