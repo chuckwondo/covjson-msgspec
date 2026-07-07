@@ -117,10 +117,16 @@ that default without an interface change.
   fabricate zone information).
 - Decode stays permissive and byte-faithful; the lexical-form check is opt-in
   (`check_values=True`) and adds the `temporal.lexical-form` issue code.
-- The export bridges keep their own parsing for now; `resolve` can later serve
-  as their classify-then-route decider (tracked as a follow-up), the near-term
-  benefit being that `validate()` now surfaces malformed times the bridges
-  otherwise swallow silently.
+- The export bridges keep their own parsing for now, so `to_datetime` /
+  `resolve` and the bridges' `maybe_datetime` / `_parse_times` / `_to_cftime`
+  are independent `str` -> `datetime` parsers that can *disagree* on an edge
+  (`resolve` classifies a naive time, one carrying no `Z` / offset, as
+  `Malformed`, where a bridge may parse it leniently), so two supported paths
+  can give a caller different answers for the same string. Folding `resolve`
+  in as the bridges' classify-then-route decider (tracked as a follow-up) buys
+  *semantic consistency*, one classifier of record, not merely dedup; that is
+  the reason to close it, over and above the near-term win that `validate()`
+  already surfaces malformed times the bridges otherwise swallow silently.
 
 [ADR-0002]: 0002-opt-in-tiered-validation.md
 [ADR-0006]: 0006-validation-findings-sum-type.md
