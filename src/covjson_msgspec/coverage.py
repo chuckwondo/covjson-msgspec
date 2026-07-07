@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, Final, Literal
 import msgspec
 
 from covjson_msgspec._base import CovJSONStruct
+from covjson_msgspec._best_effort import fail_fast
 from covjson_msgspec.domain import Domain
 from covjson_msgspec.parameter import Parameter, ParameterGroup
 from covjson_msgspec.range import NdArray, TiledNdArray
@@ -36,7 +37,9 @@ if TYPE_CHECKING:
     import pandas as pd
     import xarray as xr
 
+    from covjson_msgspec._best_effort import FailureStrategy
     from covjson_msgspec._fetch import AsyncFetch, Fetch
+    from covjson_msgspec.references import ReferenceFailure, ResolveResult
 
 # A range is inline values (`NdArray` / `TiledNdArray`) or a bare string URL
 # referencing the values in a separate document.
@@ -241,28 +244,43 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
 
         return to_geojson(self, trajectory_as=trajectory_as)
 
-    def resolve_references(self, fetch: Fetch) -> Coverage:
+    def resolve_references(
+        self,
+        fetch: Fetch,
+        *,
+        strategy: FailureStrategy[ReferenceFailure] = fail_fast,
+    ) -> ResolveResult[Coverage]:
         """Inline this coverage's URL-string domain and range references.
 
         Thin delegate to `covjson_msgspec.references.resolve_references`; see it
-        for the resolution rules and what it does (and does not) follow.
+        for the resolution rules, the best-effort ``strategy``, and what it does
+        (and does not) follow.
 
         Parameters
         ----------
         fetch
             A callable mapping a referenced document's URL to its raw bytes.
+        strategy
+            How to respond to a reference that fails to fetch or decode; see
+            `covjson_msgspec.references.resolve_references`.
 
         Returns
         -------
-        Coverage
-            A new coverage with its URL references inlined (this instance
-            unchanged when it has none).
+        ResolveResult
+            ``result.value`` is a new coverage with its URL references inlined
+            (this instance unchanged when it has none); ``result.failures`` lists
+            any references a collecting strategy tolerated.
         """
         from covjson_msgspec.references import resolve_references
 
-        return resolve_references(self, fetch)
+        return resolve_references(self, fetch, strategy=strategy)
 
-    async def resolve_references_async(self, fetch: AsyncFetch) -> Coverage:
+    async def resolve_references_async(
+        self,
+        fetch: AsyncFetch,
+        *,
+        strategy: FailureStrategy[ReferenceFailure] = fail_fast,
+    ) -> ResolveResult[Coverage]:
         """Concurrently inline this coverage's URL-string references.
 
         Thin delegate to `covjson_msgspec.references.resolve_references_async`; the
@@ -274,16 +292,20 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         fetch
             An awaitable callable mapping a referenced document's URL to its raw
             bytes.
+        strategy
+            How to respond to a reference that fails to fetch or decode; see
+            `covjson_msgspec.references.resolve_references`.
 
         Returns
         -------
-        Coverage
-            A new coverage with its URL references inlined (this instance
-            unchanged when it has none).
+        ResolveResult
+            ``result.value`` is a new coverage with its URL references inlined
+            (this instance unchanged when it has none); ``result.failures`` lists
+            any references a collecting strategy tolerated.
         """
         from covjson_msgspec.references import resolve_references_async
 
-        return await resolve_references_async(self, fetch)
+        return await resolve_references_async(self, fetch, strategy=strategy)
 
     def isel(
         self,
@@ -546,28 +568,44 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
 
         return to_geojson(self, trajectory_as=trajectory_as)
 
-    def resolve_references(self, fetch: Fetch) -> CoverageCollection:
+    def resolve_references(
+        self,
+        fetch: Fetch,
+        *,
+        strategy: FailureStrategy[ReferenceFailure] = fail_fast,
+    ) -> ResolveResult[CoverageCollection]:
         """Inline every member coverage's URL-string references.
 
         Thin delegate to `covjson_msgspec.references.resolve_references`; see it
-        for the resolution rules. Collection-level inheritance is not applied;
-        call `resolved_coverages` first if you need that.
+        for the resolution rules and the best-effort ``strategy``. Collection-level
+        inheritance is not applied; call `resolved_coverages` first if you need
+        that.
 
         Parameters
         ----------
         fetch
             A callable mapping a referenced document's URL to its raw bytes.
+        strategy
+            How to respond to a reference that fails to fetch or decode; see
+            `covjson_msgspec.references.resolve_references`.
 
         Returns
         -------
-        CoverageCollection
-            A new collection whose members have their URL references inlined.
+        ResolveResult
+            ``result.value`` is a new collection whose members have their URL
+            references inlined; ``result.failures`` lists any references a
+            collecting strategy tolerated (each with its ``coverage_index``).
         """
         from covjson_msgspec.references import resolve_references
 
-        return resolve_references(self, fetch)
+        return resolve_references(self, fetch, strategy=strategy)
 
-    async def resolve_references_async(self, fetch: AsyncFetch) -> CoverageCollection:
+    async def resolve_references_async(
+        self,
+        fetch: AsyncFetch,
+        *,
+        strategy: FailureStrategy[ReferenceFailure] = fail_fast,
+    ) -> ResolveResult[CoverageCollection]:
         """Concurrently inline every member coverage's URL-string references.
 
         Thin delegate to `covjson_msgspec.references.resolve_references_async`; the
@@ -579,15 +617,20 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
         fetch
             An awaitable callable mapping a referenced document's URL to its raw
             bytes.
+        strategy
+            How to respond to a reference that fails to fetch or decode; see
+            `covjson_msgspec.references.resolve_references`.
 
         Returns
         -------
-        CoverageCollection
-            A new collection whose members have their URL references inlined.
+        ResolveResult
+            ``result.value`` is a new collection whose members have their URL
+            references inlined; ``result.failures`` lists any references a
+            collecting strategy tolerated (each with its ``coverage_index``).
         """
         from covjson_msgspec.references import resolve_references_async
 
-        return await resolve_references_async(self, fetch)
+        return await resolve_references_async(self, fetch, strategy=strategy)
 
     def _repr_html_(self) -> str:
         """Render an HTML summary of this collection for Jupyter.

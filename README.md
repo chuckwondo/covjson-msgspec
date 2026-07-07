@@ -65,13 +65,13 @@ URL to bytes), so caching, auth, retries, and throttling stay yours:
 
 ```python
 # Sync: you supply Fetch = Callable[[str], bytes]
-resolved = coverage.resolve_references(fetch)  # inline URL-string domain/ranges
-array = tiled.assemble(fetch)                  # stitch a TiledNdArray's tiles
+resolved = coverage.resolve_references(fetch).value  # inline URL-string domain/ranges
+array = tiled.assemble(fetch).array                  # stitch a TiledNdArray's tiles
 
 # Async: AsyncFetch = Callable[[str], Awaitable[bytes]], so independent fetches
 # run concurrently via asyncio.gather (ideal under Starlette/FastAPI/litestar)
-resolved = await coverage.resolve_references_async(afetch)
-array = await tiled.assemble_async(afetch)
+resolved = (await coverage.resolve_references_async(afetch)).value
+array = (await tiled.assemble_async(afetch)).array
 ```
 
 The async fan-out is unbounded by design: since the fetcher owns all I/O policy,
