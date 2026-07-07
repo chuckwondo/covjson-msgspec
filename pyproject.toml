@@ -47,7 +47,7 @@ pandas = [ "pandas>=2.0", "numpy>=1.24" ]
 # geopandas guarantees pandas + numpy transitively, but the geo bridge imports
 # both directly (it reuses the pandas bridge and builds geometry with numpy), so
 # list them explicitly rather than relying on a transitive dependency.
-geo = [ "geopandas>=0.14", "shapely>=2.0", "pandas>=2.0", "numpy>=1.24" ]
+geo = [ "geopandas>=1.1.4", "shapely>=2.0", "pandas>=2.0", "numpy>=1.24" ]
 # FastAPI response adapter (CovJSONResponse). The framework-agnostic core stays
 # in media_type.py; fastapi is imported only behind this extra. Deliberately kept
 # out of `all` below, which aggregates the data bridges, not a web framework.
