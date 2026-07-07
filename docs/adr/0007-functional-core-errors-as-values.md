@@ -139,3 +139,16 @@ is released yet, there is no compatibility cost to the uniform default.
   fetch/decode seam so a *decode* failure is distinguishable from a *fetch*
   failure a caller's own fetcher raises; this is non-breaking for existing
   `except ValueError` handlers.
+- **Reference resolution fetches per site, not per unique URL.** Applying the seam
+  to `resolve_references` / `_async` (#31), each reference *site* (a coverage's
+  domain, or one range, tagged with its `coverage_index`) is one fetch attempt,
+  rather than collecting the URLs into a set and fetching each once. This pins
+  every `ReferenceFailure` to an exact `(coverage_index, slot)` and lets a
+  strategy count attempts uniformly (one site, one attempt -- the same shape as
+  one tile, one attempt in assembly). The cost is that a URL shared across
+  collection members is fetched once per member; that is sound because the
+  injected fetcher owns caching -- a caller who shares, say, one domain document
+  across every member wraps the fetcher in a cache to fetch it once, the same
+  dependency-injection-at-the-edges tenet that keeps the core I/O-free.
+  Resolution returns a `ResolveResult` (`result.value` plus `result.failures`),
+  the reference-side twin of `AssembleResult`.

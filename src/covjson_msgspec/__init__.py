@@ -60,7 +60,12 @@ from covjson_msgspec.range import (
     TileFailure,
     TileSet,
 )
-from covjson_msgspec.references import resolve_references, resolve_references_async
+from covjson_msgspec.references import (
+    ReferenceFailure,
+    ResolveResult,
+    resolve_references,
+    resolve_references_async,
+)
 from covjson_msgspec.referencing import (
     Concept,
     GeographicCRS,
@@ -124,9 +129,11 @@ __all__ = [
     "ParameterGroup",
     "ProjectedCRS",
     "Range",
+    "ReferenceFailure",
     "ReferenceSystem",
     "ReferenceSystemConnection",
     "ReferencedDocumentError",
+    "ResolveResult",
     "Severity",
     "Symbol",
     "TemporalRS",

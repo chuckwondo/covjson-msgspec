@@ -1,10 +1,11 @@
-"""Typing-conformance checks for resolve_references' overloads.
+"""Typing-conformance checks for resolve_references' type preservation.
 
 ``assert_type`` is a runtime no-op, so this runs (trivially) under pytest too;
-its real value is that the type-checker matrix must agree that the overloads
-preserve the input type (Coverage -> Coverage, CoverageCollection ->
-CoverageCollection) rather than widening to the union. The inputs are
-reference-free, so the fetcher is never actually called at runtime.
+its real value is that the type-checker matrix must agree that the single
+bound-TypeVar signature preserves the input type into the result
+(Coverage -> ResolveResult[Coverage], CoverageCollection ->
+ResolveResult[CoverageCollection]) rather than widening to the union. The inputs
+are reference-free, so the fetcher is never actually called at runtime.
 """
 
 from typing import assert_type
@@ -14,6 +15,7 @@ from covjson_msgspec import (
     Coverage,
     CoverageCollection,
     Domain,
+    ResolveResult,
     resolve_references,
 )
 
@@ -27,7 +29,7 @@ def test_resolve_references_preserves_input_type() -> None:
     def fetch(url: str) -> bytes:
         return b""
 
-    assert_type(resolve_references(cov, fetch), Coverage)
-    assert_type(resolve_references(coll, fetch), CoverageCollection)
-    assert_type(cov.resolve_references(fetch), Coverage)
-    assert_type(coll.resolve_references(fetch), CoverageCollection)
+    assert_type(resolve_references(cov, fetch), ResolveResult[Coverage])
+    assert_type(resolve_references(coll, fetch), ResolveResult[CoverageCollection])
+    assert_type(cov.resolve_references(fetch), ResolveResult[Coverage])
+    assert_type(coll.resolve_references(fetch), ResolveResult[CoverageCollection])
