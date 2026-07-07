@@ -54,7 +54,7 @@ from covjson_msgspec.parameter import (
     Unit,
 )
 from covjson_msgspec.range import (
-    AssembleResult,
+    AssembleReport,
     NdArray,
     TiledNdArray,
     TileFailure,
@@ -62,7 +62,7 @@ from covjson_msgspec.range import (
 )
 from covjson_msgspec.references import (
     ReferenceFailure,
-    ResolveResult,
+    ResolveReport,
     resolve_references,
     resolve_references_async,
 )
@@ -102,7 +102,7 @@ except PackageNotFoundError:  # pragma: no cover - only during local dev
 __all__ = [
     "DOMAIN_TYPE_RULES",
     "MEDIA_TYPE",
-    "AssembleResult",
+    "AssembleReport",
     "AsyncFetch",
     "Axis",
     "Category",
@@ -134,7 +134,7 @@ __all__ = [
     "ReferenceSystem",
     "ReferenceSystemConnection",
     "ReferencedDocumentError",
-    "ResolveResult",
+    "ResolveReport",
     "Severity",
     "Symbol",
     "TemporalRS",

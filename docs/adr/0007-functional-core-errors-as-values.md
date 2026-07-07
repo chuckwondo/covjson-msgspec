@@ -54,8 +54,8 @@ reducer, in a domain-independent module `_best_effort.py`:
   any other strategy and raises `FetchError` (chaining the underlying exception).
 
 `assemble` / `assemble_async` gain a keyword-only `strategy=` (defaulting to
-`fail_fast`) and **always return `AssembleResult`** (`result.array` plus
-`result.failures`). Every failure path is uniform: the default raises a
+`fail_fast`) and **always return `AssembleReport`** (`report.array` plus
+`report.failures`). Every failure path is uniform: the default raises a
 `FetchError` on the first failed tile; a collecting strategy returns the array
 with `None` holes and the failures reported.
 
@@ -92,7 +92,7 @@ fork the shared type. Instead, the raise-vs-return-a-partial decision *is* the
 strategy choice (below), so a halting strategy carries only the failures.
 
 **Distinguish `fail_fast` as a sentinel with a return-type split** (`fail_fast`
--> `NdArray`, a collecting strategy -> `AssembleResult`, via `@overload`, with
+-> `NdArray`, a collecting strategy -> `AssembleReport`, via `@overload`, with
 `fail_fast` re-raising the fetcher's original exception unchanged). Rejected. Its
 one merit is real -- `fail_fast` can never produce a partial result, so a bare
 `NdArray` (no vestigial empty `.failures`) makes an illegal state
@@ -107,15 +107,15 @@ is released yet, there is no compatibility cost to the uniform default.
 ## Consequences
 
 - **`fail_fast` is the default and an ordinary strategy**, so every path is
-  uniform: `assemble` / `assemble_async` always return `AssembleResult`, and the
+  uniform: `assemble` / `assemble_async` always return `AssembleReport`, and the
   default raises a `FetchError` on the first failure (chained from the fetcher's
   own exception, or a `ReferencedDocumentError` for an undecodable document, via
   `__cause__`). Best-effort is opt-in by passing a collecting strategy. The bare
-  `NdArray` return is reached through `result.array`.
+  `NdArray` return is reached through `report.array`.
 - **The raise-vs-return-a-partial choice is the strategy choice.** `HALT` means
   "this batch is poisoned, abort," so `FetchError` carries the failures and the
   partial artifact is discarded; a caller who wants the partial-with-holes uses
-  `collect_all`, which never halts and returns an `AssembleResult`.
+  `collect_all`, which never halts and returns an `AssembleReport`.
 - **Sync folds lazily; async is eager.** `collect` fetches one item at a time, so
   a halting strategy stops fetching at the halt point. `collect_async` launches
   all fetches at once (via `asyncio.gather`) for concurrency, so it necessarily
@@ -128,6 +128,13 @@ is released yet, there is no compatibility cost to the uniform default.
 - **The enum-vs-sum-type rule** (distinct payload -> union like `Issue`; label
   over a common shape -> enum like `Severity` / `FailureKind`) is now applied
   twice, and is a reusable guideline for future finding/failure taxonomies.
+- **The `Result`-vs-`Report` naming rule.** A `*Result` is a discriminated
+  union of typed outcomes (Rust-`Result`-shaped, exactly one arm; e.g.,
+  `TemporalResult` in ADR-0008); a best-effort *product* bundling a (partial)
+  value with the failures it tolerated is a `*Report`. `AssembleResult` and
+  `ResolveResult` were renamed `AssembleReport` / `ResolveReport` to fit: they
+  carry a value (`.array` / `.value`) *and* `.failures`, so they are reports,
+  not one-of results.
 - **Low coupling by a domain-independence boundary.** `_best_effort.py` imports no
   `NdArray` or `Coverage` and knows nothing about tiles; consumers depend on the
   two `collect` seams plus the vocabulary, never on the fold/outcome plumbing.
@@ -150,5 +157,5 @@ is released yet, there is no compatibility cost to the uniform default.
   injected fetcher owns caching -- a caller who shares, say, one domain document
   across every member wraps the fetcher in a cache to fetch it once, the same
   dependency-injection-at-the-edges tenet that keeps the core I/O-free.
-  Resolution returns a `ResolveResult` (`result.value` plus `result.failures`),
-  the reference-side twin of `AssembleResult`.
+  Resolution returns a `ResolveReport` (`report.value` plus `report.failures`),
+  the reference-side twin of `AssembleReport`.

@@ -16,7 +16,7 @@ of tile assembly), and a resolved `Domain` has no further references to follow.
 Failures are handled by a pluggable best-effort ``strategy`` (see
 `covjson_msgspec._best_effort`): by default the first failed reference aborts the
 whole resolution, but a collecting strategy leaves each failed reference as its
-URL string and reports it, returning a `ResolveResult`. References are fetched per
+URL string and reports it, returning a `ResolveReport`. References are fetched per
 site (not deduplicated), so a caller who shares one URL across many collection
 members and wants to fetch it once wraps the fetcher in a cache -- all caching is
 the fetcher's to own.
@@ -76,7 +76,7 @@ class ReferenceFailure(FetchFailure, frozen=True, kw_only=True):
     coverage's domain or the range key for a range, and ``coverage_index`` is the
     member's position in a `CoverageCollection` (``0`` for a lone `Coverage`).
     Collected by `resolve_references` when a best-effort strategy tolerates the
-    failure; see `ResolveResult`.
+    failure; see `ResolveReport`.
 
     Because ``slot`` is just the range key for a range, a range whose key is
     literally ``"domain"`` reports the same ``slot`` as a coverage's domain; the
@@ -110,7 +110,7 @@ class ReferenceFailure(FetchFailure, frozen=True, kw_only=True):
     coverage_index: int
 
 
-class ResolveResult(msgspec.Struct, Generic[_CovT], frozen=True):
+class ResolveReport(msgspec.Struct, Generic[_CovT], frozen=True):
     """A resolution's (partial) value plus any references a strategy tolerated.
 
     Returned by `resolve_references` and `~resolve_references_async`. ``value`` is
@@ -122,7 +122,7 @@ class ResolveResult(msgspec.Struct, Generic[_CovT], frozen=True):
     failed reference raises a `~covjson_msgspec.FetchError` instead of being
     collected.
 
-    Like `~covjson_msgspec.AssembleResult`, this is a plain result carrier, not a
+    Like `~covjson_msgspec.AssembleReport`, this is a plain value carrier, not a
     CoverageJSON wire type.
 
     Attributes
@@ -144,10 +144,10 @@ def resolve_references(
     fetch: Fetch,
     *,
     strategy: FailureStrategy[ReferenceFailure] = fail_fast,
-) -> ResolveResult[_CovT]:
+) -> ResolveReport[_CovT]:
     """Inline a coverage's (or collection's) URL-string domain and range references.
 
-    Returns a `ResolveResult` whose ``value`` is a new value of the same type as
+    Returns a `ResolveReport` whose ``value`` is a new value of the same type as
     ``obj`` with every URL-string ``domain`` and every URL-string entry in
     ``ranges`` replaced by the document fetched from it and decoded; inline
     domains and ranges are left untouched. For a `CoverageCollection`, every
@@ -161,8 +161,8 @@ def resolve_references(
     `~covjson_msgspec.fail_fast` aborts on the first failure, raising a
     `~covjson_msgspec.FetchError` chained from the underlying exception; a
     collecting strategy (`~covjson_msgspec.collect_all`, ...) instead leaves each
-    failed reference as its URL string in ``result.value`` and reports it in
-    ``result.failures``.
+    failed reference as its URL string in ``report.value`` and reports it in
+    ``report.failures``.
 
     References are fetched **per site**, not deduplicated: a URL used by several
     collection members is fetched once per member. All caching is the fetcher's
@@ -192,10 +192,10 @@ def resolve_references(
 
     Returns
     -------
-    ResolveResult
-        ``result.value`` is a new value of the same type as ``obj`` with its URL
+    ResolveReport
+        ``report.value`` is a new value of the same type as ``obj`` with its URL
         references inlined (unresolved ones, under a collecting strategy, left as
-        URL strings). ``result.failures`` lists the references that failed (empty
+        URL strings). ``report.failures`` lists the references that failed (empty
         unless a collecting strategy tolerated one).
 
     Raises
@@ -222,12 +222,12 @@ def resolve_references(
     >>> cov = Coverage(
     ...     domain="https://ex/domain.json", ranges={"t": "https://ex/t.json"}
     ... )
-    >>> result = resolve_references(cov, store.__getitem__)
-    >>> result.value.domain.domain_type
+    >>> report = resolve_references(cov, store.__getitem__)
+    >>> report.value.domain.domain_type
     'Point'
-    >>> result.value.ranges["t"].values
+    >>> report.value.ranges["t"].values
     (280.0,)
-    >>> result.failures
+    >>> report.failures
     ()
 
     With a collecting strategy and a reference missing from the store, the value
@@ -258,7 +258,7 @@ def resolve_references(
     payloads, failures = collect(sites, fetch_one, _reference_failure, strategy)
     resolved = {(site.coverage_index, site.key): doc for site, doc in payloads}
 
-    return ResolveResult(value=_rebuild(obj, resolved), failures=failures)
+    return ResolveReport(value=_rebuild(obj, resolved), failures=failures)
 
 
 async def resolve_references_async(
@@ -266,7 +266,7 @@ async def resolve_references_async(
     fetch: AsyncFetch,
     *,
     strategy: FailureStrategy[ReferenceFailure] = fail_fast,
-) -> ResolveResult[_CovT]:
+) -> ResolveReport[_CovT]:
     """Inline URL-string references, fetching them concurrently.
 
     The awaitable counterpart of `resolve_references` with identical semantics and
@@ -290,10 +290,10 @@ async def resolve_references_async(
 
     Returns
     -------
-    ResolveResult
-        As for `resolve_references`: ``result.value`` with unresolved references
+    ResolveReport
+        As for `resolve_references`: ``report.value`` with unresolved references
         (under a collecting strategy) left as URL strings, and
-        ``result.failures``.
+        ``report.failures``.
 
     Raises
     ------
@@ -332,10 +332,10 @@ async def resolve_references_async(
     >>> cov = Coverage(
     ...     domain="https://ex/domain.json", ranges={"t": "https://ex/t.json"}
     ... )
-    >>> result = asyncio.run(resolve_references_async(cov, fetch))
-    >>> result.value.domain.domain_type
+    >>> report = asyncio.run(resolve_references_async(cov, fetch))
+    >>> report.value.domain.domain_type
     'Point'
-    >>> result.value.ranges["t"].values
+    >>> report.value.ranges["t"].values
     (280.0,)
     """
     sites = _reference_sites(obj)
@@ -353,7 +353,7 @@ async def resolve_references_async(
     )
     resolved = {(site.coverage_index, site.key): doc for site, doc in payloads}
 
-    return ResolveResult(value=_rebuild(obj, resolved), failures=failures)
+    return ResolveReport(value=_rebuild(obj, resolved), failures=failures)
 
 
 class _RefSite(NamedTuple):

@@ -328,7 +328,7 @@ class TileFailure(FetchFailure, frozen=True, kw_only=True):
     with ``offsets``, the tile's start index along *each* axis of the full array
     (one entry per axis, ``0`` on axes the tile set does not subdivide). Collected
     by `TiledNdArray.assemble` when a best-effort strategy tolerates the failure;
-    see `AssembleResult`.
+    see `AssembleReport`.
 
     Examples
     --------
@@ -351,7 +351,7 @@ class TileFailure(FetchFailure, frozen=True, kw_only=True):
     offsets: tuple[int, ...]
 
 
-class AssembleResult(msgspec.Struct, frozen=True):
+class AssembleReport(msgspec.Struct, frozen=True):
     """A tiled assembly's array plus any tiles a best-effort strategy tolerated.
 
     Returned by `TiledNdArray.assemble` and `~TiledNdArray.assemble_async`.
@@ -432,14 +432,14 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         tileset: int | None = None,
         *,
         strategy: FailureStrategy[TileFailure] = fail_fast,
-    ) -> AssembleResult:
+    ) -> AssembleReport:
         """Fetch this array's tiles and stitch them into an inline `NdArray`.
 
         A `TiledNdArray`'s values live in external tile documents rather than
         inline. Given a fetcher, this retrieves every tile of one tile set and
         places it into a full-shape `NdArray`. Fetching is injected: ``fetch``
         maps a tile's URL to its raw bytes, so this performs no I/O of its own.
-        The array is returned inside an `AssembleResult` (read ``result.array``),
+        The array is returned inside an `AssembleReport` (read ``report.array``),
         alongside any tiles a best-effort strategy tolerated.
 
         How a failed tile is handled is the ``strategy``. The default
@@ -468,11 +468,11 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
 
         Returns
         -------
-        AssembleResult
-            ``result.array`` is an inline `NdArray` of this array's full ``shape``
+        AssembleReport
+            ``report.array`` is an inline `NdArray` of this array's full ``shape``
             and ``axis_names`` with each loaded tile's values placed at its
             position; positions not covered by any tile (or whose tile failed
-            under a collecting strategy) are ``None``. ``result.failures`` lists
+            under a collecting strategy) are ``None``. ``report.failures`` lists
             the tiles that failed (empty unless a collecting strategy tolerated
             some).
 
@@ -535,7 +535,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         payloads, failures = collect(layout, fetch_one, _tile_failure, strategy)
         array = _assemble_tiles(self.data_type, self.axis_names, self.shape, payloads)
 
-        return AssembleResult(array=array, failures=failures)
+        return AssembleReport(array=array, failures=failures)
 
     async def assemble_async(
         self,
@@ -543,7 +543,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         tileset: int | None = None,
         *,
         strategy: FailureStrategy[TileFailure] = fail_fast,
-    ) -> AssembleResult:
+    ) -> AssembleReport:
         """Concurrently fetch this array's tiles and stitch them into an `NdArray`.
 
         The awaitable counterpart of `assemble` with identical semantics
@@ -571,9 +571,9 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
 
         Returns
         -------
-        AssembleResult
-            As for `assemble`: ``result.array`` with ``None`` holes where tiles
-            failed under a collecting strategy, and ``result.failures``.
+        AssembleReport
+            As for `assemble`: ``report.array`` with ``None`` holes where tiles
+            failed under a collecting strategy, and ``report.failures``.
 
         Raises
         ------
@@ -636,7 +636,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         )
         array = _assemble_tiles(self.data_type, self.axis_names, self.shape, payloads)
 
-        return AssembleResult(array=array, failures=failures)
+        return AssembleReport(array=array, failures=failures)
 
     def _select_tile_set(self, tileset: int | None) -> TileSet:
         """Choose the tile set to assemble: the explicit index, else the fewest tiles.
