@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 
     from covjson_msgspec._best_effort import FailureStrategy
     from covjson_msgspec._fetch import AsyncFetch, Fetch
-    from covjson_msgspec.references import ReferenceFailure, ResolveResult
+    from covjson_msgspec.references import ReferenceFailure, ResolveReport
 
 # A range is inline values (`NdArray` / `TiledNdArray`) or a bare string URL
 # referencing the values in a separate document.
@@ -249,7 +249,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         fetch: Fetch,
         *,
         strategy: FailureStrategy[ReferenceFailure] = fail_fast,
-    ) -> ResolveResult[Coverage]:
+    ) -> ResolveReport[Coverage]:
         """Inline this coverage's URL-string domain and range references.
 
         Thin delegate to `covjson_msgspec.references.resolve_references`; see it
@@ -266,9 +266,9 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
 
         Returns
         -------
-        ResolveResult
-            ``result.value`` is a new coverage with its URL references inlined
-            (this instance unchanged when it has none); ``result.failures`` lists
+        ResolveReport
+            ``report.value`` is a new coverage with its URL references inlined
+            (this instance unchanged when it has none); ``report.failures`` lists
             any references a collecting strategy tolerated.
         """
         from covjson_msgspec.references import resolve_references
@@ -280,7 +280,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         fetch: AsyncFetch,
         *,
         strategy: FailureStrategy[ReferenceFailure] = fail_fast,
-    ) -> ResolveResult[Coverage]:
+    ) -> ResolveReport[Coverage]:
         """Concurrently inline this coverage's URL-string references.
 
         Thin delegate to `covjson_msgspec.references.resolve_references_async`; the
@@ -298,9 +298,9 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
 
         Returns
         -------
-        ResolveResult
-            ``result.value`` is a new coverage with its URL references inlined
-            (this instance unchanged when it has none); ``result.failures`` lists
+        ResolveReport
+            ``report.value`` is a new coverage with its URL references inlined
+            (this instance unchanged when it has none); ``report.failures`` lists
             any references a collecting strategy tolerated.
         """
         from covjson_msgspec.references import resolve_references_async
@@ -573,7 +573,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
         fetch: Fetch,
         *,
         strategy: FailureStrategy[ReferenceFailure] = fail_fast,
-    ) -> ResolveResult[CoverageCollection]:
+    ) -> ResolveReport[CoverageCollection]:
         """Inline every member coverage's URL-string references.
 
         Thin delegate to `covjson_msgspec.references.resolve_references`; see it
@@ -591,9 +591,9 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
 
         Returns
         -------
-        ResolveResult
-            ``result.value`` is a new collection whose members have their URL
-            references inlined; ``result.failures`` lists any references a
+        ResolveReport
+            ``report.value`` is a new collection whose members have their URL
+            references inlined; ``report.failures`` lists any references a
             collecting strategy tolerated (each with its ``coverage_index``).
         """
         from covjson_msgspec.references import resolve_references
@@ -605,7 +605,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
         fetch: AsyncFetch,
         *,
         strategy: FailureStrategy[ReferenceFailure] = fail_fast,
-    ) -> ResolveResult[CoverageCollection]:
+    ) -> ResolveReport[CoverageCollection]:
         """Concurrently inline every member coverage's URL-string references.
 
         Thin delegate to `covjson_msgspec.references.resolve_references_async`; the
@@ -623,9 +623,9 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
 
         Returns
         -------
-        ResolveResult
-            ``result.value`` is a new collection whose members have their URL
-            references inlined; ``result.failures`` lists any references a
+        ResolveReport
+            ``report.value`` is a new collection whose members have their URL
+            references inlined; ``report.failures`` lists any references a
             collecting strategy tolerated (each with its ``coverage_index``).
         """
         from covjson_msgspec.references import resolve_references_async

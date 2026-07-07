@@ -75,7 +75,8 @@ class TemporalRS(CovJSONStruct, frozen=True, tag="TemporalRS"):
     model carries it verbatim: the calendar string is neither validated nor
     interpreted, and the time values it governs stay opaque ISO 8601 strings on
     their axis (see `covjson_msgspec.axis.AxisValue`). A non-Gregorian calendar
-    therefore round-trips untouched; only the opt-in export bridges interpret it.
+    therefore round-trips untouched; interpretation is opt-in, via
+    `covjson_msgspec.temporal.to_datetime` (stdlib) or the export bridges.
 
     Examples
     --------

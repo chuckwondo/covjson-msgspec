@@ -22,6 +22,7 @@ from covjson_msgspec import (
     ParameterGroup,
     ReferenceSystemConnection,
     Severity,
+    TemporalRS,
     TiledNdArray,
     Unit,
     i18n,
@@ -45,6 +46,7 @@ from covjson_msgspec.validation import (
     ParameterGroupUnknownMember,
     RangeInvalidCategoryCode,
     RangeValueTypeMismatch,
+    TemporalLexicalForm,
     TiledNdArrayShapeRank,
     TiledNdArrayTileShapeNotPositive,
     TiledNdArrayTileShapeTooLarge,
@@ -336,6 +338,52 @@ def test_missing_referencing_on_standalone_domain() -> None:
     assert issue.code == "domain.missing-referencing"
     assert issue.at == "/referencing"
     assert issue.severity is Severity.ERROR
+
+
+def test_temporal_lexical_form_check_is_opt_in() -> None:
+    # A Gregorian time axis carrying a full-precision value, a reduced-precision
+    # value, an unrepresentable-but-valid expanded year, and a malformed value.
+    domain = Domain(
+        axes={
+            "t": Axis.listed(("2020-01-01T00:00:00Z", "2020", "+102020", "nope")),
+        },
+        referencing=(
+            ReferenceSystemConnection(
+                coordinates=("t",), system=TemporalRS(calendar="Gregorian")
+            ),
+        ),
+    )
+
+    # Off by default: no value scanning.
+    assert all(i.code != "temporal.lexical-form" for i in validate(domain))
+
+    # Opt in: only the malformed value is flagged. The reduced-precision "2020"
+    # and the unrepresentable "+102020" are legal forms and pass.
+    issues = validate(domain, check_values=True)
+    (issue,) = [i for i in issues if i.code == "temporal.lexical-form"]
+
+    assert isinstance(issue, TemporalLexicalForm)
+    assert issue.value == "nope"
+    assert issue.at == "/axes/t/values/3"
+    # Spec 5.2 makes the lexical forms a SHOULD, so this is a warning (ADR-0002).
+    assert issue.severity is Severity.WARNING
+
+
+def test_temporal_check_skips_non_gregorian_calendar() -> None:
+    # "2020-02-30" is malformed under Gregorian but valid in a 360_day calendar;
+    # temporal_coordinates excludes non-standard calendars, so it is never scanned.
+    domain = Domain(
+        axes={"t": Axis.listed(("2020-02-30",))},
+        referencing=(
+            ReferenceSystemConnection(
+                coordinates=("t",), system=TemporalRS(calendar="360_day")
+            ),
+        ),
+    )
+
+    issues = validate(domain, check_values=True)
+
+    assert all(i.code != "temporal.lexical-form" for i in issues)
 
 
 def test_collection_referencing_is_inherited_into_member_domain() -> None:
@@ -724,6 +772,8 @@ def _describe(issue: Issue) -> str:
             return "coverage"
         case RangeValueTypeMismatch() | RangeInvalidCategoryCode():
             return "range"
+        case TemporalLexicalForm():
+            return "temporal"
         case ParameterGroupUnknownMember():
             return "parameter-group"
         case I18nInvalidLanguageTag() | I18nEmpty():

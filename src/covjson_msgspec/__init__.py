@@ -54,7 +54,7 @@ from covjson_msgspec.parameter import (
     Unit,
 )
 from covjson_msgspec.range import (
-    AssembleResult,
+    AssembleReport,
     NdArray,
     TiledNdArray,
     TileFailure,
@@ -62,7 +62,7 @@ from covjson_msgspec.range import (
 )
 from covjson_msgspec.references import (
     ReferenceFailure,
-    ResolveResult,
+    ResolveReport,
     resolve_references,
     resolve_references_async,
 )
@@ -77,6 +77,7 @@ from covjson_msgspec.referencing import (
     VerticalCRS,
 )
 from covjson_msgspec.subset import isel, sel
+from covjson_msgspec.temporal import to_datetime
 from covjson_msgspec.validation import (
     DOMAIN_TYPE_RULES,
     CovJSONValidationError,
@@ -101,7 +102,7 @@ except PackageNotFoundError:  # pragma: no cover - only during local dev
 __all__ = [
     "DOMAIN_TYPE_RULES",
     "MEDIA_TYPE",
-    "AssembleResult",
+    "AssembleReport",
     "AsyncFetch",
     "Axis",
     "Category",
@@ -133,7 +134,7 @@ __all__ = [
     "ReferenceSystem",
     "ReferenceSystemConnection",
     "ReferencedDocumentError",
-    "ResolveResult",
+    "ResolveReport",
     "Severity",
     "Symbol",
     "TemporalRS",
@@ -164,6 +165,7 @@ __all__ = [
     "sel",
     "stop_after",
     "to_datatree",
+    "to_datetime",
     "to_geojson",
     "to_geopandas",
     "to_pandas",

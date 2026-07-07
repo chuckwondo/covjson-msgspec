@@ -106,7 +106,7 @@ def test_decode_failure_raises_fetch_error_chained_from_decode() -> None:
     assert isinstance(excinfo.value.__cause__, ReferencedDocumentError)
     # FetchError.failures is typed over the base FetchFailure; the slot /
     # coverage_index attribution is checked in the collect_all tests, whose
-    # ResolveResult.failures is typed over ReferenceFailure.
+    # ResolveReport.failures is typed over ReferenceFailure.
     (failure,) = excinfo.value.failures
     assert failure.kind is FailureKind.UNRECOVERABLE
     assert failure.url == "d"

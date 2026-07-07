@@ -49,6 +49,7 @@ from typing import Literal, assert_never, cast
 import langcodes
 import msgspec
 
+from covjson_msgspec._bridging import temporal_coordinates
 from covjson_msgspec.coverage import (
     Coverage,
     CoverageCollection,
@@ -73,6 +74,7 @@ from covjson_msgspec.referencing import (
     TemporalRS,
     VerticalCRS,
 )
+from covjson_msgspec.temporal import Malformed, resolve
 
 
 class Severity(enum.StrEnum):
@@ -341,6 +343,26 @@ class RangeInvalidCategoryCode(_Issue, frozen=True, tag="range.invalid-category-
         return f"value {self.value!r} is not a defined category code"
 
 
+# kw_only restated: overriding the inherited `severity` default drops the base's
+# kw_only, which msgspec needs to allow the required `value` after a defaulted field.
+class TemporalLexicalForm(
+    _Issue, frozen=True, kw_only=True, tag="temporal.lexical-form"
+):
+    """A time-axis value uses none of the Gregorian calendar's recommended forms.
+
+    Spec 5.2 says these values SHOULD use one of the five ISO 8601 lexical forms,
+    so this is a warning, not an error (per ADR-0002).
+    """
+
+    value: str
+    severity: Severity = Severity.WARNING
+
+    def __str__(self) -> str:
+        return (
+            f"value {self.value!r} does not use a recommended Gregorian temporal form"
+        )
+
+
 class ParameterGroupUnknownMember(
     _Issue, frozen=True, tag="parameter-group.unknown-member"
 ):
@@ -393,6 +415,7 @@ Issue = (
     | CoverageRangeShapeMismatch
     | RangeValueTypeMismatch
     | RangeInvalidCategoryCode
+    | TemporalLexicalForm
     | ParameterGroupUnknownMember
     | I18nInvalidLanguageTag
     | I18nEmpty
@@ -696,7 +719,7 @@ def _issues(obj: CoverageJSON, check_values: bool) -> Iterator[Issue]:
     """
     match obj:
         case Domain():
-            yield from _validate_domain(obj, obj.domain_type, "")
+            yield from _validate_domain(obj, obj.domain_type, "", check_values)
         case Coverage():
             yield from _validate_coverage(obj, "", check_values)
         case CoverageCollection():
@@ -1230,16 +1253,18 @@ def _reference_system_i18n_issues(
 
 
 def _validate_domain(
-    domain: Domain, domain_type: str | None, path: str
+    domain: Domain, domain_type: str | None, path: str, check_values: bool = False
 ) -> Iterator[Issue]:
     """Yield a domain's axis-rule and referencing violations, in document order.
 
     Resolves ``domain_type`` to a `DomainTypeRule` and, when one applies, yields
-    the violations `_domain_issues` finds; then yields a missing-referencing issue
-    when the domain carries no ``referencing`` in scope, and each reference
-    system's language-tag issues (`_reference_system_i18n_issues`). An absent or
-    unrecognized (e.g. custom URI) ``domain_type`` carries no axis rules, but the
-    referencing checks still apply.
+    the violations `_domain_issues` finds; then, when ``check_values``, each
+    time-axis value that is not a Gregorian lexical form
+    (`_temporal_form_issues`); then a missing-referencing issue when the domain
+    carries no ``referencing`` in scope, and each reference system's language-tag
+    issues (`_reference_system_i18n_issues`). An absent or unrecognized (e.g.
+    custom URI) ``domain_type`` carries no axis rules, but the referencing checks
+    still apply.
 
     Parameters
     ----------
@@ -1250,6 +1275,8 @@ def _validate_domain(
         ``domainType``); ``None`` or unrecognized means no axis rules to apply.
     path
         The JSON Pointer to ``domain``, extended via `_ptr` for each issue.
+    check_values
+        Whether to run the O(number of values) temporal lexical-form check.
 
     Yields
     ------
@@ -1279,6 +1306,11 @@ def _validate_domain(
     ):
         yield from _domain_issues(domain, domain_type, rule, path)
 
+    # Temporal values live under `axes`, so this value-scanning check comes before
+    # the referencing checks to keep issues in document order.
+    if check_values:
+        yield from _temporal_form_issues(domain, path)
+
     # Spec 6.1: a domain MUST carry `referencing` unless it is a member of a
     # collection that supplies it. `_validate_collection` resolves each member
     # first, pushing the collection's referencing into an inline domain that has
@@ -1296,6 +1328,60 @@ def _validate_domain(
         )
         for i, connection in enumerate(domain.referencing)
     )
+
+
+def _temporal_form_issues(domain: Domain, path: str) -> Iterator[Issue]:
+    """Yield a warning for each time-axis value outside the recommended forms.
+
+    A coordinate governed by a standard-calendar `TemporalRS` (as found by
+    `temporal_coordinates`) SHOULD carry values in one of the recommended Gregorian
+    lexical forms (`~covjson_msgspec.temporal.resolve`).
+    Each string value that resolves to `~covjson_msgspec.temporal.Malformed` is
+    reported (a warning, per ADR-0002, since Spec 5.2 makes this a SHOULD); a valid
+    but unrepresentable value (an expanded year, a leap second) is a legal form and
+    is left alone. Non-string values, and coordinates with no matching axis, are
+    skipped. This is a value-scanning check, gated behind
+    ``validate(check_values=True)``.
+
+    Parameters
+    ----------
+    domain
+        The domain whose temporal axes are scanned.
+    path
+        The JSON Pointer to ``domain``, extended via `_ptr` for each issue.
+
+    Yields
+    ------
+    Issue
+        A `TemporalLexicalForm` per malformed value, in axis (sorted) then value
+        order.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain
+    >>> from covjson_msgspec.referencing import ReferenceSystemConnection, TemporalRS
+    >>> dom = Domain(
+    ...     axes={"t": Axis.listed(("2020-01-01T00:00:00Z", "nope"))},
+    ...     referencing=[
+    ...         ReferenceSystemConnection(
+    ...             coordinates=("t",), system=TemporalRS(calendar="Gregorian")
+    ...         )
+    ...     ],
+    ... )
+    >>> [str(issue) for issue in _temporal_form_issues(dom, "")]
+    ["value 'nope' does not use a recommended Gregorian temporal form"]
+    """
+    for coord in sorted(temporal_coordinates(domain)):
+        axis = domain.axes.get(coord)
+
+        if axis is None:
+            continue
+
+        for i, value in enumerate(axis.coordinate_values):
+            if isinstance(value, str) and isinstance(resolve(value), Malformed):
+                yield TemporalLexicalForm(
+                    value=value, at=_ptr(path, "axes", coord, "values", i)
+                )
 
 
 def _validate_ndarray(arr: NdArray, path: str) -> Iterator[Issue]:
@@ -2085,7 +2171,9 @@ def _validate_coverage(
     parameters = coverage.parameters
 
     domain_issues: Iterable[Issue] = (
-        _validate_domain(domain, coverage.effective_domain_type, _ptr(path, "domain"))
+        _validate_domain(
+            domain, coverage.effective_domain_type, _ptr(path, "domain"), check_values
+        )
         if isinstance(domain, Domain)
         else ()
     )
