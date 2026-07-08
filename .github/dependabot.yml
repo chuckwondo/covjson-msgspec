@@ -18,6 +18,12 @@ updates:
 
   - package-ecosystem: uv
     directory: /
+    # This is a library: the dependency lower bounds in pyproject.toml are a
+    # compatibility contract, not an application's pins. `lockfile-only` lets
+    # Dependabot refresh uv.lock (dev/CI) without ever rewriting those floors, so a
+    # runtime floor rises only by a deliberate decision (see #65). Supported for
+    # the uv ecosystem per dependabot-core#12162.
+    versioning-strategy: lockfile-only
     schedule:
       interval: weekly
     # See the cooldown note above; only `default-days` applies to the uv
