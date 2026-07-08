@@ -203,6 +203,21 @@ class DomainMissingReferencing(_Issue, frozen=True, tag="domain.missing-referenc
         return "domain must have a 'referencing' member"
 
 
+class DomainMissingDomainType(_Issue, frozen=True, tag="domain.missing-domain-type"):
+    """The domain declares no ``domainType`` and none is inherited in scope.
+
+    Spec 6.1 RECOMMENDS a domain object carry ``domainType`` for
+    interoperability, so this is a warning, not an error (per ADR-0002). The
+    effective type may be supplied by the domain itself, a coverage's own
+    ``domainType``, or a collection's; this fires only when none is in scope.
+    """
+
+    severity: Severity = Severity.WARNING
+
+    def __str__(self) -> str:
+        return "domain should have a 'domainType' member"
+
+
 class NdArrayShapeRank(_Issue, frozen=True, tag="ndarray.shape-rank"):
     """An `NdArray`'s ``shape`` and ``axisNames`` differ in length."""
 
@@ -324,6 +339,53 @@ class CoverageRangeShapeMismatch(
         )
 
 
+# kw_only restated: overriding the inherited `severity` default drops the base's
+# kw_only, which msgspec needs to allow the required `domain_type` after a
+# defaulted field.
+class CoverageDomainTypeNotOmitted(
+    _Issue, frozen=True, kw_only=True, tag="coverage.domain-type-not-omitted"
+):
+    """A collection member repeats a ``domainType`` its collection already sets.
+
+    Spec 6.4 says that when a coverage is part of a collection carrying
+    ``domainType``, that member SHOULD be omitted in the coverage, so this is a
+    warning (per ADR-0002). The member's value equals the collection's here; a
+    *differing* value falsifies the collection's type claim and is the error
+    `CoverageDomainTypeConflict` instead.
+    """
+
+    domain_type: str
+    severity: Severity = Severity.WARNING
+
+    def __str__(self) -> str:
+        return (
+            f"coverage should omit domainType {self.domain_type!r}; "
+            "its collection already provides it"
+        )
+
+
+class CoverageDomainTypeConflict(
+    _Issue, frozen=True, tag="coverage.domain-type-conflict"
+):
+    """A collection member's declared ``domainType`` contradicts its collection's.
+
+    A collection's ``domainType`` indicates it contains only coverages of that
+    type (Spec 6.5); a member whose declared type (at the coverage level or on its
+    inline domain) differs falsifies that claim, so this is an error, not a mere
+    SHOULD-omit warning. An equal, redundant coverage-level value is the warning
+    `CoverageDomainTypeNotOmitted` instead.
+    """
+
+    domain_type: str
+    collection_domain_type: str
+
+    def __str__(self) -> str:
+        return (
+            f"coverage domainType {self.domain_type!r} conflicts with its "
+            f"collection's {self.collection_domain_type!r}"
+        )
+
+
 class RangeValueTypeMismatch(_Issue, frozen=True, tag="range.value-type-mismatch"):
     """A range value does not match the declared ``dataType``."""
 
@@ -402,6 +464,7 @@ Issue = (
     | DomainCompositeDataType
     | DomainExtraAxisNotSingle
     | DomainMissingReferencing
+    | DomainMissingDomainType
     | NdArrayShapeRank
     | NdArrayValueCount
     | TiledNdArrayShapeRank
@@ -413,6 +476,8 @@ Issue = (
     | CoverageRangeWithoutParameter
     | CoverageRangeAxisNotInDomain
     | CoverageRangeShapeMismatch
+    | CoverageDomainTypeNotOmitted
+    | CoverageDomainTypeConflict
     | RangeValueTypeMismatch
     | RangeInvalidCategoryCode
     | TemporalLexicalForm
@@ -1255,16 +1320,18 @@ def _reference_system_i18n_issues(
 def _validate_domain(
     domain: Domain, domain_type: str | None, path: str, check_values: bool = False
 ) -> Iterator[Issue]:
-    """Yield a domain's axis-rule and referencing violations, in document order.
+    """Yield a domain's domainType, axis-rule, and referencing violations.
 
-    Resolves ``domain_type`` to a `DomainTypeRule` and, when one applies, yields
-    the violations `_domain_issues` finds; then, when ``check_values``, each
+    First, when the effective ``domain_type`` is absent, a
+    `DomainMissingDomainType` warning (Spec 6.1 RECOMMENDS one). Then, resolves
+    ``domain_type`` to a `DomainTypeRule` and, when one applies, yields the
+    violations `_domain_issues` finds; then, when ``check_values``, each
     time-axis value that is not a Gregorian lexical form
     (`_temporal_form_issues`); then a missing-referencing issue when the domain
     carries no ``referencing`` in scope, and each reference system's language-tag
     issues (`_reference_system_i18n_issues`). An absent or unrecognized (e.g.
     custom URI) ``domain_type`` carries no axis rules, but the referencing checks
-    still apply.
+    still apply. All issues stay in document order.
 
     Parameters
     ----------
@@ -1294,7 +1361,25 @@ def _validate_domain(
     ...     "domain.missing-referencing",
     ... ]
     True
+
+    A domain with no effective ``domainType`` draws the recommended-member
+    warning first (Spec 6.1), then the referencing error:
+
+    >>> bare = Domain(axes={"x": Axis.listed((1.0,))})
+    >>> [issue.code for issue in _validate_domain(bare, None, "")] == [
+    ...     "domain.missing-domain-type",
+    ...     "domain.missing-referencing",
+    ... ]
+    True
     """
+    # Spec 6.1 RECOMMENDS a domainType for interoperability, so its absence is a
+    # warning. `domainType` precedes `axes` and `referencing` on the wire, so it
+    # comes first. The threaded `domain_type` is the effective one (the domain's
+    # own, else a coverage's or collection's), so an inherited type suppresses
+    # this. An empty string is present-but-meaningless, so treat it as absent.
+    if not domain_type:
+        yield DomainMissingDomainType(at=_ptr(path, "domainType"))
+
     # Axis-rule issues come before the referencing check so issues stay in
     # document order (`axes` precedes `referencing` on the wire). The effective
     # domain type may come from the Domain itself or, inside a coverage, from the
@@ -2210,11 +2295,15 @@ def _validate_coverage(
 def _validate_collection(
     collection: CoverageCollection, path: str, check_values: bool
 ) -> Iterator[Issue]:
-    """Yield every member's issues.
+    """Yield every member's issues, in member order.
 
-    Resolves the collection first so each member inherits the collection's
-    parameters and ``domainType``, then chains `_validate_coverage` over each at a
-    ``coverages/<i>`` path.
+    Two views of each member are needed. The domainType placement check
+    (`_member_domain_type_issues`) reads the *raw* member, whose own
+    ``domain_type`` still distinguishes an omitted-and-inherited type from an
+    explicitly-restated one; the rest run on the *resolved* member, which has the
+    collection's parameters / ``domainType`` inherited. `zip` keeps the two
+    aligned. Per member the placement issue precedes the member's other issues,
+    holding document order (``domainType`` is an early Coverage member).
 
     Parameters
     ----------
@@ -2230,8 +2319,138 @@ def _validate_collection(
     Issue
         Each member's issues, in member order.
     """
-    # Resolve first so inherited parameters / domainType apply to each member.
     return chain.from_iterable(
-        _validate_coverage(coverage, _ptr(path, "coverages", i), check_values)
-        for i, coverage in enumerate(collection.resolved_coverages())
+        chain(
+            _member_domain_type_issues(
+                raw, collection.domain_type, _ptr(path, "coverages", i)
+            ),
+            _validate_coverage(resolved, _ptr(path, "coverages", i), check_values),
+        )
+        for i, (raw, resolved) in enumerate(
+            zip(collection.coverages, collection.resolved_coverages(), strict=True)
+        )
     )
+
+
+def _member_domain_type_issues(
+    coverage: Coverage, collection_domain_type: str | None, path: str
+) -> Iterator[Issue]:
+    """Yield a member coverage's ``domainType`` placement issue against its collection.
+
+    When a collection sets ``domainType`` it indicates it contains only coverages
+    of that type (Spec 6.5), and a member SHOULD omit its own (Spec 6.4). A member
+    whose declared type differs from the collection's falsifies that claim and
+    draws an error (`CoverageDomainTypeConflict`); one carrying a coverage-level
+    ``domainType`` equal to the collection's SHOULD have omitted it and draws a
+    warning (`CoverageDomainTypeNotOmitted`). A member that declares no type of its
+    own, or a collection that sets none, yields nothing.
+
+    The conflict compares the member's *declared* type: its inline domain's
+    ``domainType`` if it sets one, else its coverage-level ``domainType``, read
+    from the raw member before collection inheritance. So a type declared at either
+    level is checked (not just the coverage-level member), while an omitted type
+    inherited from the collection is not flagged.
+
+    Parameters
+    ----------
+    coverage
+        The raw member coverage (before collection inheritance is applied).
+    collection_domain_type
+        The collection's own ``domain_type``, or ``None`` when it sets none.
+    path
+        The JSON Pointer to the member coverage, extended via `_ptr`.
+
+    Yields
+    ------
+    Issue
+        At most one issue, at ``<path>/domainType`` (or ``<path>/domain/domainType``
+        for a conflicting type declared on the inline domain).
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Coverage
+    >>> member = Coverage(
+    ...     domain="https://example.org/d.covjson", domain_type="Grid", ranges={}
+    ... )
+
+    A value differing from the collection's is an error:
+
+    >>> [str(i) for i in _member_domain_type_issues(member, "Point", "/coverages/0")]
+    ["coverage domainType 'Grid' conflicts with its collection's 'Point'"]
+
+    An equal coverage-level value is the SHOULD-omit warning:
+
+    >>> [i.code for i in _member_domain_type_issues(member, "Grid", "/coverages/0")]
+    ['coverage.domain-type-not-omitted']
+
+    A collection that sets no ``domainType`` yields nothing:
+
+    >>> list(_member_domain_type_issues(member, None, "/coverages/0"))
+    []
+
+    A type declared on the member's inline domain is compared too, so a
+    domain-level conflict is caught with the coverage-level member omitted (and the
+    finding points at the domain):
+
+    >>> from covjson_msgspec import Axis, Domain
+    >>> inline = Coverage(
+    ...     domain=Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid"),
+    ...     ranges={},
+    ... )
+    >>> [
+    ...     (i.code, i.at)
+    ...     for i in _member_domain_type_issues(inline, "Point", "/coverages/0")
+    ... ]
+    [('coverage.domain-type-conflict', '/coverages/0/domain/domainType')]
+
+    An empty-string domain-level type resolves to the coverage-level type (as
+    `effective_domain_type` does), so the finding's payload and pointer agree on
+    the coverage level, not the empty domain member:
+
+    >>> mixed = Coverage(
+    ...     domain=Domain(axes={"x": Axis.listed((1.0,))}, domain_type=""),
+    ...     domain_type="Grid",
+    ...     ranges={},
+    ... )
+    >>> [
+    ...     (i.code, i.domain_type, i.at)
+    ...     for i in _member_domain_type_issues(mixed, "Point", "/coverages/0")
+    ... ]
+    [('coverage.domain-type-conflict', 'Grid', '/coverages/0/domainType')]
+    """
+    if collection_domain_type is None:
+        return
+
+    # The member's own declared type: its inline domain's domainType if it sets
+    # one, else its coverage-level domainType (pre-inheritance, via
+    # `effective_domain_type`). Comparing the declared type -- not just the
+    # coverage-level member -- means a type declared on the inline domain that
+    # conflicts with the collection is caught too.
+    declared_type = coverage.effective_domain_type
+
+    if declared_type is None:
+        return
+
+    if declared_type != collection_domain_type:
+        # Point the finding wherever the conflicting type is declared: the inline
+        # domain if it sets one (it wins over the coverage level), else the
+        # coverage-level member. The `domain.domain_type` truthiness check matches
+        # how `effective_domain_type` resolved `declared_type` (`declared or ...`),
+        # so an empty-string domain type is "absent" here as it is there.
+        domain = coverage.domain
+        at = (
+            _ptr(path, "domain", "domainType")
+            if isinstance(domain, Domain) and domain.domain_type
+            else _ptr(path, "domainType")
+        )
+        yield CoverageDomainTypeConflict(
+            domain_type=declared_type,
+            collection_domain_type=collection_domain_type,
+            at=at,
+        )
+    elif coverage.domain_type is not None:
+        # The type matches, but the coverage still carries its own domainType
+        # member, which Spec 6.4 says it SHOULD omit.
+        yield CoverageDomainTypeNotOmitted(
+            domain_type=coverage.domain_type, at=_ptr(path, "domainType")
+        )

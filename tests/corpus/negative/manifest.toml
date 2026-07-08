@@ -46,6 +46,18 @@ file = "domain-missing-referencing.json"
 issues = [{ code = "domain.missing-referencing", severity = "error" }]
 
 [[case]]
+file = "domain-missing-domain-type.json"
+issues = [{ code = "domain.missing-domain-type", severity = "warning" }]
+
+[[case]]
+file = "coverage-domain-type-not-omitted.json"
+issues = [{ code = "coverage.domain-type-not-omitted", severity = "warning" }]
+
+[[case]]
+file = "coverage-domain-type-conflict.json"
+issues = [{ code = "coverage.domain-type-conflict", severity = "error" }]
+
+[[case]]
 file = "tiled-ndarray-tile-shape-too-large.json"
 issues = [{ code = "tiled-ndarray.tile-shape-too-large", severity = "error" }]
 
