@@ -313,7 +313,7 @@ typecheck = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cftime", marker = "extra == 'xarray'", specifier = ">=1.6" },
+    { name = "cftime", marker = "extra == 'xarray'", specifier = ">=1.6.2" },
     { name = "covjson-msgspec", extras = ["numpy", "xarray", "pandas", "geo"], marker = "extra == 'all'" },
     { name = "fastapi", marker = "extra == 'fastapi'", specifier = ">=0.110" },
     { name = "geopandas", marker = "extra == 'geo'", specifier = ">=0.14" },
