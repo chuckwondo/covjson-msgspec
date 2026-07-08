@@ -50,6 +50,12 @@ CLAUDE.md.
 - [ADR-0008](0008-temporal-conversion-result-projection.md): temporal string
   conversion as a faithful `TemporalResult` sum type + opt-in lexical `validate()`
   check; `to_datetime` the stdlib convenience
+- [ADR-0009](0009-openapi-schema-bridge.md): OpenAPI schema bridging from the
+  msgspec types; a pure `schema.py` generator plus a thin FastAPI adapter,
+  components namespaced under `CoverageJSON.` to avoid host collisions
+- [ADR-0010](0010-dependency-floor-policy.md): dependency floor policy: floors
+  are the lowest wheeled version providing the APIs used, tested at both
+  `lowest-direct` and `highest`, raised only deliberately (never by Dependabot)
 
 Some decisions are recorded in ADRs that land with their implementation rather
 than here; see the issue tracker for the in-flight set.

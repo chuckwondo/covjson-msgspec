@@ -22,6 +22,10 @@ classifiers = [
   "Typing :: Typed",
 ]
 dependencies = [
+  # 0.18 is a deliberate recent baseline for this fast-moving, pre-1.0 core
+  # dependency: the APIs we use (json.format, schema_components(ref_template=),
+  # structs.replace) exist since 0.16, but we don't claim support below 0.18.
+  # See ADR-0010 for the floor policy.
   "msgspec>=0.18",
   # BCP 47 language-tag validation for i18n keys (validation.py). Pure
   # Python, zero runtime deps in its base install (the `[data]` extra pulls
@@ -39,18 +43,29 @@ Issues     = "https://github.com/chuckwondo/covjson-msgspec/issues"
 # transitive deps; see ADR-0005); each bridge below lazy-imports its own
 # (typically numeric or geospatial) dependency and raises an install hint if
 # missing.
+#
+# Floor policy (ADR-0010): each lower bound is the lowest version that provides
+# the APIs the bridge uses AND ships a cp311 wheel (our Python floor, so a 3.11
+# user never has to build from source). Verified by the lowest-direct CI lane;
+# raised only by deliberate decision, never auto-bumped by Dependabot (#65).
 [project.optional-dependencies]
+# numpy 1.24 has cp311 wheels; the all-extras resolution pins it here via xarray.
 numpy = [ "numpy>=1.24" ]
 # xarray>=2024.10 first ships xarray.DataTree, used by the collection bridge.
-xarray = [ "xarray>=2024.10", "numpy>=1.24", "cftime>=1.6" ]
+# cftime 1.6.2 is the first release with a cp311 wheel (1.6.0/1.6.1 have none).
+xarray = [ "xarray>=2024.10", "numpy>=1.24", "cftime>=1.6.2" ]
+# pandas 2.0 is the modern floor (1.x is EOL); the all-extras resolution pulls
+# 2.1 via xarray, so 2.0 is a true lower bound rather than the tested version.
 pandas = [ "pandas>=2.0", "numpy>=1.24" ]
 # geopandas guarantees pandas + numpy transitively, but the geo bridge imports
 # both directly (it reuses the pandas bridge and builds geometry with numpy), so
-# list them explicitly rather than relying on a transitive dependency.
+# list them explicitly rather than relying on a transitive dependency. geopandas
+# is pure Python (wheel installs on any 3.11+); shapely 2.0 is the vectorized API.
 geo = [ "geopandas>=0.14", "shapely>=2.0", "pandas>=2.0", "numpy>=1.24" ]
 # FastAPI response adapter (CovJSONResponse). The framework-agnostic core stays
 # in media_type.py; fastapi is imported only behind this extra. Deliberately kept
 # out of `all` below, which aggregates the data bridges, not a web framework.
+# 0.110 matches titiler's floor (the titiler-covjson coupling), not an API need.
 fastapi = [ "fastapi>=0.110" ]
 # The litestar response-helper bridge is planned but not yet shipped, so it
 # carries no extra until there is code behind it (an extra that installs a

@@ -108,6 +108,11 @@ jobs:
         continue-on-error: true
         run: uvx ty check src tests
 
+  # Test both ends of the dependency range (ADR-0010): `highest` (the lockfile,
+  # today's default) and `lowest-direct` (our declared floors for direct deps,
+  # transitive deps kept modern). The full cross with the Python matrix exercises
+  # every runtime floor on every supported Python, so a floor set too low turns
+  # the build red -- the signal that it must rise deliberately. Both ends block.
   test:
     needs: config
     runs-on: ubuntu-latest
@@ -116,6 +121,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ${{ fromJSON(needs.config.outputs.python-versions) }}
+        resolution: [highest, lowest-direct]
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -126,8 +132,19 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
-      - name: Install dependencies
+          # Namespace the cache per resolution so the highest and lowest-direct
+          # legs (same Python, different resolved deps) don't derive an identical
+          # key and race to save it.
+          cache-suffix: ${{ matrix.resolution }}
+      # `--resolution lowest-direct` re-resolves and cannot be combined with
+      # `--locked` (uv ignores the lockfile when the resolution mode changes), so
+      # the two ends need distinct install commands.
+      - name: Install dependencies (highest, from lockfile)
+        if: matrix.resolution == 'highest'
         run: uv sync --locked --quiet
+      - name: Install dependencies (lowest-direct floors)
+        if: matrix.resolution == 'lowest-direct'
+        run: uv sync --resolution lowest-direct --quiet
       - name: Run tests (pytest)
         run: uv run --quiet pytest
 
