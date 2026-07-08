@@ -54,13 +54,22 @@ Two structural facts shape the rest of the audit:
   `structs.replace`) exist since 0.16, but 0.18 is a recent, tested baseline and
   the reach below it is negligible. The floor is now deliberate, not inherited.
 
-**2. Test both ends.** The `test` job in CI carries a `resolution` axis crossed
-with the full Python matrix: `highest` (the lockfile) and `lowest-direct` (uv
-resolves direct dependencies to their declared floors and keeps transitive
-dependencies modern). All extras are synced, so every runtime floor is exercised
-on every supported Python. The `lowest-direct` leg is **blocking**: a red run
-means a declared floor is too low for the code as written and must rise. This is
-what converts each floor from a claim into a verified fact.
+**2. Test both ends.** CI runs `highest` (the lockfile) across the full Python
+matrix, plus one `lowest-direct` leg (uv resolves direct dependencies to their
+declared floors and keeps transitive dependencies modern) on the Python floor,
+all extras synced. The `lowest-direct` leg is **blocking**: a red run means a
+declared floor is too low for the code as written and must rise. This is what
+converts each floor from a claim into a verified fact.
+
+`lowest-direct` runs only on the Python floor, not crossed with the full matrix,
+because a dependency floor is only coherent paired with the Python floor. The
+declared floors are a floor-era snapshot (`numpy 1.24`, `shapely 2.0`,
+`cftime 1.6.2`, ...) whose wheels stop at `cp311`, yet those releases declare an
+open-ended `requires-python` (`>=3.7` / `>=3.8`). uv resolves on that metadata,
+not on wheel availability, so pinning a floor version on a newer interpreter
+yields no wheel (a failed source build) and describes a configuration no user
+runs. The floor Python is the only interpreter those floor versions ship wheels
+for, so it is the only place `lowest-direct` is meaningful.
 
 **3. Dependabot stance.** The `uv` ecosystem is set to
 `versioning-strategy: lockfile-only` (landed first, standalone, in PR #66),
@@ -81,6 +90,14 @@ lower bounds. Floors rise only by the deliberate decision principle 1 describes.
   and cannot fix by adjusting its own declarations. Rejected: `lowest-direct`
   tests the contract the library actually makes (its direct floors) while
   letting transitive dependencies resolve modern.
+- **Cross `lowest-direct` with the full Python matrix** (issue #65's recorded
+  choice, and the first implementation). It cannot hold: the floor-era releases
+  ship no wheels past `cp311` but declare an open-ended `requires-python`, so uv
+  pins the same ancient version on 3.12 through 3.14 and the source build fails
+  (for example `shapely 2.0.0` has no `cp314` wheel). Rejected in favor of the
+  single floor-Python leg, the only interpreter those floor versions ship wheels
+  for. `highest` still covers the full matrix, so newer Pythons are exercised
+  against modern dependencies, which is the pairing users actually run.
 - **Per-extra `lowest-direct` lanes** (resolve `[pandas]` alone, `[geo]` alone,
   ...) so a sibling extra cannot pin a floor up during verification. This would
   let `numpy` / `pandas` floors be lowered and still verified. Rejected as
@@ -97,12 +114,11 @@ lower bounds. Floors rise only by the deliberate decision principle 1 describes.
   is verified green at `lowest-direct` across Python 3.11 to 3.14. `cftime` rose
   to `1.6.2` (wheel availability); every other floor held, now with a recorded
   reason.
-- The test matrix roughly doubles the `test` legs (Python matrix times two
-  resolutions). The `lowest-direct` leg re-resolves each run (it cannot use
-  `--locked`, since changing the resolution mode makes uv ignore the lockfile),
-  so it is slightly slower than the cached `highest` leg. Acceptable for the
-  guarantee it buys. If CI cost bites, the middle Pythons' `lowest-direct` legs
-  are the first trim.
+- The `test` job gains a single `lowest-direct` leg on the Python floor
+  alongside the full `highest` matrix. That leg re-resolves each run (it cannot
+  use `--locked`, since changing the resolution mode makes uv ignore the
+  lockfile), so it is slightly slower than the cached `highest` legs. Acceptable
+  for the guarantee it buys.
 - **The accepted cost of `lowest-direct`:** it holds direct dependencies at
   their old floors while resolving transitive dependencies modern, so a newly
   published transitive release can occasionally clash with an old direct floor
