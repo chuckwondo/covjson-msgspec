@@ -76,6 +76,7 @@ from covjson_msgspec.referencing import (
     TemporalRS,
     VerticalCRS,
 )
+from covjson_msgspec.schema import component_schemas, schema_ref
 from covjson_msgspec.subset import isel, sel
 from covjson_msgspec.temporal import to_datetime
 from covjson_msgspec.validation import (
@@ -146,6 +147,7 @@ __all__ = [
     "VerticalCRS",
     "__version__",
     "collect_all",
+    "component_schemas",
     "decode",
     "decode_coverage",
     "decode_coverage_collection",
@@ -162,6 +164,7 @@ __all__ = [
     "media_type",
     "resolve_references",
     "resolve_references_async",
+    "schema_ref",
     "sel",
     "stop_after",
     "to_datatree",

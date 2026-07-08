@@ -20,32 +20,38 @@ Return an instance directly from a handler so FastAPI sends it unchanged::
 An optional ``profile`` advertises one or more RFC 6906 profile URIs via the
 content type's ``profile`` parameter (reusing `~covjson_msgspec.media_type.media_type`).
 
-Documenting such an endpoint in OpenAPI (so it shows a response schema in Swagger
-/ Redoc) is the companion concern tracked separately; FastAPI cannot introspect
-msgspec types for OpenAPI, so a `CovJSONResponse` endpoint serves correctly on
-the wire but is undocumented until that bridge lands.
+To also document such an endpoint in OpenAPI (so it shows a response schema in
+Swagger / Redoc), register the CoverageJSON component schemas on the app with
+`add_openapi_schemas` and point the route's response at one with
+`~covjson_msgspec.schema.schema_ref`: FastAPI cannot introspect msgspec types, so
+the schema is injected rather than inferred. See `add_openapi_schemas` for the
+full recipe.
 
 Spec: [Media Type and File Extension][spec-media-type]. The ``profile``
-parameter follows [RFC 6906][rfc6906].
+parameter follows [RFC 6906][rfc6906]. `add_openapi_schemas` customizes the app's
+generated schema via FastAPI's [Extending OpenAPI][extending-openapi] override.
 
 [spec-media-type]: https://github.com/covjson/specification/blob/master/spec.md#10-media-type-and-file-extension
 [rfc6906]: https://www.rfc-editor.org/rfc/rfc6906
+[extending-openapi]: https://fastapi.tiangolo.com/how-to/extending-openapi/
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from covjson_msgspec.coverage import CoverageJSON, encode
 from covjson_msgspec.media_type import MEDIA_TYPE, media_type
+from covjson_msgspec.schema import component_schemas
 
 _INSTALL_HINT = (
     "fastapi is required for this response class; install covjson-msgspec[fastapi]"
 )
 
 try:
-    from fastapi import Response
+    from fastapi import FastAPI, Response
+    from starlette.background import BackgroundTask
 except ModuleNotFoundError as exc:  # pragma: no cover - env-dependent
     raise ModuleNotFoundError(_INSTALL_HINT) from exc
 
@@ -91,10 +97,19 @@ class CovJSONResponse(Response):
     def __init__(
         self,
         content: CoverageJSON | None = None,
-        *args: Any,
+        status_code: int = 200,
+        *,
+        headers: Mapping[str, str] | None = None,
+        background: BackgroundTask | None = None,
         profile: str | Sequence[str] = (),
-        **kwargs: Any,
     ) -> None:
+        # Spell out the forwarded Starlette Response parameters rather than
+        # accepting `**kwargs`: it documents the accepted surface, lets FastAPI
+        # introspect `status_code` for its OpenAPI generation (an absent
+        # `status_code` parameter makes that raise an UnboundLocalError), and
+        # deliberately omits `media_type` -- the class owns that (the class
+        # attribute plus `profile`), so a caller cannot override it and end up
+        # serving non-CoverageJSON.
         profiles = (profile,) if isinstance(profile, str) else tuple(profile)
 
         if profiles:
@@ -102,7 +117,7 @@ class CovJSONResponse(Response):
             # Content-Type header from it (see Response.init_headers).
             self.media_type = media_type(*profiles)
 
-        super().__init__(content, *args, **kwargs)
+        super().__init__(content, status_code, headers=headers, background=background)
 
     def render(self, content: CoverageJSON | None) -> bytes:
         """Encode a CoverageJSON document into the response body bytes.
@@ -135,3 +150,80 @@ class CovJSONResponse(Response):
         b''
         """
         return b"" if content is None else encode(content)
+
+
+def add_openapi_schemas(app: FastAPI) -> None:
+    """Register the CoverageJSON component schemas on a FastAPI app's OpenAPI.
+
+    Merges `~covjson_msgspec.schema.component_schemas` into the app's generated
+    OpenAPI ``components.schemas`` so a `CovJSONResponse` endpoint can be fully
+    described in Swagger / Redoc. Wraps the app's existing ``openapi`` callable
+    rather than rebuilding the document, so any other customization is preserved;
+    the wrapper runs on every ``app.openapi()`` call and merges in place, so it is
+    order-independent (before or after the schema is first built) and idempotent.
+
+    Point a route's response at a registered component with
+    `~covjson_msgspec.schema.schema_ref` and the CoverageJSON media type. Declaring
+    ``response_class=Response`` (the plain base) lets ``responses`` be the sole
+    source of the documented schema. A FastAPI response class carries the media
+    type and byte rendering, not a data schema, so using `CovJSONResponse` here
+    leaves its raw-body placeholder, ``{"type": "string"}``, which FastAPI *merges
+    with* (rather than replaces) our ``$ref``. Under OpenAPI 3.1 the sibling
+    keywords beside a ``$ref`` all apply, so the response would be documented as a
+    ``Coverage`` *and* a string: an unsatisfiable schema that a validating client or
+    code generator would reject. The base `Response` contributes no placeholder, so
+    the ``$ref`` stands alone. The handler still returns a `CovJSONResponse`, so the
+    response on the wire is unchanged::
+
+        from fastapi import Response
+        from covjson_msgspec import Coverage
+        from covjson_msgspec.fastapi import CovJSONResponse, add_openapi_schemas
+        from covjson_msgspec.media_type import MEDIA_TYPE
+        from covjson_msgspec.schema import schema_ref
+
+        @app.get(
+            "/coverage",
+            response_class=Response,
+            responses={
+                200: {"content": {MEDIA_TYPE: {"schema": schema_ref(Coverage)}}},
+            },
+        )
+        def coverage() -> CovJSONResponse:
+            return CovJSONResponse(build_coverage())
+
+        add_openapi_schemas(app)
+
+    Parameters
+    ----------
+    app
+        The FastAPI application whose OpenAPI document should carry the CoverageJSON
+        component schemas.
+
+    Examples
+    --------
+    >>> from fastapi import FastAPI
+    >>> from covjson_msgspec.fastapi import add_openapi_schemas
+    >>> app = FastAPI()
+    >>> add_openapi_schemas(app)
+    >>> "CoverageJSON.Coverage" in app.openapi()["components"]["schemas"]
+    True
+
+    Applying it more than once is harmless:
+
+    >>> add_openapi_schemas(app)
+    >>> "CoverageJSON.Parameter" in app.openapi()["components"]["schemas"]
+    True
+    """
+    original = app.openapi
+    schemas = component_schemas()
+
+    def openapi() -> dict[str, Any]:
+        schema = original()
+        schema.setdefault("components", {}).setdefault("schemas", {}).update(schemas)
+
+        return schema
+
+    # Reassigning `app.openapi` is FastAPI's own documented way to customize the
+    # generated schema (its "Extending OpenAPI" guide, linked in the module
+    # docstring); the type-checker ignores are stub conservatism, not a red flag.
+    app.openapi = openapi  # type: ignore[method-assign]  # ty: ignore[invalid-assignment]

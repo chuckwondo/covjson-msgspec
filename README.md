@@ -27,10 +27,11 @@ the rest of the Python geo ecosystem.
 | `covjson-msgspec[pandas]` | point/series/trajectory → pandas |
 | `covjson-msgspec[geo]` | polygon/point/trajectory → geopandas / GeoJSON |
 
-_Planned:_ framework-specific `Response` adapters for Litestar (msgspec-native,
-so first-class) and FastAPI (a thin adapter), wrapping the core helpers below. As
-they require a web-framework dependency, they will ship behind their own extras;
-not yet shipped, so they carry no install extra.
+_Framework adapters (behind their own extras, since they need a web-framework
+dependency):_ `covjson-msgspec[fastapi]` ships `CovJSONResponse` (serve
+CoverageJSON with the right media type) and `add_openapi_schemas` (document those
+endpoints in OpenAPI / Swagger). A Litestar adapter (msgspec-native, so
+first-class) is planned, wrapping the same core helpers below.
 
 ## Serving over HTTP
 
