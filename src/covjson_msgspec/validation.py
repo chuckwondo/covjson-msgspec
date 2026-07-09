@@ -21,7 +21,7 @@ each carrying its substitution values as typed fields, a human message via
 ``str(issue)``, a stable string ``code``, and a JSON Pointer ``at``. Match on the
 concrete variant (``match`` / `~typing.assert_never` for exhaustiveness, or
 ``isinstance`` to read a variant's typed payload) and use ``code`` for stringly
-work (aggregation, logging, the wire tag); see `_Issue` for the full rationale.
+work (aggregation, logging, the wire tag).
 Pass ``mode="raise"`` to raise a `CovJSONValidationError` instead when any
 error-severity issue is found, and ``check_values=True`` to add the
 value-scanning checks that are skipped by default (each value matching its

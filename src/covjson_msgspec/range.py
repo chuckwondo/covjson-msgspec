@@ -760,8 +760,8 @@ def template_variables(template: str) -> tuple[str, ...]:
     Each ``{name}`` expression contributes its bare ``name``; a template with no
     expressions yields ``()``. CoverageJSON tile ``urlTemplate`` values are Level 1
     (simple ``{var}`` expansion), so these names are the axes a template addresses:
-    `_expand_url_template` substitutes them, and `validation` checks that every
-    subdivided axis has one.
+    tile assembly substitutes them, and `validation` checks that every subdivided
+    axis has one.
 
     Parameters
     ----------
