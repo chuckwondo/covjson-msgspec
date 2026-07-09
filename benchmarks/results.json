@@ -1,0 +1,793 @@
+{
+  "env": {
+    "platform": "macOS-12.7.6-x86_64-i386-64bit",
+    "python": "3.11.10",
+    "implementation": "CPython",
+    "machine": "x86_64",
+    "processor": "i386"
+  },
+  "versions": {
+    "covjson-msgspec": "0.1.0",
+    "covjson-pydantic": "0.8.0",
+    "msgspec": "0.21.1",
+    "pydantic": "2.13.4",
+    "pydantic-core": "2.46.4",
+    "numpy": "2.4.6"
+  },
+  "semantics": {
+    "msgspec:decode": "structural decode only; temporal values stay strings",
+    "msgspec:encode": "model to JSON bytes",
+    "msgspec:roundtrip": "structural decode then encode; no validation or datetime parsing (the realistic default cost of a faithful read + write)",
+    "msgspec:roundtrip(full)": "decode + validate(check_values=True) + to_datetime(t) + encode: the closest like-for-like with pydantic round-trip (see the validation parity table for the exact check overlap)",
+    "msgspec:decode+validate": "decode + cross-cutting validate() (no value scan)",
+    "msgspec:decode+validate(values)": "decode + validate(check_values=True): adds the O(n) value scans (value-vs-dataType, categorical, temporal lexical form, and monotonic axes, the last under the default, replaceable axis-order checker)",
+    "msgspec:decode+validate(values)+datetime": "the row above plus to_datetime() over every temporal coordinate: the closest like-for-like with pydantic decode (see the validation parity table for the exact check overlap)",
+    "msgspec:matched-full": "decode + validate(check_values=True) + to_datetime(t): full validation, including the monotonic and categorical checks pydantic omits",
+    "msgspec:matched-trim": "decode + validate(check_values=True, monotonic disabled) + to_datetime(t): trimmed to pydantic's check set for a like-for-like",
+    "pydantic:decode": "model_validate_json: structural decode + validation + datetime parsing, fused and mandatory",
+    "pydantic:encode": "model_dump_json",
+    "pydantic:roundtrip": "model_validate_json then model_dump_json",
+    "pydantic:decode+monotonic": "model_validate_json + a manual monotonic-axis scan, so pydantic does the same validation as msgspec's full pass"
+  },
+  "results": [
+    {
+      "cell": "point-series (small)",
+      "lib": "msgspec",
+      "op": "decode",
+      "status": "measured",
+      "median_us": 3.560680199880153,
+      "iqr_us": 0.1238798862323165,
+      "n": 100000,
+      "reason": null
+    },
+    {
+      "cell": "point-series (small)",
+      "lib": "msgspec",
+      "op": "encode",
+      "status": "measured",
+      "median_us": 1.1028720950707793,
+      "iqr_us": 0.016454837750643492,
+      "n": 200000,
+      "reason": null
+    },
+    {
+      "cell": "point-series (small)",
+      "lib": "msgspec",
+      "op": "roundtrip",
+      "status": "measured",
+      "median_us": 4.616503496654332,
+      "iqr_us": 0.1495287986472249,
+      "n": 50000,
+      "reason": null
+    },
+    {
+      "cell": "point-series (small)",
+      "lib": "msgspec",
+      "op": "matched-full",
+      "status": "measured",
+      "median_us": 30.488887894898653,
+      "iqr_us": 1.6230009030550718,
+      "n": 10000,
+      "reason": null
+    },
+    {
+      "cell": "point-series (small)",
+      "lib": "msgspec",
+      "op": "matched-trim",
+      "status": "measured",
+      "median_us": 28.073763800784945,
+      "iqr_us": 1.6173488576896489,
+      "n": 10000,
+      "reason": null
+    },
+    {
+      "cell": "point-series (small)",
+      "lib": "msgspec",
+      "op": "roundtrip(full)",
+      "status": "measured",
+      "median_us": 33.08266750536859,
+      "iqr_us": 1.487646042369306,
+      "n": 10000,
+      "reason": null
+    },
+    {
+      "cell": "point-series (small)",
+      "lib": "msgspec",
+      "op": "decode+validate",
+      "status": "measured",
+      "median_us": 19.470659142825752,
+      "iqr_us": 2.121852047275752,
+      "n": 20000,
+      "reason": null
+    },
+    {
+      "cell": "point-series (small)",
+      "lib": "msgspec",
+      "op": "decode+validate(values)",
+      "status": "measured",
+      "median_us": 25.20443231333047,
+      "iqr_us": 1.5499726869165897,
+      "n": 10000,
+      "reason": null
+    },
+    {
+      "cell": "point-series (small)",
+      "lib": "msgspec",
+      "op": "decode+validate(values)+datetime",
+      "status": "measured",
+      "median_us": 31.085635907948014,
+      "iqr_us": 0.9191532502882183,
+      "n": 10000,
+      "reason": null
+    },
+    {
+      "cell": "point-series (small)",
+      "lib": "pydantic",
+      "op": "decode",
+      "status": "measured",
+      "median_us": 50.000646244734526,
+      "iqr_us": 2.195023512467742,
+      "n": 5000,
+      "reason": null
+    },
+    {
+      "cell": "point-series (small)",
+      "lib": "pydantic",
+      "op": "encode",
+      "status": "measured",
+      "median_us": 15.748143906239418,
+      "iqr_us": 1.6458343481644988,
+      "n": 20000,
+      "reason": null
+    },
+    {
+      "cell": "point-series (small)",
+      "lib": "pydantic",
+      "op": "roundtrip",
+      "status": "measured",
+      "median_us": 93.46144809387624,
+      "iqr_us": 22.06676360219717,
+      "n": 2000,
+      "reason": null
+    },
+    {
+      "cell": "point-series (small)",
+      "lib": "pydantic",
+      "op": "decode+monotonic",
+      "status": "measured",
+      "median_us": 59.1894316021353,
+      "iqr_us": 2.493095677345991,
+      "n": 5000,
+      "reason": null
+    },
+    {
+      "cell": "grid (medium)",
+      "lib": "msgspec",
+      "op": "decode",
+      "status": "measured",
+      "median_us": 6.001301519572735,
+      "iqr_us": 0.1489495299756527,
+      "n": 50000,
+      "reason": null
+    },
+    {
+      "cell": "grid (medium)",
+      "lib": "msgspec",
+      "op": "encode",
+      "status": "measured",
+      "median_us": 2.314613990020007,
+      "iqr_us": 0.07635730202309787,
+      "n": 100000,
+      "reason": null
+    },
+    {
+      "cell": "grid (medium)",
+      "lib": "msgspec",
+      "op": "roundtrip",
+      "status": "measured",
+      "median_us": 8.395307739265263,
+      "iqr_us": 0.09190906770527363,
+      "n": 50000,
+      "reason": null
+    },
+    {
+      "cell": "grid (medium)",
+      "lib": "msgspec",
+      "op": "matched-full",
+      "status": "measured",
+      "median_us": 57.34197376295924,
+      "iqr_us": 2.1404291735962033,
+      "n": 5000,
+      "reason": null
+    },
+    {
+      "cell": "grid (medium)",
+      "lib": "msgspec",
+      "op": "matched-trim",
+      "status": "measured",
+      "median_us": 48.547468008473516,
+      "iqr_us": 1.996706728823483,
+      "n": 5000,
+      "reason": null
+    },
+    {
+      "cell": "grid (medium)",
+      "lib": "msgspec",
+      "op": "roundtrip(full)",
+      "status": "measured",
+      "median_us": 59.72522338852286,
+      "iqr_us": 0.8853544713929296,
+      "n": 5000,
+      "reason": null
+    },
+    {
+      "cell": "grid (medium)",
+      "lib": "msgspec",
+      "op": "decode+validate",
+      "status": "measured",
+      "median_us": 31.897336500696838,
+      "iqr_us": 1.4664403977803886,
+      "n": 10000,
+      "reason": null
+    },
+    {
+      "cell": "grid (medium)",
+      "lib": "msgspec",
+      "op": "decode+validate(values)",
+      "status": "measured",
+      "median_us": 52.42733042687178,
+      "iqr_us": 1.4582773204892874,
+      "n": 5000,
+      "reason": null
+    },
+    {
+      "cell": "grid (medium)",
+      "lib": "msgspec",
+      "op": "decode+validate(values)+datetime",
+      "status": "measured",
+      "median_us": 55.1358793862164,
+      "iqr_us": 0.5296968622133136,
+      "n": 5000,
+      "reason": null
+    },
+    {
+      "cell": "grid (medium)",
+      "lib": "pydantic",
+      "op": "decode",
+      "status": "measured",
+      "median_us": 53.8455612026155,
+      "iqr_us": 1.8230941146612167,
+      "n": 5000,
+      "reason": null
+    },
+    {
+      "cell": "grid (medium)",
+      "lib": "pydantic",
+      "op": "encode",
+      "status": "measured",
+      "median_us": 44.15525542572141,
+      "iqr_us": 1.3511955738067627,
+      "n": 5000,
+      "reason": null
+    },
+    {
+      "cell": "grid (medium)",
+      "lib": "pydantic",
+      "op": "roundtrip",
+      "status": "measured",
+      "median_us": 137.09875801578164,
+      "iqr_us": 5.516872683074325,
+      "n": 2000,
+      "reason": null
+    },
+    {
+      "cell": "grid (medium)",
+      "lib": "pydantic",
+      "op": "decode+monotonic",
+      "status": "measured",
+      "median_us": 76.19032678194344,
+      "iqr_us": 11.03093430865556,
+      "n": 5000,
+      "reason": null
+    },
+    {
+      "cell": "tiled-ndarray",
+      "lib": "msgspec",
+      "op": "decode",
+      "status": "measured",
+      "median_us": 2.3874434013850987,
+      "iqr_us": 0.07244396023452282,
+      "n": 100000,
+      "reason": null
+    },
+    {
+      "cell": "tiled-ndarray",
+      "lib": "msgspec",
+      "op": "encode",
+      "status": "measured",
+      "median_us": 0.7405876056291163,
+      "iqr_us": 0.019475454930216074,
+      "n": 500000,
+      "reason": null
+    },
+    {
+      "cell": "tiled-ndarray",
+      "lib": "msgspec",
+      "op": "roundtrip",
+      "status": "measured",
+      "median_us": 3.1030059698969126,
+      "iqr_us": 0.1000596338417381,
+      "n": 100000,
+      "reason": null
+    },
+    {
+      "cell": "tiled-ndarray",
+      "lib": "msgspec",
+      "op": "matched-full",
+      "status": "measured",
+      "median_us": 19.13766018114984,
+      "iqr_us": 0.5044663790613413,
+      "n": 5000,
+      "reason": null
+    },
+    {
+      "cell": "tiled-ndarray",
+      "lib": "msgspec",
+      "op": "matched-trim",
+      "status": "measured",
+      "median_us": 20.855501445475966,
+      "iqr_us": 1.72118324553594,
+      "n": 20000,
+      "reason": null
+    },
+    {
+      "cell": "tiled-ndarray",
+      "lib": "msgspec",
+      "op": "roundtrip(full)",
+      "status": "measured",
+      "median_us": 20.09666769299656,
+      "iqr_us": 0.3531809081323445,
+      "n": 10000,
+      "reason": null
+    },
+    {
+      "cell": "tiled-ndarray",
+      "lib": "msgspec",
+      "op": "decode+validate",
+      "status": "measured",
+      "median_us": 19.426676002331078,
+      "iqr_us": 0.729982543271035,
+      "n": 10000,
+      "reason": null
+    },
+    {
+      "cell": "tiled-ndarray",
+      "lib": "msgspec",
+      "op": "decode+validate(values)",
+      "status": "measured",
+      "median_us": 18.934341508429497,
+      "iqr_us": 0.6268934230320156,
+      "n": 20000,
+      "reason": null
+    },
+    {
+      "cell": "tiled-ndarray",
+      "lib": "msgspec",
+      "op": "decode+validate(values)+datetime",
+      "status": "skipped",
+      "median_us": null,
+      "iqr_us": null,
+      "n": null,
+      "reason": "no-temporal-axis"
+    },
+    {
+      "cell": "tiled-ndarray",
+      "lib": "pydantic",
+      "op": "decode",
+      "status": "measured",
+      "median_us": 9.74282159935683,
+      "iqr_us": 0.4459774121642113,
+      "n": 50000,
+      "reason": null
+    },
+    {
+      "cell": "tiled-ndarray",
+      "lib": "pydantic",
+      "op": "encode",
+      "status": "measured",
+      "median_us": 4.458528021350503,
+      "iqr_us": 0.2777525596320629,
+      "n": 50000,
+      "reason": null
+    },
+    {
+      "cell": "tiled-ndarray",
+      "lib": "pydantic",
+      "op": "roundtrip",
+      "status": "measured",
+      "median_us": 15.182124299462885,
+      "iqr_us": 0.3326267993543297,
+      "n": 20000,
+      "reason": null
+    },
+    {
+      "cell": "tiled-ndarray",
+      "lib": "pydantic",
+      "op": "decode+monotonic",
+      "status": "measured",
+      "median_us": 16.67281665140763,
+      "iqr_us": 0.13421710464172065,
+      "n": 20000,
+      "reason": null
+    },
+    {
+      "cell": "coverage-collection",
+      "lib": "msgspec",
+      "op": "decode",
+      "status": "measured",
+      "median_us": 12.315645709168166,
+      "iqr_us": 0.40491370600648224,
+      "n": 20000,
+      "reason": null
+    },
+    {
+      "cell": "coverage-collection",
+      "lib": "msgspec",
+      "op": "encode",
+      "status": "measured",
+      "median_us": 4.03862833045423,
+      "iqr_us": 0.156463062157854,
+      "n": 100000,
+      "reason": null
+    },
+    {
+      "cell": "coverage-collection",
+      "lib": "msgspec",
+      "op": "roundtrip",
+      "status": "measured",
+      "median_us": 16.35344389360398,
+      "iqr_us": 0.5853785725776106,
+      "n": 20000,
+      "reason": null
+    },
+    {
+      "cell": "coverage-collection",
+      "lib": "msgspec",
+      "op": "matched-full",
+      "status": "measured",
+      "median_us": 153.26692711096257,
+      "iqr_us": 2.5902604684233665,
+      "n": 2000,
+      "reason": null
+    },
+    {
+      "cell": "coverage-collection",
+      "lib": "msgspec",
+      "op": "matched-trim",
+      "status": "measured",
+      "median_us": 128.0996419955045,
+      "iqr_us": 7.1761939325369895,
+      "n": 2000,
+      "reason": null
+    },
+    {
+      "cell": "coverage-collection",
+      "lib": "msgspec",
+      "op": "roundtrip(full)",
+      "status": "measured",
+      "median_us": 180.2066155942157,
+      "iqr_us": 15.235357452183962,
+      "n": 2000,
+      "reason": null
+    },
+    {
+      "cell": "coverage-collection",
+      "lib": "msgspec",
+      "op": "decode+validate",
+      "status": "measured",
+      "median_us": 88.29405000433326,
+      "iqr_us": 2.5848694145679474,
+      "n": 5000,
+      "reason": null
+    },
+    {
+      "cell": "coverage-collection",
+      "lib": "msgspec",
+      "op": "decode+validate(values)",
+      "status": "measured",
+      "median_us": 148.1125825084746,
+      "iqr_us": 2.92538502253592,
+      "n": 2000,
+      "reason": null
+    },
+    {
+      "cell": "coverage-collection",
+      "lib": "msgspec",
+      "op": "decode+validate(values)+datetime",
+      "status": "measured",
+      "median_us": 156.81735204998404,
+      "iqr_us": 6.313926423899829,
+      "n": 2000,
+      "reason": null
+    },
+    {
+      "cell": "coverage-collection",
+      "lib": "pydantic",
+      "op": "decode",
+      "status": "measured",
+      "median_us": 159.46310141589493,
+      "iqr_us": 8.659167564474046,
+      "n": 2000,
+      "reason": null
+    },
+    {
+      "cell": "coverage-collection",
+      "lib": "pydantic",
+      "op": "encode",
+      "status": "measured",
+      "median_us": 47.53563818521798,
+      "iqr_us": 0.6802578922361135,
+      "n": 5000,
+      "reason": null
+    },
+    {
+      "cell": "coverage-collection",
+      "lib": "pydantic",
+      "op": "roundtrip",
+      "status": "measured",
+      "median_us": 228.3674250356853,
+      "iqr_us": 3.5329910460859537,
+      "n": 1000,
+      "reason": null
+    },
+    {
+      "cell": "coverage-collection",
+      "lib": "pydantic",
+      "op": "decode+monotonic",
+      "status": "measured",
+      "median_us": 153.9832439739257,
+      "iqr_us": 5.750177486333996,
+      "n": 2000,
+      "reason": null
+    },
+    {
+      "cell": "grid-large (synthetic)",
+      "lib": "msgspec",
+      "op": "decode",
+      "status": "measured",
+      "median_us": 1598.139083944261,
+      "iqr_us": 38.408705149777234,
+      "n": 200,
+      "reason": null
+    },
+    {
+      "cell": "grid-large (synthetic)",
+      "lib": "msgspec",
+      "op": "encode",
+      "status": "measured",
+      "median_us": 2751.8126904033124,
+      "iqr_us": 79.59131617099047,
+      "n": 100,
+      "reason": null
+    },
+    {
+      "cell": "grid-large (synthetic)",
+      "lib": "msgspec",
+      "op": "roundtrip",
+      "status": "measured",
+      "median_us": 4271.928360685706,
+      "iqr_us": 299.32686826214194,
+      "n": 50,
+      "reason": null
+    },
+    {
+      "cell": "grid-large (synthetic)",
+      "lib": "msgspec",
+      "op": "matched-full",
+      "status": "measured",
+      "median_us": 12047.140044160187,
+      "iqr_us": 539.4771986175328,
+      "n": 20,
+      "reason": null
+    },
+    {
+      "cell": "grid-large (synthetic)",
+      "lib": "msgspec",
+      "op": "matched-trim",
+      "status": "measured",
+      "median_us": 11926.206049975008,
+      "iqr_us": 146.34733088314533,
+      "n": 20,
+      "reason": null
+    },
+    {
+      "cell": "grid-large (synthetic)",
+      "lib": "msgspec",
+      "op": "roundtrip(full)",
+      "status": "measured",
+      "median_us": 14740.296453237534,
+      "iqr_us": 554.4690822716802,
+      "n": 20,
+      "reason": null
+    },
+    {
+      "cell": "grid-large (synthetic)",
+      "lib": "msgspec",
+      "op": "decode+validate",
+      "status": "measured",
+      "median_us": 1603.4815099556,
+      "iqr_us": 56.073995074257255,
+      "n": 200,
+      "reason": null
+    },
+    {
+      "cell": "grid-large (synthetic)",
+      "lib": "msgspec",
+      "op": "decode+validate(values)",
+      "status": "measured",
+      "median_us": 11917.198705486953,
+      "iqr_us": 231.70809727162123,
+      "n": 20,
+      "reason": null
+    },
+    {
+      "cell": "grid-large (synthetic)",
+      "lib": "msgspec",
+      "op": "decode+validate(values)+datetime",
+      "status": "skipped",
+      "median_us": null,
+      "iqr_us": null,
+      "n": null,
+      "reason": "no-temporal-axis"
+    },
+    {
+      "cell": "grid-large (synthetic)",
+      "lib": "pydantic",
+      "op": "decode",
+      "status": "measured",
+      "median_us": 6689.770519733429,
+      "iqr_us": 88.61311944201589,
+      "n": 50,
+      "reason": null
+    },
+    {
+      "cell": "grid-large (synthetic)",
+      "lib": "pydantic",
+      "op": "encode",
+      "status": "measured",
+      "median_us": 4998.684958554804,
+      "iqr_us": 99.31710781529546,
+      "n": 50,
+      "reason": null
+    },
+    {
+      "cell": "grid-large (synthetic)",
+      "lib": "pydantic",
+      "op": "roundtrip",
+      "status": "measured",
+      "median_us": 12096.859840676188,
+      "iqr_us": 328.267301665619,
+      "n": 20,
+      "reason": null
+    },
+    {
+      "cell": "grid-large (synthetic)",
+      "lib": "pydantic",
+      "op": "decode+monotonic",
+      "status": "measured",
+      "median_us": 7441.33850093931,
+      "iqr_us": 513.3013590238988,
+      "n": 50,
+      "reason": null
+    }
+  ],
+  "probes": [
+    {
+      "cell": "naive datetime",
+      "lib": "msgspec",
+      "op": "decode",
+      "status": "measured",
+      "median_us": 3.3498832606710494,
+      "iqr_us": 0.12027574586682022,
+      "n": 100000,
+      "reason": null
+    },
+    {
+      "cell": "naive datetime",
+      "lib": "pydantic",
+      "op": "decode",
+      "status": "skipped",
+      "median_us": null,
+      "iqr_us": null,
+      "n": null,
+      "reason": "ValidationError: Input should have timezone info"
+    },
+    {
+      "cell": "date-only t",
+      "lib": "msgspec",
+      "op": "decode",
+      "status": "measured",
+      "median_us": 3.2424613600596786,
+      "iqr_us": 0.06935976794920862,
+      "n": 100000,
+      "reason": null
+    },
+    {
+      "cell": "date-only t",
+      "lib": "pydantic",
+      "op": "decode",
+      "status": "skipped",
+      "median_us": null,
+      "iqr_us": null,
+      "n": null,
+      "reason": "ValidationError: Input should have timezone info"
+    },
+    {
+      "cell": "year-month t",
+      "lib": "msgspec",
+      "op": "decode",
+      "status": "measured",
+      "median_us": 3.2363368407823145,
+      "iqr_us": 0.1270842319354415,
+      "n": 100000,
+      "reason": null
+    },
+    {
+      "cell": "year-month t",
+      "lib": "pydantic",
+      "op": "decode",
+      "status": "skipped",
+      "median_us": null,
+      "iqr_us": null,
+      "n": null,
+      "reason": "ValidationError: Input should be a valid datetime or date, input is too short"
+    },
+    {
+      "cell": "extra custom axis",
+      "lib": "msgspec",
+      "op": "decode",
+      "status": "measured",
+      "median_us": 2.9001935105770826,
+      "iqr_us": 0.2400243899319321,
+      "n": 100000,
+      "reason": null
+    },
+    {
+      "cell": "extra custom axis",
+      "lib": "pydantic",
+      "op": "decode",
+      "status": "skipped",
+      "median_us": null,
+      "iqr_us": null,
+      "n": null,
+      "reason": "ValidationError: Extra inputs are not permitted"
+    },
+    {
+      "cell": "mixed-type axis",
+      "lib": "msgspec",
+      "op": "decode",
+      "status": "measured",
+      "median_us": 2.3193042911589146,
+      "iqr_us": 0.12481818557716906,
+      "n": 100000,
+      "reason": null
+    },
+    {
+      "cell": "mixed-type axis",
+      "lib": "pydantic",
+      "op": "decode",
+      "status": "skipped",
+      "median_us": null,
+      "iqr_us": null,
+      "n": null,
+      "reason": "ValidationError: Input should be a valid number, unable to parse string as a number"
+    }
+  ],
+  "probe_notes": {
+    "naive datetime": "a full-form t value with no timezone",
+    "date-only t": "a reduced-precision date (spec form YYYY-MM-DD)",
+    "year-month t": "a reduced-precision month (spec form YYYY-MM)",
+    "extra custom axis": "a domain axis beyond the fixed x/y/z/t/composite slots",
+    "mixed-type axis": "one axis mixing numeric and string values"
+  }
+}

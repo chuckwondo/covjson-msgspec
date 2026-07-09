@@ -103,7 +103,6 @@ dev = [
 typecheck = [ "basedpyright>=1.21" ]
 bench = [
   "covjson-msgspec[all]",
-  "pytest-benchmark>=4.0",
   "covjson-pydantic>=0.7",
 ]
 
