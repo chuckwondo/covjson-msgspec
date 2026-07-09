@@ -30,6 +30,8 @@ from covjson_msgspec import (
 )
 from covjson_msgspec.range import TileSet
 from covjson_msgspec.validation import (
+    CoverageDomainTypeConflict,
+    CoverageDomainTypeNotOmitted,
     CoverageMissingParameters,
     CoverageRangeAxisNotInDomain,
     CoverageRangeShapeMismatch,
@@ -38,6 +40,7 @@ from covjson_msgspec.validation import (
     DomainCompositeDataType,
     DomainExtraAxisNotSingle,
     DomainMissingAxis,
+    DomainMissingDomainType,
     DomainMissingReferencing,
     I18nEmpty,
     I18nInvalidLanguageTag,
@@ -338,6 +341,135 @@ def test_missing_referencing_on_standalone_domain() -> None:
     assert issue.code == "domain.missing-referencing"
     assert issue.at == "/referencing"
     assert issue.severity is Severity.ERROR
+
+
+def test_missing_domain_type_on_standalone_domain_is_a_warning() -> None:
+    # A domain carrying referencing but no domainType isolates the SHOULD
+    # (Spec 6.1 RECOMMENDS domainType): a warning, not an error.
+    domain = Domain(axes={"x": Axis.listed((1.0,))}, referencing=_REF)
+    (issue,) = validate(domain)
+
+    assert isinstance(issue, DomainMissingDomainType)
+    assert issue.at == "/domainType"
+    assert issue.severity is Severity.WARNING
+
+
+def test_empty_string_domain_type_is_treated_as_missing() -> None:
+    # An empty-string domainType is present but meaningless, so it draws the same
+    # recommended-member warning as an absent one.
+    domain = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="", referencing=_REF)
+    (issue,) = validate(domain)
+
+    assert isinstance(issue, DomainMissingDomainType)
+    assert issue.severity is Severity.WARNING
+
+
+def test_coverage_domain_type_suppresses_the_inline_domain_warning() -> None:
+    # The inline domain omits domainType, but the coverage supplies it, so the
+    # effective type is known and no missing-domainType warning fires.
+    coverage = Coverage(
+        domain=Domain(
+            axes={"x": Axis.listed((1.0,)), "y": Axis.listed((2.0,))},
+            referencing=_REF,
+        ),
+        domain_type="Point",
+        ranges={},
+        parameters={},
+    )
+
+    assert all(i.code != "domain.missing-domain-type" for i in validate(coverage))
+
+
+def test_collection_member_repeating_domain_type_warns() -> None:
+    # The collection provides domainType="Point"; a member restating it at the
+    # coverage level SHOULD have omitted it (Spec 6.4): a warning.
+    member = Coverage(
+        domain=Domain(
+            axes={"x": Axis.listed((1.0,)), "y": Axis.listed((2.0,))},
+            referencing=_REF,
+        ),
+        domain_type="Point",
+        ranges={},
+    )
+    collection = CoverageCollection(
+        coverages=(member,), domain_type="Point", parameters={}
+    )
+
+    (issue,) = [
+        i for i in validate(collection) if isinstance(i, CoverageDomainTypeNotOmitted)
+    ]
+    assert issue.at == "/coverages/0/domainType"
+    assert issue.domain_type == "Point"
+    assert issue.severity is Severity.WARNING
+
+
+def test_collection_member_conflicting_domain_type_is_an_error() -> None:
+    # The collection indicates it holds only "Point" coverages; a member declaring
+    # "Grid" falsifies that claim (Spec 6.5): an error, not a SHOULD-omit warning.
+    member = Coverage(
+        domain=Domain(
+            axes={"x": Axis.listed((1.0,)), "y": Axis.listed((2.0,))},
+            referencing=_REF,
+        ),
+        domain_type="Grid",
+        ranges={},
+    )
+    collection = CoverageCollection(
+        coverages=(member,), domain_type="Point", parameters={}
+    )
+
+    (issue,) = [
+        i for i in validate(collection) if isinstance(i, CoverageDomainTypeConflict)
+    ]
+    assert issue.at == "/coverages/0/domainType"
+    assert issue.domain_type == "Grid"
+    assert issue.collection_domain_type == "Point"
+    assert issue.severity is Severity.ERROR
+
+
+def test_collection_member_conflict_declared_on_inline_domain() -> None:
+    # The member omits its coverage-level domainType but its inline domain declares
+    # "Grid", conflicting with the "Point" collection. The conflict is caught from
+    # the declared (effective) type, and the finding points at the domain.
+    member = Coverage(
+        domain=Domain(
+            axes={"x": Axis.listed((1.0,)), "y": Axis.listed((2.0,))},
+            domain_type="Grid",
+            referencing=_REF,
+        ),
+        ranges={},
+    )
+    collection = CoverageCollection(
+        coverages=(member,), domain_type="Point", parameters={}
+    )
+
+    (issue,) = [
+        i for i in validate(collection) if isinstance(i, CoverageDomainTypeConflict)
+    ]
+    assert issue.at == "/coverages/0/domain/domainType"
+    assert issue.domain_type == "Grid"
+    assert issue.collection_domain_type == "Point"
+    assert issue.severity is Severity.ERROR
+
+
+def test_collection_member_omitting_domain_type_is_not_flagged() -> None:
+    # A member that omits domainType inherits the collection's; the raw-vs-resolved
+    # split means it draws neither the not-omitted warning nor a missing-domainType
+    # warning.
+    member = Coverage(
+        domain=Domain(
+            axes={"x": Axis.listed((1.0,)), "y": Axis.listed((2.0,))},
+            referencing=_REF,
+        ),
+        ranges={},
+    )
+    collection = CoverageCollection(
+        coverages=(member,), domain_type="Point", parameters={}
+    )
+    codes = {i.code for i in validate(collection)}
+
+    assert "coverage.domain-type-not-omitted" not in codes
+    assert "domain.missing-domain-type" not in codes
 
 
 def test_temporal_lexical_form_check_is_opt_in() -> None:
@@ -661,8 +793,9 @@ def test_i18n_invalid_tag_in_crs_description() -> None:
 
 
 def test_i18n_invalid_tag_in_identifier_rs_identifiers() -> None:
-    # No domain_type set: isolates the i18n check from the axis-rule checks a
-    # "Point" domain_type would otherwise also require (see the _REF comment).
+    # A custom-URI domain_type satisfies the domainType SHOULD (else a
+    # domain.missing-domain-type warning) without imposing the axis-rule checks a
+    # well-known type like "Point" would, isolating the i18n check.
     ref = (
         ReferenceSystemConnection(
             coordinates=("x",),
@@ -672,7 +805,11 @@ def test_i18n_invalid_tag_in_identifier_rs_identifiers() -> None:
             ),
         ),
     )
-    domain = Domain(axes={"x": Axis.listed((1.0,))}, referencing=ref)
+    domain = Domain(
+        axes={"x": Axis.listed((1.0,))},
+        domain_type="http://example/Custom",
+        referencing=ref,
+    )
     (issue,) = validate(domain)
 
     assert issue.code == "i18n.invalid-language-tag"
@@ -684,7 +821,13 @@ def test_i18n_valid_tags_including_und_are_not_flagged() -> None:
         ObservedProperty(label=i18n("Air temperature", en="Air temperature")),
         Unit(label={"en": "kelvin"}, symbol="K"),
     )
-    domain = Domain(axes={"x": Axis.listed((1.0,))}, referencing=_REF)
+    # A custom-URI domain_type keeps the document clean (no missing-domainType
+    # warning) without triggering axis rules, so this isolates the i18n check.
+    domain = Domain(
+        axes={"x": Axis.listed((1.0,))},
+        domain_type="http://example/Custom",
+        referencing=_REF,
+    )
     cov = Coverage(domain=domain, ranges={}, parameters={"t": temp})
 
     assert validate(cov) == []
@@ -772,6 +915,7 @@ def _describe(issue: Issue) -> str:
             | DomainCompositeDataType()
             | DomainExtraAxisNotSingle()
             | DomainMissingReferencing()
+            | DomainMissingDomainType()
         ):
             return "domain"
         case NdArrayShapeRank() | NdArrayValueCount():
@@ -789,6 +933,8 @@ def _describe(issue: Issue) -> str:
             | CoverageRangeWithoutParameter()
             | CoverageRangeAxisNotInDomain()
             | CoverageRangeShapeMismatch()
+            | CoverageDomainTypeNotOmitted()
+            | CoverageDomainTypeConflict()
         ):
             return "coverage"
         case RangeValueTypeMismatch() | RangeInvalidCategoryCode():

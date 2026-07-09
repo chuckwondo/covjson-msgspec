@@ -1,0 +1,22 @@
+{
+  "type": "CoverageCollection",
+  "domainType": "Point",
+  "parameters": {},
+  "referencing": [
+    { "coordinates": ["x", "y"], "system": { "type": "GeographicCRS" } }
+  ],
+  "coverages": [
+    {
+      "type": "Coverage",
+      "domainType": "Grid",
+      "domain": {
+        "type": "Domain",
+        "axes": {
+          "x": { "values": [1.0, 2.0] },
+          "y": { "values": [3.0] }
+        }
+      },
+      "ranges": {}
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "type": "Domain",
+  "axes": {
+    "x": { "values": [1.0] },
+    "y": { "values": [2.0] }
+  },
+  "referencing": [
+    { "coordinates": ["x", "y"], "system": { "type": "GeographicCRS" } }
+  ]
+}
