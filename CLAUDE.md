@@ -188,8 +188,8 @@ uv run ruff check                # lint
 uv run ruff format               # format
 uv run mypy                      # strict; blocking in CI
 uv run basedpyright              # strict; blocking in CI (needs typecheck group)
-uvx ty check src tests           # informational
-uvx pyrefly check src tests      # informational
+uvx ty check                     # informational
+uvx pyrefly check                # informational
 uv run prek run --all-files      # the pre-commit suite
 ```
 

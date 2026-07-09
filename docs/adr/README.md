@@ -56,6 +56,9 @@ CLAUDE.md.
 - [ADR-0010](0010-dependency-floor-policy.md): dependency floor policy: floors
   are the lowest wheeled version providing the APIs used, tested at both
   `lowest-direct` and `highest`, raised only deliberately (never by Dependabot)
+- [ADR-0011](0011-axis-ordering-checker-seam.md): the monotonic-axis MUST behind
+  an injected `AxisOrderChecker` seam with a conservative `require_monotonic`
+  default; a single total classifier decides which reference systems order
 
 Some decisions are recorded in ADRs that land with their implementation rather
 than here; see the issue tracker for the in-flight set.

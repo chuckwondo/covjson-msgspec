@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 from covjson_msgspec.coverage import Range
 from covjson_msgspec.domain import Domain
 from covjson_msgspec.range import NdArray
-from covjson_msgspec.referencing import TemporalRS
+from covjson_msgspec.referencing import ReferenceSystem, TemporalRS
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -229,6 +229,81 @@ def broadcast(
     return np.broadcast_to(array.reshape(shape), full).ravel()
 
 
+def is_standard_calendar(rs: TemporalRS) -> bool:
+    """Whether a temporal system's calendar is one that maps to real datetimes.
+
+    The calendar is matched on its final path segment, lower-cased, against
+    `STANDARD_CALENDARS`, so both a bare ``"Gregorian"`` and a URI like
+    ``".../calendars/Gregorian"`` are recognized. A non-standard calendar (e.g.
+    ``"360_day"``) has no ``datetime64`` representation, and the stdlib
+    `~covjson_msgspec.temporal.resolve` understands only the Gregorian forms, so
+    callers leave those coordinates as ISO strings and skip datetime comparison.
+
+    Parameters
+    ----------
+    rs
+        The temporal reference system whose ``calendar`` is tested.
+
+    Returns
+    -------
+    bool
+        ``True`` when the calendar's final path segment (lower-cased) is one of
+        `STANDARD_CALENDARS`.
+
+    Examples
+    --------
+    >>> from covjson_msgspec.referencing import TemporalRS
+    >>> is_standard_calendar(TemporalRS(calendar="Gregorian"))
+    True
+    >>> is_standard_calendar(
+    ...     TemporalRS(calendar="http://example.org/calendars/Gregorian")
+    ... )
+    True
+    >>> is_standard_calendar(TemporalRS(calendar="360_day"))
+    False
+    """
+    return rs.calendar.rsplit("/", 1)[-1].lower() in STANDARD_CALENDARS
+
+
+def coordinate_systems(domain: Domain) -> dict[str, ReferenceSystem]:
+    """Index a domain's referencing by coordinate identifier.
+
+    Flattens the domain's reference-system connections (each of which ties one or
+    more coordinates to a system) into a flat ``coordinate -> system`` lookup, so
+    a caller can ask "which system governs ``t``?" in O(1).
+
+    Parameters
+    ----------
+    domain
+        The domain whose `~Domain.referencing` is indexed.
+
+    Returns
+    -------
+    dict
+        Each coordinate identifier mapped to its governing reference system.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain
+    >>> from covjson_msgspec.referencing import ReferenceSystemConnection, TemporalRS
+    >>> dom = Domain(
+    ...     axes={"t": Axis.listed(("2020-01-01T00:00:00Z",))},
+    ...     referencing=[
+    ...         ReferenceSystemConnection(
+    ...             coordinates=("t",), system=TemporalRS(calendar="Gregorian")
+    ...         )
+    ...     ],
+    ... )
+    >>> coordinate_systems(dom)["t"].calendar
+    'Gregorian'
+    """
+    return {
+        coordinate: connection.system
+        for connection in domain.referencing
+        for coordinate in connection.coordinates
+    }
+
+
 def temporal_coordinates(domain: Domain) -> set[str]:
     """The coordinate identifiers governed by a standard-calendar temporal system.
 
@@ -290,11 +365,10 @@ def temporal_coordinates(domain: Domain) -> set[str]:
     coordinates: set[str] = set()
 
     for connection in domain.referencing:
-        if isinstance(system := connection.system, TemporalRS):
-            calendar = system.calendar.rsplit("/", 1)[-1].lower()
-
-            if calendar in STANDARD_CALENDARS:
-                coordinates.update(connection.coordinates)
+        if isinstance(system := connection.system, TemporalRS) and is_standard_calendar(
+            system
+        ):
+            coordinates.update(connection.coordinates)
 
     return coordinates
 

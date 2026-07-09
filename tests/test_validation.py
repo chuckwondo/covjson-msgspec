@@ -1,5 +1,6 @@
 """Behavioral tests for document-level validation."""
 
+from collections.abc import Sequence
 from typing import assert_never
 
 import msgspec
@@ -28,14 +29,18 @@ from covjson_msgspec import (
     i18n,
     validate,
 )
+from covjson_msgspec.axis import AxisValue
 from covjson_msgspec.range import TileSet
+from covjson_msgspec.referencing import ReferenceSystem
 from covjson_msgspec.validation import (
+    AxisOrderChecker,
     CoverageDomainTypeConflict,
     CoverageDomainTypeNotOmitted,
     CoverageMissingParameters,
     CoverageRangeAxisNotInDomain,
     CoverageRangeShapeMismatch,
     CoverageRangeWithoutParameter,
+    DomainAxisNotMonotonic,
     DomainAxisNotSingle,
     DomainCompositeDataType,
     DomainExtraAxisNotSingle,
@@ -55,6 +60,7 @@ from covjson_msgspec.validation import (
     TiledNdArrayTileShapeTooLarge,
     TiledNdArrayUrlTemplateMissingVariable,
     TiledNdArrayUrlTemplateUnknownVariable,
+    require_monotonic,
 )
 
 # A minimal valid referencing array. Domains and coverages built for the
@@ -888,6 +894,195 @@ def test_every_finding_kind_is_exhaustively_matchable() -> None:
     assert {_describe(i) for i in validate(domain)} == {"domain"}
 
 
+def test_axis_monotonic_check_is_opt_in() -> None:
+    domain = _axis_domain(Axis.listed((0.0, 2.0, 1.0)), GeographicCRS())
+
+    # Off by default: the value array is not scanned.
+    assert not any(i.code == "domain.axis-not-monotonic" for i in validate(domain))
+
+    # Opt in: the reversal is flagged as an error, at the offending index.
+    (issue,) = [
+        i
+        for i in validate(domain, check_values=True)
+        if isinstance(i, DomainAxisNotMonotonic)
+    ]
+    assert issue.axis == "x"
+    assert issue.at == "/axes/x/values/2"
+    assert issue.severity is Severity.ERROR
+
+
+@pytest.mark.parametrize(
+    ("values", "expected"),
+    [
+        ((0.0, 1.0, 2.0), []),  # increasing
+        ((2.0, 1.0, 0.0), []),  # decreasing is monotonic too
+        ((0.0, 2.0, 1.0), ["/axes/x/values/2"]),  # reversal at index 2
+        ((0.0, 1.0, 1.0, 3.0), []),  # equal-adjacent ok (non-strict default)
+        ((5.0,), []),  # a single value is trivially ordered
+    ],
+)
+def test_numeric_axis_monotonicity(
+    values: tuple[float, ...], expected: list[str]
+) -> None:
+    domain = _axis_domain(Axis.listed(values), GeographicCRS())
+
+    assert _monotonic_paths(domain) == expected
+
+
+def test_regular_axis_is_skipped() -> None:
+    # A regular (start/stop/num) axis has `values is None`, so the check skips it
+    # (it is monotonic by construction regardless). This guards that skip: without
+    # it the checker would reach `enumerate(None)` and raise.
+    domain = _axis_domain(Axis.regular(10.0, 0.0, 5), GeographicCRS())
+
+    assert _monotonic_paths(domain) == []
+
+
+def test_numeric_axis_with_nan_is_not_falsely_flagged() -> None:
+    # NaN is unordered and not equal to itself, so it is skipped rather than
+    # corrupting the walk: an otherwise-increasing axis is not flagged, and a real
+    # reversal elsewhere is still reported at its true index.
+    increasing = _axis_domain(
+        Axis.listed((1.0, 2.0, float("nan"), 3.0)), GeographicCRS()
+    )
+    assert _monotonic_paths(increasing) == []
+
+    reversal = _axis_domain(Axis.listed((float("nan"), 1.0, 3.0, 2.0)), GeographicCRS())
+    assert _monotonic_paths(reversal) == ["/axes/x/values/3"]
+
+
+def test_strict_checker_flags_equal_adjacent_values() -> None:
+    domain = _axis_domain(Axis.listed((0.0, 0.0, 1.0)), GeographicCRS())
+
+    # The default is non-strict, so equal-adjacent values pass.
+    assert _monotonic_paths(domain) == []
+
+    # A strict checker treats the repeat as a break, at the second value.
+    assert _monotonic_paths(domain, require_monotonic(strict=True)) == [
+        "/axes/x/values/1"
+    ]
+
+
+def test_time_axis_reversal_is_flagged() -> None:
+    domain = _axis_domain(
+        Axis.listed(
+            (
+                "2020-01-01T00:00:00Z",
+                "2020-01-03T00:00:00Z",
+                "2020-01-02T00:00:00Z",
+            )
+        ),
+        TemporalRS(calendar="Gregorian"),
+        coord="t",
+    )
+
+    assert _monotonic_paths(domain) == ["/axes/t/values/2"]
+
+
+def test_time_axis_ordered_by_instant_not_string() -> None:
+    # The instants 05:00Z, 07:00Z, 09:00Z increase, though the raw strings
+    # ("05", "02", "09") do not: proof the check compares resolved instants, not
+    # the lexical values (which would flag a reversal at index 2).
+    domain = _axis_domain(
+        Axis.listed(
+            (
+                "2020-01-01T05:00:00Z",
+                "2020-01-01T02:00:00-05:00",
+                "2020-01-01T09:00:00Z",
+            )
+        ),
+        TemporalRS(calendar="Gregorian"),
+        coord="t",
+    )
+
+    assert _monotonic_paths(domain) == []
+
+
+def test_non_standard_calendar_time_axis_is_skipped() -> None:
+    domain = _axis_domain(
+        Axis.listed(
+            (
+                "2020-01-01T00:00:00Z",
+                "2020-01-03T00:00:00Z",
+                "2020-01-02T00:00:00Z",
+            )
+        ),
+        TemporalRS(calendar="360_day"),
+        coord="t",
+    )
+
+    assert _monotonic_paths(domain) == []
+
+
+def test_mixed_awareness_time_axis_is_skipped() -> None:
+    # An aware second-precision moment and naive day-precision moments are not
+    # comparable, so the axis is skipped rather than raising or fabricating a
+    # zone; comparing a naive and an aware datetime would raise TypeError.
+    domain = _axis_domain(
+        Axis.listed(("2020-01-01", "2020-01-03T00:00:00Z", "2020-01-02")),
+        TemporalRS(calendar="Gregorian"),
+        coord="t",
+    )
+
+    assert _monotonic_paths(domain) == []
+
+
+def test_malformed_temporal_value_is_not_double_reported() -> None:
+    # A malformed value is the temporal.lexical-form check's finding; the
+    # monotonic check compares only resolvable moments, so it is not re-reported.
+    domain = _axis_domain(
+        Axis.listed(("2020-01-01T00:00:00Z", "nope", "2020-01-02T00:00:00Z")),
+        TemporalRS(calendar="Gregorian"),
+        coord="t",
+    )
+
+    codes = {i.code for i in validate(domain, check_values=True)}
+
+    assert "temporal.lexical-form" in codes
+    assert "domain.axis-not-monotonic" not in codes
+
+
+def test_identifier_axis_with_integer_codes_is_not_flagged() -> None:
+    # An identifier system defines no ordering, so integer codes in an arbitrary
+    # order are conformant (keying on "the value is numeric" would false-positive).
+    ids = IdentifierRS(target_concept=Concept(label=i18n("class")))
+    domain = _axis_domain(Axis.listed((3, 1, 2)), ids, coord="c")
+
+    assert _monotonic_paths(domain) == []
+
+
+def test_axis_without_reference_system_is_skipped() -> None:
+    # The MUST is conditional on a reference system that defines an ordering, so a
+    # numeric axis with no system in scope is not flagged.
+    domain = Domain(axes={"x": Axis.listed((0.0, 2.0, 1.0))})
+
+    assert _monotonic_paths(domain) == []
+
+
+def test_custom_axis_order_checker_overrides_the_default() -> None:
+    # The seam can flag what the default skips: here, an identifier axis, held to
+    # a strictly-descending order by a caller-supplied policy.
+    def strictly_descending(
+        values: Sequence[AxisValue], system: ReferenceSystem | None
+    ) -> int | None:
+        for i in range(1, len(values)):
+            previous, current = values[i - 1], values[i]
+
+            if (
+                isinstance(previous, (int, float))
+                and isinstance(current, (int, float))
+                and current >= previous
+            ):
+                return i
+
+        return None
+
+    ids = IdentifierRS(target_concept=Concept(label=i18n("class")))
+    domain = _axis_domain(Axis.listed((3, 2, 5)), ids, coord="c")
+
+    assert _monotonic_paths(domain, strictly_descending) == ["/axes/c/values/2"]
+
+
 def _value_type_paths(issues: list[Issue]) -> list[str]:
     """Paths of the value-type-mismatch issues, in document order."""
     return [i.at for i in issues if i.code == "range.value-type-mismatch"]
@@ -914,6 +1109,7 @@ def _describe(issue: Issue) -> str:
             | DomainAxisNotSingle()
             | DomainCompositeDataType()
             | DomainExtraAxisNotSingle()
+            | DomainAxisNotMonotonic()
             | DomainMissingReferencing()
             | DomainMissingDomainType()
         ):
@@ -947,3 +1143,19 @@ def _describe(issue: Issue) -> str:
             return "i18n"
         case _:
             assert_never(issue)
+
+
+def _axis_domain(axis: Axis, system: ReferenceSystem, coord: str = "x") -> Domain:
+    """A one-axis domain wiring ``coord`` to ``system`` (isolates the axis check)."""
+    return Domain(
+        axes={coord: axis},
+        referencing=(ReferenceSystemConnection(coordinates=(coord,), system=system),),
+    )
+
+
+def _monotonic_paths(
+    domain: Domain, checker: AxisOrderChecker | None = None
+) -> list[str]:
+    """The ``at`` pointers of the domain's ``domain.axis-not-monotonic`` issues."""
+    issues = validate(domain, check_values=True, axis_order_checker=checker)
+    return [i.at for i in issues if i.code == "domain.axis-not-monotonic"]

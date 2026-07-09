@@ -34,6 +34,10 @@ file = "domain-extra-axis-not-single.json"
 issues = [{ code = "domain.extra-axis-not-single", severity = "error" }]
 
 [[case]]
+file = "axis-not-monotonic.json"
+issues = [{ code = "domain.axis-not-monotonic", severity = "error" }]
+
+[[case]]
 file = "coverage-range-without-parameter.json"
 issues = [{ code = "coverage.range-without-parameter", severity = "error" }]
 

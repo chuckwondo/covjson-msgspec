@@ -46,6 +46,7 @@ from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
 from covjson_msgspec._bridging import (
     POLYGON_DOMAIN_TYPES,
     STANDARD_CALENDARS,
+    coordinate_systems,
     require_inline_ndarray,
 )
 from covjson_msgspec._i18n import display
@@ -586,7 +587,7 @@ def _build_variables(
         ``(coords, data_vars)``: the coordinate and data-variable maps, each in
         xarray ``(dims, data, attrs)`` form.
     """
-    systems = _coordinate_systems(domain)
+    systems = coordinate_systems(domain)
     geo_roles = _geographic_roles(domain)
 
     coords = _build_coords(domain, systems, geo_roles)
@@ -604,31 +605,6 @@ def _build_variables(
             var_attrs.setdefault("grid_mapping", "crs")
 
     return coords, data_vars
-
-
-def _coordinate_systems(domain: Domain) -> dict[str, ReferenceSystem]:
-    """Index a domain's referencing by coordinate identifier.
-
-    Flattens the domain's reference-system connections (each of which ties one or
-    more coordinates to a system) into a flat ``coordinate -> system`` lookup, so
-    `_coordinate` can ask "which system governs ``t``?" in O(1).
-
-    Parameters
-    ----------
-    domain
-        The domain whose `~Domain.referencing` is indexed.
-
-    Returns
-    -------
-    dict
-        Each coordinate identifier mapped to its governing reference system.
-    """
-    # Map each coordinate identifier to the reference system that governs it.
-    return {
-        coordinate: connection.system
-        for connection in domain.referencing
-        for coordinate in connection.coordinates
-    }
 
 
 def _geographic_roles(domain: Domain) -> dict[str, str]:
@@ -682,7 +658,8 @@ def _build_coords(
     domain
         The domain whose `~Domain.axes` become coordinates.
     systems
-        Coordinate-to-system lookup from `_coordinate_systems`.
+        Coordinate-to-system lookup from
+        `~covjson_msgspec._bridging.coordinate_systems`.
     geo_roles
         Coordinate-to-geographic-role lookup from `_geographic_roles`.
 
@@ -752,7 +729,8 @@ def _coordinate(
     column
         The coordinate's values.
     systems, geo_roles
-        The lookups from `_coordinate_systems` / `_geographic_roles`.
+        The lookups from
+        `~covjson_msgspec._bridging.coordinate_systems` / `_geographic_roles`.
     scalar
         Whether this is a single-valued axis to collapse to a scalar coordinate.
 
