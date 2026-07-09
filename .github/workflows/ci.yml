@@ -103,10 +103,12 @@ jobs:
         run: uv run --quiet basedpyright
       - name: Type-check (pyrefly, informational)
         continue-on-error: true
-        run: uvx pyrefly check src tests
+        # Paths come from `[tool.pyrefly]` project_includes in pyproject.toml.
+        run: uvx pyrefly check
       - name: Type-check (ty, informational)
         continue-on-error: true
-        run: uvx ty check src tests
+        # Paths come from `[tool.ty.src]` include in pyproject.toml.
+        run: uvx ty check
 
   # Test both ends of the dependency range (ADR-0010): `highest` (the lockfile,
   # today's default) across the full Python matrix, plus one `lowest-direct` leg
