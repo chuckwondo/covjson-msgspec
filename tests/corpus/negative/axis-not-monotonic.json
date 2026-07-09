@@ -1,0 +1,22 @@
+{
+  "type": "Domain",
+  "axes": {
+    "x": {
+      "values": [
+        0.0,
+        2.0,
+        1.0
+      ]
+    },
+    "y": {
+      "values": [
+        0.0,
+        1.0
+      ]
+    }
+  },
+  "domainType": "Grid",
+  "referencing": [
+    { "coordinates": ["x", "y"], "system": { "type": "GeographicCRS" } }
+  ]
+}

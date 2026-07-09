@@ -41,15 +41,20 @@ from __future__ import annotations
 import enum
 import math
 import re
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from functools import cache
-from itertools import chain
-from typing import Literal, assert_never, cast
+from itertools import chain, pairwise
+from typing import Any, Literal, assert_never, cast
 
 import langcodes
 import msgspec
 
-from covjson_msgspec._bridging import temporal_coordinates
+from covjson_msgspec._bridging import (
+    coordinate_systems,
+    is_standard_calendar,
+    temporal_coordinates,
+)
+from covjson_msgspec.axis import AxisValue
 from covjson_msgspec.coverage import (
     Coverage,
     CoverageCollection,
@@ -74,7 +79,7 @@ from covjson_msgspec.referencing import (
     TemporalRS,
     VerticalCRS,
 )
-from covjson_msgspec.temporal import Malformed, resolve
+from covjson_msgspec.temporal import Malformed, Moment, resolve
 
 
 class Severity(enum.StrEnum):
@@ -194,6 +199,23 @@ class DomainExtraAxisNotSingle(_Issue, frozen=True, tag="domain.extra-axis-not-s
             f"{self.domain_type} domain may only add single-valued axes, "
             f"but {self.axis!r} has multiple values"
         )
+
+
+class DomainAxisNotMonotonic(_Issue, frozen=True, tag="domain.axis-not-monotonic"):
+    """A primitive axis's ``values`` are not ordered monotonically.
+
+    Spec 6.1.1 (Axis Objects): when an axis is ``primitive`` and its reference
+    system defines a natural ordering, its ``values`` MUST be ordered
+    monotonically (increasing or decreasing), so this is an error (per ADR-0002).
+    Which systems order, and whether equal-adjacent values are permitted, is the
+    default policy of `require_monotonic`, replaceable via `validate`'s
+    ``axis_order_checker``.
+    """
+
+    axis: str
+
+    def __str__(self) -> str:
+        return f"axis {self.axis!r} values must be ordered monotonically"
 
 
 class DomainMissingReferencing(_Issue, frozen=True, tag="domain.missing-referencing"):
@@ -463,6 +485,7 @@ Issue = (
     | DomainAxisNotSingle
     | DomainCompositeDataType
     | DomainExtraAxisNotSingle
+    | DomainAxisNotMonotonic
     | DomainMissingReferencing
     | DomainMissingDomainType
     | NdArrayShapeRank
@@ -485,6 +508,15 @@ Issue = (
     | I18nInvalidLanguageTag
     | I18nEmpty
 )
+
+
+# An axis-ordering policy: given a primitive axis's ``values`` and the reference
+# system governing them (or ``None``), return the index of the first value that
+# breaks the required ordering, or ``None`` for no violation to report. `validate`
+# applies `require_monotonic` by default; pass an ``axis_order_checker`` to
+# override it (strict monotonicity, a non-standard calendar, or ordering the
+# values the default leaves alone). See `require_monotonic` for the default policy.
+AxisOrderChecker = Callable[[Sequence[AxisValue], ReferenceSystem | None], int | None]
 
 
 class CovJSONValidationError(Exception):
@@ -621,6 +653,7 @@ def validate(
     obj: CoverageJSON,
     *,
     check_values: bool = False,
+    axis_order_checker: AxisOrderChecker | None = None,
     mode: Literal["collect", "raise"] = "collect",
 ) -> list[Issue]:
     """Check a CoverageJSON document for cross-cutting, document-level problems.
@@ -637,8 +670,9 @@ def validate(
     parameter groups reference known members, a coverage and domain carry the
     ``parameters`` / ``referencing`` the spec requires (resolving collection-level
     inheritance first), a `TiledNdArray`'s tile sets are well-formed, and (with
-    ``check_values=True``) every value matches its range's ``dataType`` and
-    categorical codes are defined. Reach for it when you need those
+    ``check_values=True``) every value matches its range's ``dataType``,
+    categorical codes are defined, temporal values are well-formed, and each
+    ordered primitive axis is monotonic. Reach for it when you need those
     spec-conformance guarantees, e.g. before publishing a document or when
     ingesting one from an untrusted source.
 
@@ -647,11 +681,22 @@ def validate(
     obj
         Any decoded CoverageJSON document.
     check_values
-        Also run the checks that scan range values: every value matches its
-        range's ``dataType`` (``range.value-type-mismatch``), and categorical
-        codes are defined in the parameter's encoding
-        (``range.invalid-category-code``). Off by default because it is
+        Also run the checks that scan array values: every range value matches its
+        range's ``dataType`` (``range.value-type-mismatch``), categorical codes
+        are defined in the parameter's encoding (``range.invalid-category-code``),
+        temporal values use a recommended lexical form
+        (``temporal.lexical-form``), and each ordered primitive axis is monotonic
+        (``domain.axis-not-monotonic``). Off by default because it is
         O(number of values).
+    axis_order_checker
+        The policy deciding whether a primitive axis's ``values`` are correctly
+        ordered (only consulted when ``check_values=True``). Defaults to
+        `require_monotonic`, the spec's monotonic MUST read non-strictly over the
+        ordered reference systems. Pass a different `AxisOrderChecker` to change it
+        (e.g. ``require_monotonic(strict=True)`` to reject equal-adjacent values,
+        or a custom callable to order a non-standard calendar). To silence the
+        check while keeping the other value scans, pass a checker that always
+        returns ``None``.
     mode
         ``"collect"`` (default) returns every issue found. ``"raise"`` raises a
         `CovJSONValidationError` if any error-severity issue is found, and
@@ -741,7 +786,7 @@ def validate(
     >>> validate(cov)[0].code == "coverage.missing-parameters"
     True
     """
-    issues = list(_issues(obj, check_values))
+    issues = list(_issues(obj, check_values, axis_order_checker))
 
     if mode == "raise" and (
         errors := tuple(i for i in issues if i.severity is Severity.ERROR)
@@ -751,14 +796,19 @@ def validate(
     return issues
 
 
-def _issues(obj: CoverageJSON, check_values: bool) -> Iterator[Issue]:
+def _issues(
+    obj: CoverageJSON,
+    check_values: bool,
+    axis_order_checker: AxisOrderChecker | None = None,
+) -> Iterator[Issue]:
     """Yield every issue for a document, dispatching on its concrete type.
 
     The pure core of `validate`: it threads no accumulator and performs no
     effects, so each branch is just the composition of the relevant checkers.
     `validate` is the shell that materializes this into a list and applies
     ``mode``. The ``check_values`` flag is forwarded to the value-scanning
-    checkers (which are otherwise skipped).
+    checkers (which are otherwise skipped), and ``axis_order_checker`` (the
+    axis-ordering policy, defaulting to `require_monotonic`) with it.
 
     Parameters
     ----------
@@ -766,6 +816,9 @@ def _issues(obj: CoverageJSON, check_values: bool) -> Iterator[Issue]:
         Any decoded CoverageJSON document.
     check_values
         Whether to run the O(number of values) value-scanning checks.
+    axis_order_checker
+        The axis-ordering policy forwarded to the monotonic-axis check; ``None``
+        uses `require_monotonic`.
 
     Yields
     ------
@@ -784,11 +837,13 @@ def _issues(obj: CoverageJSON, check_values: bool) -> Iterator[Issue]:
     """
     match obj:
         case Domain():
-            yield from _validate_domain(obj, obj.domain_type, "", check_values)
+            yield from _validate_domain(
+                obj, obj.domain_type, "", check_values, axis_order_checker
+            )
         case Coverage():
-            yield from _validate_coverage(obj, "", check_values)
+            yield from _validate_coverage(obj, "", check_values, axis_order_checker)
         case CoverageCollection():
-            yield from _validate_collection(obj, "", check_values)
+            yield from _validate_collection(obj, "", check_values, axis_order_checker)
         case NdArray():
             yield from _validate_ndarray(obj, "")
 
@@ -1318,16 +1373,21 @@ def _reference_system_i18n_issues(
 
 
 def _validate_domain(
-    domain: Domain, domain_type: str | None, path: str, check_values: bool = False
+    domain: Domain,
+    domain_type: str | None,
+    path: str,
+    check_values: bool = False,
+    axis_order_checker: AxisOrderChecker | None = None,
 ) -> Iterator[Issue]:
     """Yield a domain's domainType, axis-rule, and referencing violations.
 
     First, when the effective ``domain_type`` is absent, a
     `DomainMissingDomainType` warning (Spec 6.1 RECOMMENDS one). Then, resolves
     ``domain_type`` to a `DomainTypeRule` and, when one applies, yields the
-    violations `_domain_issues` finds; then, when ``check_values``, each
-    time-axis value that is not a Gregorian lexical form
-    (`_temporal_form_issues`); then a missing-referencing issue when the domain
+    violations `_domain_issues` finds; then, when ``check_values``, the axis
+    value-scans (a time-axis value outside the Gregorian lexical forms via
+    `_temporal_form_issues`, and a non-monotonic ordered axis via
+    `_axis_monotonic_issues`); then a missing-referencing issue when the domain
     carries no ``referencing`` in scope, and each reference system's language-tag
     issues (`_reference_system_i18n_issues`). An absent or unrecognized (e.g.
     custom URI) ``domain_type`` carries no axis rules, but the referencing checks
@@ -1343,7 +1403,11 @@ def _validate_domain(
     path
         The JSON Pointer to ``domain``, extended via `_ptr` for each issue.
     check_values
-        Whether to run the O(number of values) temporal lexical-form check.
+        Whether to run the O(number of values) axis value-scans (temporal
+        lexical-form and axis monotonicity).
+    axis_order_checker
+        The axis-ordering policy forwarded to `_axis_monotonic_issues`; ``None``
+        uses `require_monotonic`.
 
     Yields
     ------
@@ -1391,10 +1455,11 @@ def _validate_domain(
     ):
         yield from _domain_issues(domain, domain_type, rule, path)
 
-    # Temporal values live under `axes`, so this value-scanning check comes before
+    # Axis values live under `axes`, so these value-scanning checks come before
     # the referencing checks to keep issues in document order.
     if check_values:
         yield from _temporal_form_issues(domain, path)
+        yield from _axis_monotonic_issues(domain, path, axis_order_checker)
 
     # Spec 6.1: a domain MUST carry `referencing` unless it is a member of a
     # collection that supplies it. `_validate_collection` resolves each member
@@ -1467,6 +1532,324 @@ def _temporal_form_issues(domain: Domain, path: str) -> Iterator[Issue]:
                 yield TemporalLexicalForm(
                     value=value, at=_ptr(path, "axes", coord, "values", i)
                 )
+
+
+def _axis_monotonic_issues(
+    domain: Domain, path: str, axis_order_checker: AxisOrderChecker | None = None
+) -> Iterator[Issue]:
+    """Yield an error for each primitive axis whose ``values`` are not monotonic.
+
+    For every primitive (non-composite) value-listing axis, ``axis_order_checker``
+    is asked where the axis's ``values`` first break their required ordering, given
+    the reference system governing the axis
+    (`~covjson_msgspec._bridging.coordinate_systems`). A returned index becomes a
+    `DomainAxisNotMonotonic` error pointing at that value; ``None`` means nothing to
+    report. Regular (``start``/``stop``/``num``) axes are monotonic by construction
+    and skipped without materializing. This is a value-scanning check, gated behind
+    ``validate(check_values=True)``.
+
+    ``axis_order_checker`` defaults to `require_monotonic` (the spec's MUST, read
+    non-strictly, over the ordered reference systems); a caller passes another
+    `AxisOrderChecker` to change the policy.
+
+    Parameters
+    ----------
+    domain
+        The domain whose primitive axes are scanned.
+    path
+        The JSON Pointer to ``domain``, extended via `_ptr` for each issue.
+    axis_order_checker
+        The axis-ordering policy; ``None`` uses `require_monotonic`.
+
+    Yields
+    ------
+    Issue
+        A `DomainAxisNotMonotonic` per offending axis, at its first breaking value.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain
+    >>> from covjson_msgspec.referencing import (
+    ...     GeographicCRS,
+    ...     ReferenceSystemConnection,
+    ... )
+    >>> dom = Domain(
+    ...     axes={"x": Axis.listed((0.0, 2.0, 1.0))},
+    ...     referencing=[
+    ...         ReferenceSystemConnection(coordinates=("x",), system=GeographicCRS())
+    ...     ],
+    ... )
+    >>> [issue.at for issue in _axis_monotonic_issues(dom, "")]
+    ['/axes/x/values/2']
+    """
+    checker = (
+        axis_order_checker if axis_order_checker is not None else require_monotonic()
+    )
+    systems = coordinate_systems(domain)
+
+    for name, axis in domain.axes.items():
+        values = axis.values
+
+        # A regular (start/stop/num) axis is monotonic by construction, and a
+        # composite (tuple/polygon) axis is outside the primitive-axis MUST, so
+        # neither is materialized or scanned.
+        if values is None or axis.data_type in ("tuple", "polygon"):
+            continue
+
+        break_index = checker(values, systems.get(name))
+
+        if break_index is not None:
+            yield DomainAxisNotMonotonic(
+                at=_ptr(path, "axes", name, "values", break_index), axis=name
+            )
+
+
+def require_monotonic(*, strict: bool = False) -> AxisOrderChecker:
+    """Build the default `AxisOrderChecker`: the spec's monotonic-ordering MUST.
+
+    The returned checker fires only for axes whose reference system defines a
+    natural ordering: numeric axes under a geographic, projected, or vertical CRS
+    (compared by value), and time axes under a standard-calendar
+    `~covjson_msgspec.referencing.TemporalRS` (compared as resolved instants, via
+    `~covjson_msgspec.temporal.resolve`). An axis under an identifier system, a
+    non-standard calendar, or no system is left alone (a categorical or unordered
+    axis has no ordering to violate).
+
+    By default the check is non-strict: only a genuine direction reversal is a
+    break, so equal-adjacent values pass (Spec 6.1.1 says "monotonically", not
+    "strictly", and this is an error that aborts ``mode="raise"``). Pass
+    ``strict=True`` to also reject equal-adjacent values.
+
+    Parameters
+    ----------
+    strict
+        Whether equal-adjacent values break the ordering. Default ``False``.
+
+    Returns
+    -------
+    AxisOrderChecker
+        A callable ``(values, system) -> int | None`` giving the first index that
+        breaks the ordering, or ``None``.
+
+    Examples
+    --------
+    >>> from covjson_msgspec.referencing import Concept, GeographicCRS, IdentifierRS
+    >>> check = require_monotonic()
+    >>> check((0.0, 1.0, 2.0), GeographicCRS()) is None  # increasing
+    True
+    >>> check((0.0, 2.0, 1.0), GeographicCRS())  # reversal at index 2
+    2
+    >>> check((0.0, 0.0, 1.0), GeographicCRS()) is None  # equal-adjacent: ok
+    True
+    >>> require_monotonic(strict=True)((0.0, 0.0, 1.0), GeographicCRS())
+    1
+
+    An identifier system defines no ordering, so its axis is never flagged, even
+    with integer codes in an arbitrary order:
+
+    >>> ids = IdentifierRS(target_concept=Concept(label={"en": "class"}))
+    >>> check((3, 1, 2), ids) is None
+    True
+    """
+
+    def check(
+        values: Sequence[AxisValue], system: ReferenceSystem | None
+    ) -> int | None:
+        kind = _ordering_kind(system)
+
+        if kind is None:
+            return None
+
+        if kind == "numeric":
+            # Compare the numeric values directly. A non-numeric value on a
+            # numeric axis is skipped rather than crash the comparison, and a NaN
+            # float is skipped too: NaN is unordered and not equal to itself, so
+            # leaving it in would corrupt the monotonic walk. `math.isnan` is
+            # guarded to floats so a large int never overflows converting to one.
+            keyed: list[tuple[int, Any]] = [
+                (i, value)
+                for i, value in enumerate(values)
+                if isinstance(value, int)
+                or (isinstance(value, float) and not math.isnan(value))
+            ]
+        else:
+            temporal = _temporal_keys(values)
+
+            if temporal is None:  # resolved instants mix tz-awareness; skip
+                return None
+
+            keyed = temporal
+
+        return _first_monotonic_break(keyed, strict=strict)
+
+    return check
+
+
+def _ordering_kind(
+    system: ReferenceSystem | None,
+) -> Literal["numeric", "temporal"] | None:
+    """Classify a reference system by the kind of value ordering it defines.
+
+    Spec 6.1.1 ties the monotonic-ordering MUST to a reference system that
+    "defines a natural ordering". This is the single, total classifier of which
+    systems the default check treats as ordered, and of what kind:
+
+    * a geographic, projected, or vertical CRS orders its values numerically;
+    * a standard-calendar `~covjson_msgspec.referencing.TemporalRS` orders its
+      values as instants in time (`~covjson_msgspec._bridging.is_standard_calendar`);
+    * an identifier system (categorical / coded), a non-standard-calendar temporal
+      system, and an axis with no system in scope (``None``) define no ordering.
+
+    The ``match`` is exhaustive over the
+    `~covjson_msgspec.referencing.ReferenceSystem` union (closed with
+    `~typing.assert_never`), so adding a reference-system type forces a decision
+    here rather than silently falling through to "unordered".
+
+    Parameters
+    ----------
+    system
+        The reference system governing an axis, or ``None`` if none is in scope.
+
+    Returns
+    -------
+    {"numeric", "temporal"} or None
+        The ordering kind, or ``None`` when the system defines no ordering.
+
+    Examples
+    --------
+    >>> from covjson_msgspec.referencing import GeographicCRS, TemporalRS
+    >>> _ordering_kind(GeographicCRS())
+    'numeric'
+    >>> _ordering_kind(TemporalRS(calendar="Gregorian"))
+    'temporal'
+    >>> _ordering_kind(TemporalRS(calendar="360_day")) is None
+    True
+    >>> _ordering_kind(None) is None
+    True
+    """
+    match system:
+        case GeographicCRS() | ProjectedCRS() | VerticalCRS():
+            return "numeric"
+        case TemporalRS():
+            return "temporal" if is_standard_calendar(system) else None
+        case IdentifierRS() | None:
+            return None
+        case _:  # pragma: no cover - exhaustive over the ReferenceSystem union
+            assert_never(system)
+
+
+def _temporal_keys(values: Sequence[AxisValue]) -> list[tuple[int, Any]] | None:
+    """The ``(index, instant)`` pairs for a time axis's resolvable moments, or None.
+
+    Each value resolving to a `~covjson_msgspec.temporal.Moment` contributes its
+    `~datetime.datetime`, keyed by original position. A
+    `~covjson_msgspec.temporal.Malformed` value (owned by the
+    ``temporal.lexical-form`` check) and an
+    `~covjson_msgspec.temporal.Unrepresentable` one (a legal form with no
+    ``datetime``) are skipped, so a reversal hinging on an unrepresentable value
+    between two moments is not caught here.
+
+    `~covjson_msgspec.temporal.Moment.when` is timezone-aware only at second
+    precision, so a naive and an aware instant are not comparable; when the
+    resolved moments mix awareness, ``None`` is returned so the caller declines to
+    order the axis rather than fabricate a zone.
+
+    Parameters
+    ----------
+    values
+        A primitive time axis's coordinate values.
+
+    Returns
+    -------
+    list of (int, datetime) or None
+        The resolvable instants keyed by index, or ``None`` when they mix
+        timezone-awareness.
+
+    Examples
+    --------
+    >>> keys = _temporal_keys(("2020-01-01T00:00:00Z", "2020-01-02T00:00:00Z"))
+    >>> [i for i, _ in keys]
+    [0, 1]
+
+    A malformed value is dropped (its index does not appear):
+
+    >>> [i for i, _ in _temporal_keys(("2020-01-01T00:00:00Z", "nope"))]
+    [0]
+
+    Mixing an aware instant (second precision) with a naive one (day precision)
+    yields ``None``:
+
+    >>> _temporal_keys(("2020-01-01T00:00:00Z", "2020-01-02")) is None
+    True
+    """
+    moments = [
+        (i, resolved.when)
+        for i, value in enumerate(values)
+        if isinstance(value, str) and isinstance(resolved := resolve(value), Moment)
+    ]
+
+    if len({when.tzinfo is None for _, when in moments}) > 1:
+        return None
+
+    return moments
+
+
+def _first_monotonic_break(
+    keyed: Sequence[tuple[int, Any]], *, strict: bool
+) -> int | None:
+    """Return the index of the first key that breaks monotonic order, or ``None``.
+
+    ``keyed`` pairs each comparison key with its original position in the axis,
+    already filtered to mutually comparable keys (so a time axis passes only its
+    resolvable, same-awareness instants). The ordering direction is set by the
+    first strictly-unequal adjacent pair; a later pair that contradicts it breaks
+    the order, and the *later* key's original index is returned (the coordinate to
+    look at). Equal-adjacent keys are permitted unless ``strict``. Fewer than two
+    keys is trivially ordered.
+
+    Parameters
+    ----------
+    keyed
+        ``(index, key)`` pairs in axis order, the keys mutually comparable.
+    strict
+        Whether equal-adjacent keys break the ordering.
+
+    Returns
+    -------
+    int or None
+        The original index of the first breaking key, or ``None`` if the keys are
+        monotonic.
+
+    Examples
+    --------
+    >>> _first_monotonic_break([(0, 1), (1, 2), (2, 3)], strict=False) is None
+    True
+    >>> _first_monotonic_break([(0, 3), (1, 2), (2, 1)], strict=False) is None
+    True
+    >>> _first_monotonic_break([(0, 1), (1, 3), (2, 2)], strict=False)
+    2
+    >>> _first_monotonic_break([(0, 1), (1, 1), (2, 2)], strict=False) is None
+    True
+    >>> _first_monotonic_break([(0, 1), (1, 1), (2, 2)], strict=True)
+    1
+    """
+    direction = 0  # 0 = undetermined, 1 = increasing, -1 = decreasing
+
+    for (_, previous), (index, current) in pairwise(keyed):
+        if current == previous:
+            if strict:
+                return index
+
+            continue
+
+        step = 1 if current > previous else -1
+
+        if direction == 0:
+            direction = step
+        elif step != direction:
+            return index
+
+    return None
 
 
 def _validate_ndarray(arr: NdArray, path: str) -> Iterator[Issue]:
@@ -2222,7 +2605,10 @@ def _validate_ranges(
 
 
 def _validate_coverage(
-    coverage: Coverage, path: str, check_values: bool
+    coverage: Coverage,
+    path: str,
+    check_values: bool,
+    axis_order_checker: AxisOrderChecker | None = None,
 ) -> Iterator[Issue]:
     """Yield one coverage's issues end to end.
 
@@ -2245,6 +2631,9 @@ def _validate_coverage(
         The JSON Pointer to ``coverage``, extended via `_ptr` for each issue.
     check_values
         Whether to run the value-scanning checks (categorical codes).
+    axis_order_checker
+        The axis-ordering policy forwarded to the domain's monotonic-axis check;
+        ``None`` uses `require_monotonic`.
 
     Yields
     ------
@@ -2257,7 +2646,11 @@ def _validate_coverage(
 
     domain_issues: Iterable[Issue] = (
         _validate_domain(
-            domain, coverage.effective_domain_type, _ptr(path, "domain"), check_values
+            domain,
+            coverage.effective_domain_type,
+            _ptr(path, "domain"),
+            check_values,
+            axis_order_checker,
         )
         if isinstance(domain, Domain)
         else ()
@@ -2293,7 +2686,10 @@ def _validate_coverage(
 
 
 def _validate_collection(
-    collection: CoverageCollection, path: str, check_values: bool
+    collection: CoverageCollection,
+    path: str,
+    check_values: bool,
+    axis_order_checker: AxisOrderChecker | None = None,
 ) -> Iterator[Issue]:
     """Yield every member's issues, in member order.
 
@@ -2313,6 +2709,9 @@ def _validate_collection(
         The JSON Pointer to ``collection``, extended via `_ptr` per member.
     check_values
         Whether to run the value-scanning checks (passed through to each member).
+    axis_order_checker
+        The axis-ordering policy passed through to each member; ``None`` uses
+        `require_monotonic`.
 
     Yields
     ------
@@ -2324,7 +2723,9 @@ def _validate_collection(
             _member_domain_type_issues(
                 raw, collection.domain_type, _ptr(path, "coverages", i)
             ),
-            _validate_coverage(resolved, _ptr(path, "coverages", i), check_values),
+            _validate_coverage(
+                resolved, _ptr(path, "coverages", i), check_values, axis_order_checker
+            ),
         )
         for i, (raw, resolved) in enumerate(
             zip(collection.coverages, collection.resolved_coverages(), strict=True)
