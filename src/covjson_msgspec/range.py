@@ -66,7 +66,10 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
     value. msgspec enforces the ``float | int | str`` union on decode, so nested
     arrays and booleans are rejected; element-vs-``dataType`` consistency is a
     cross-cutting check handled by opt-in
-    `~covjson_msgspec.validation.validate` (``check_values=True``).
+    `~covjson_msgspec.validation.validate` (``check_values=True``). Shape
+    consistency (the ``values`` count vs. ``shape``, and ``shape`` vs.
+    ``axisNames`` rank) is likewise deferred to `validate`: a mismatch is
+    inconsistent but still loadable, not a decode error.
 
     Examples
     --------

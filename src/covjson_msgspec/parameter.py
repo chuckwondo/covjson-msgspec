@@ -113,6 +113,14 @@ class ObservedProperty(CovJSONStruct, frozen=True):
     --------
     >>> ObservedProperty(label={"en": "Air temperature"}).categories is None
     True
+
+    An explicit empty ``categories`` is rejected (spec 3: if given, it must be a
+    non-empty array), so a categorical property can never list zero categories:
+
+    >>> ObservedProperty(label={"en": "x"}, categories=())
+    Traceback (most recent call last):
+        ...
+    ValueError: ObservedProperty `categories` must be non-empty
     """
 
     label: I18n
@@ -120,6 +128,16 @@ class ObservedProperty(CovJSONStruct, frozen=True):
     description: I18n | None = None
     # tuple (not list) so the struct stays immutable; see CovJSONStruct.
     categories: tuple[Category, ...] | None = None
+
+    def __post_init__(self) -> None:
+        # Spec 3: `categories`, if given, MUST be a non-empty array. A
+        # categorical ObservedProperty that lists no categories is
+        # uninterpretable in isolation, so it is rejected here rather than
+        # deferred to validate() (ADR-0002), mirroring the Axis.values guard.
+        # Local and O(1): runs on construction and decode.
+        if self.categories is not None and not self.categories:
+            msg = "ObservedProperty `categories` must be non-empty"
+            raise ValueError(msg)
 
 
 # Maps a category id to the integer code (or codes) representing it in a range.

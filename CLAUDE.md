@@ -79,8 +79,13 @@ Bridges (each behind an extra): `numpy` (NdArray <-> numpy, methods on NdArray),
   dependency injection at the edges, applied to control flow.
 - **Opt-in tiered `validate()`, not `__post_init__`, for cross-cutting checks.**
   `__post_init__` is only for local structural invariants (cheap, O(1), about
-  one object). Anything cross-cutting or data-scanning lives in `validate()` so
-  decode stays permissive.
+  one object); anything cross-cutting or data-scanning lives in `validate()` so
+  decode stays permissive. Even among local invariants the tier splits again:
+  reject in `__post_init__` only when a violation leaves the object
+  *uninterpretable in isolation* (an `Axis` neither listed nor regular, an
+  `ObservedProperty` categorical yet listing no categories); leave a merely
+  *internally inconsistent* object (an `NdArray` whose `shape` and `axisNames`
+  disagree) to `validate()`, so a repairable document still loads. See ADR-0002.
 - **A byte-faithful model with lossy conversion confined to opt-in bridges.**
   Decode preserves the document (for example temporal values stay raw ISO 8601
   strings, never parsed to `datetime`); conversions that lose information happen

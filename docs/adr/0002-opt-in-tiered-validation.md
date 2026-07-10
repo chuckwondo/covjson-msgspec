@@ -33,6 +33,21 @@ cross-cutting, document-level rule in an opt-in `validate()` that returns a
 collection of `Issue` records (each with a stable `code`, a JSON Pointer
 `path`, and a severity) and never raises on its own.
 
+**Not every local invariant belongs in `__post_init__`.** A local check splits
+again by what its violation means for the object. When a violation leaves the
+object *uninterpretable in isolation* (no coherent object of that shape exists),
+reject it at construction: an `Axis` that is neither listed nor regular, a
+`Unit` with neither label nor symbol, an `ObservedProperty` that is categorical
+yet lists no categories. When it leaves a *meaningful object whose parts merely
+disagree*, defer it to `validate()`: an `NdArray` whose `values` count does not
+match the product of its `shape`, or whose `shape` and `axisNames` differ in
+rank, is still an interpretable array, so `validate` reports it and the
+constructor stays permissive. The deciding test is neither locality nor cost
+(both kinds are local and O(1)) but whether rejecting the value would deny a
+caller a usable object: the same "load a broken document to inspect or repair
+it" feature (below), applied within a single struct rather than only across the
+document.
+
 Severity tracks the spec's own normative force. An *error* marks a MUST / MUST
 NOT violation: the document is non-conformant, or not usable as the type it
 claims to be. A *warning* marks a SHOULD / RECOMMENDED violation: the document
