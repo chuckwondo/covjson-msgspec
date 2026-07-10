@@ -115,6 +115,14 @@ class Axis(CovJSONStruct, frozen=True):
     'tuple'
     >>> traj.coordinate_values
     (('2020-01-01T00:00:00Z', 1.0, 2.0),)
+
+    A composite axis's ``coordinates`` names its components, so it too must be
+    non-empty (spec 6.1.1):
+
+    >>> Axis(values=((1.0, 2.0),), data_type="tuple", coordinates=())
+    Traceback (most recent call last):
+        ...
+    ValueError: Axis `coordinates` must be non-empty
     """
 
     values: tuple[AxisValue, ...] | None = None
