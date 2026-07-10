@@ -1,0 +1,35 @@
+{
+  // Extensions recommended for this project. VS Code surfaces these via
+  // "Extensions: Show Recommended Extensions" and offers to install them.
+  "recommendations": [
+    // Formatter and linter. CI runs `ruff format --check` and `ruff check`,
+    // so this keeps editor formatting/linting identical to CI.
+    "charliermarsh.ruff",
+    // In-editor mypy diagnostics. CI runs mypy (strict). The basedpyright
+    // strict gate is covered in-editor by "python.analysis.typeCheckingMode":
+    // "strict" (Pylance's bundled pyright), configured in settings.json.
+    "ms-python.mypy-type-checker",
+    // Core Python support: interpreter selection, Pylance (IntelliSense plus
+    // the strict pyright check above), and test/debug integration.
+    "ms-python.python",
+    // TOML schema validation and formatting. pyproject.toml is the config hub
+    // for every tool here (ruff, mypy, basedpyright, pytest, coverage, and the
+    // hand-tuned dependency floors), plus the tests/corpus/*/manifest.toml.
+    "tamasfe.even-better-toml",
+    // GitHub Actions schema validation and inline docs for the workflows under
+    // .github/workflows (ci.yml, dependency-review.yml).
+    "github.vscode-github-actions"
+  ],
+  // Ruff is this project's formatter, import sorter, and linter, so these
+  // overlapping tools would either fight it (inserting blank lines Ruff does
+  // not, reordering imports differently) or surface diagnostics that do not
+  // match CI. Marked not-recommended for this workspace only; this does not
+  // disable or uninstall anything already installed.
+  "unwantedRecommendations": [
+    "ms-python.black-formatter",
+    "ms-python.autopep8",
+    "ms-python.isort",
+    "ms-python.flake8",
+    "ms-python.pylint"
+  ]
+}
