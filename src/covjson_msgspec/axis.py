@@ -115,6 +115,14 @@ class Axis(CovJSONStruct, frozen=True):
     'tuple'
     >>> traj.coordinate_values
     (('2020-01-01T00:00:00Z', 1.0, 2.0),)
+
+    A composite axis's ``coordinates`` names its components, so it too must be
+    non-empty (spec 6.1.1):
+
+    >>> Axis(values=((1.0, 2.0),), data_type="tuple", coordinates=())
+    Traceback (most recent call last):
+        ...
+    ValueError: Axis `coordinates` must be non-empty
     """
 
     values: tuple[AxisValue, ...] | None = None
@@ -165,6 +173,14 @@ class Axis(CovJSONStruct, frozen=True):
 
         if self.data_type in ("tuple", "polygon") and self.coordinates is None:
             msg = f"a {self.data_type!r} axis requires `coordinates`"
+            raise ValueError(msg)
+
+        # Spec 6.1.1: `coordinates`, when given, is a non-empty array. Applies to
+        # any axis: an empty coordinates array is uninterpretable in isolation,
+        # so it is rejected here rather than in validate() (ADR-0002), mirroring
+        # the `values` guard above.
+        if self.coordinates is not None and not self.coordinates:
+            msg = "Axis `coordinates` must be non-empty"
             raise ValueError(msg)
 
     @property
