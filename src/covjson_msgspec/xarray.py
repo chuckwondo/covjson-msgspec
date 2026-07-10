@@ -43,6 +43,8 @@ from datetime import datetime
 from itertools import pairwise
 from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
 
+from msgspec import UNSET
+
 from covjson_msgspec._bridging import (
     POLYGON_DOMAIN_TYPES,
     STANDARD_CALENDARS,
@@ -326,7 +328,7 @@ def from_xarray(
         domain=domain,
         ranges=ranges,
         id=None if coverage_id is None else str(coverage_id),
-        parameters=parameters or None,
+        parameters=parameters or UNSET,
     )
 
 
@@ -592,7 +594,7 @@ def _build_variables(
 
     coords = _build_coords(domain, systems, geo_roles)
     data_vars = {
-        key: _data_variable(key, range_, coverage.parameters)
+        key: _data_variable(key, range_, coverage.parameters or None)
         for key, range_ in coverage.ranges.items()
     }
 

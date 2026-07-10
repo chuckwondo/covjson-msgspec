@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 import xarray as xr
+from msgspec import UNSET
 
 from covjson_msgspec import (
     Axis,
@@ -597,9 +598,9 @@ def test_collection_datatree_roundtrip() -> None:
     assert [c.id for c in back.coverages] == ["point-a", "point-b"]
     assert _nd(back.coverages[0], "t").values == (280.0,)
     # The flat result carries parameters per member rather than hoisting them.
-    assert back.coverages[0].parameters is not None
-    assert back.coverages[0].parameters["t"].unit is not None
-    assert back.coverages[0].parameters["t"].unit.symbol == "K"
+    params = _params(back.coverages[0])
+    assert params["t"].unit is not None
+    assert params["t"].unit.symbol == "K"
 
 
 def test_collection_method_delegates() -> None:
@@ -635,7 +636,7 @@ def _nd(coverage: Coverage, key: str) -> NdArray:
 
 
 def _params(coverage: Coverage) -> dict[str, Parameter]:
-    assert coverage.parameters is not None
+    assert coverage.parameters is not UNSET
     return coverage.parameters
 
 

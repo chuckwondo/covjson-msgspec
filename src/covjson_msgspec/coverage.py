@@ -22,6 +22,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, Final, Literal
 
 import msgspec
+from msgspec import UNSET, UnsetType
 
 from covjson_msgspec._base import CovJSONStruct
 from covjson_msgspec._best_effort import fail_fast
@@ -91,9 +92,9 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
     domain: Domain | str
     ranges: dict[str, Range]
     id: str | None = None
-    domain_type: str | None = None
-    parameters: dict[str, Parameter] | None = None
-    parameter_groups: tuple[ParameterGroup, ...] | None = None
+    domain_type: str | UnsetType = UNSET
+    parameters: dict[str, Parameter] | UnsetType = UNSET
+    parameter_groups: tuple[ParameterGroup, ...] | UnsetType = UNSET
 
     @property
     def effective_domain_type(self) -> str | None:
@@ -137,7 +138,10 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         domain = self.domain
         declared = domain.domain_type if isinstance(domain, Domain) else None
 
-        return declared or self.domain_type
+        # `self.domain_type` is `UNSET` when the coverage declares none; the
+        # trailing `or None` normalizes that back to the property's `str | None`
+        # contract so `UnsetType` never escapes this projection.
+        return declared or self.domain_type or None
 
     def to_xarray(self) -> xr.Dataset:
         """Convert this coverage to a CF-aware `xarray.Dataset`.
@@ -405,7 +409,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
 
     The member inherits the collection's ``parameters`` and ``domain_type``:
 
-    >>> member.parameters is None
+    >>> member.parameters is UNSET
     True
     >>> resolved = collection.resolved_coverages()
     >>> resolved[0].parameters["t"].unit.symbol
@@ -415,9 +419,9 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
     """
 
     coverages: tuple[Coverage, ...]
-    domain_type: str | None = None
-    parameters: dict[str, Parameter] | None = None
-    parameter_groups: tuple[ParameterGroup, ...] | None = None
+    domain_type: str | UnsetType = UNSET
+    parameters: dict[str, Parameter] | UnsetType = UNSET
+    parameter_groups: tuple[ParameterGroup, ...] | UnsetType = UNSET
     referencing: tuple[ReferenceSystemConnection, ...] = ()
 
     def resolved_coverages(self) -> tuple[Coverage, ...]:
@@ -439,13 +443,20 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
     def _resolve(self, coverage: Coverage) -> Coverage:
         changes: dict[str, object] = {}
 
-        if coverage.domain_type is None and self.domain_type is not None:
+        # Each branch turns on `is UNSET` (the member omitted the field), not
+        # truthiness. A present but empty `{}` / `()` is the member declaring
+        # "none of its own"; it must not inherit the collection's value. Do not
+        # "simplify" these to `if not coverage.parameters`: an empty container is
+        # falsy yet is not absence, and that swap silently reinstates the
+        # graft-on-empty bug this modeling exists to prevent. The present-empty
+        # suppression test in test_coverage.py is the regression tripwire.
+        if coverage.domain_type is UNSET and self.domain_type is not UNSET:
             changes["domain_type"] = self.domain_type
 
-        if coverage.parameters is None and self.parameters is not None:
+        if coverage.parameters is UNSET and self.parameters is not UNSET:
             changes["parameters"] = self.parameters
 
-        if coverage.parameter_groups is None and self.parameter_groups is not None:
+        if coverage.parameter_groups is UNSET and self.parameter_groups is not UNSET:
             changes["parameter_groups"] = self.parameter_groups
 
         # Push shared referencing down into an inline domain that has none.
