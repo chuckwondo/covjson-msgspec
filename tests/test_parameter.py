@@ -59,6 +59,22 @@ def test_categorical_parameter_with_unit_rejected_on_decode() -> None:
         msgspec.json.decode(msgspec.json.encode(payload), type=Parameter)
 
 
+def test_observed_property_rejects_empty_categories() -> None:
+    # Spec 3: `categories`, if given, must be non-empty. A categorical property
+    # of zero categories is uninterpretable, so it is rejected at construction
+    # (ADR-0002), mirroring the Axis.values guard.
+    with pytest.raises(ValueError, match="non-empty"):
+        ObservedProperty(label={"en": "x"}, categories=())
+
+
+def test_observed_property_rejects_empty_categories_on_decode() -> None:
+    # The same guard fires when the empty array arrives via decode.
+    with pytest.raises((msgspec.ValidationError, ValueError), match="non-empty"):
+        msgspec.json.decode(
+            b'{"label": {"en": "x"}, "categories": []}', type=ObservedProperty
+        )
+
+
 def test_parameter_group_requires_label_or_observed_property() -> None:
     with pytest.raises((msgspec.ValidationError, ValueError)):
         ParameterGroup(members=("u", "v"))

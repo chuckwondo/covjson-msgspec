@@ -1858,7 +1858,10 @@ def _validate_ndarray(arr: NdArray, path: str) -> Iterator[Issue]:
     Two self-contained checks (no domain needed): ``shape`` and ``axisNames``
     must have the same rank, and the number of ``values`` must equal the product
     of ``shape`` (``math.prod(()) == 1``, so a 0-dimensional array must hold
-    exactly one value). Decoding is permissive about these, so they surface here.
+    exactly one value). Decoding is permissive about these: a rank or value-count
+    mismatch is an *internally inconsistent* but still interpretable array, so per
+    ADR-0002 it is reported here rather than rejected at construction, keeping a
+    repairable document loadable.
 
     Parameters
     ----------
