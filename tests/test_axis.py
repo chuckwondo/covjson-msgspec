@@ -35,6 +35,28 @@ def test_axis_rejects_empty_values() -> None:
         Axis(values=())
 
 
+def test_axis_rejects_empty_coordinates() -> None:
+    # Spec 6.1.1: `coordinates`, when given, is a non-empty array. A composite
+    # axis with no named components is uninterpretable, so it is rejected at
+    # construction (ADR-0002), like `values`.
+    with pytest.raises(ValueError, match="non-empty"):
+        Axis(
+            values=(("2020-01-01T00:00:00Z", 1.0),),
+            data_type="tuple",
+            coordinates=(),
+        )
+
+
+def test_axis_rejects_empty_coordinates_on_decode() -> None:
+    # The same guard fires when the empty array arrives via decode.
+    blob = (
+        b'{"dataType": "tuple", "coordinates": [], '
+        b'"values": [["2020-01-01T00:00:00Z", 1.0]]}'
+    )
+    with pytest.raises((msgspec.ValidationError, ValueError), match="non-empty"):
+        msgspec.json.decode(blob, type=Axis)
+
+
 def test_axis_len_never_materializes_and_is_never_zero() -> None:
     assert len(Axis.regular(0.0, 10.0, 1_000_000)) == 1_000_000
     assert len(Axis.listed((10, 20, 30))) == 3

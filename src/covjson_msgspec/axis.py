@@ -167,6 +167,14 @@ class Axis(CovJSONStruct, frozen=True):
             msg = f"a {self.data_type!r} axis requires `coordinates`"
             raise ValueError(msg)
 
+        # Spec 6.1.1: `coordinates`, when given, is a non-empty array. Applies to
+        # any axis: an empty coordinates array is uninterpretable in isolation,
+        # so it is rejected here rather than in validate() (ADR-0002), mirroring
+        # the `values` guard above.
+        if self.coordinates is not None and not self.coordinates:
+            msg = "Axis `coordinates` must be non-empty"
+            raise ValueError(msg)
+
     @property
     def coordinate_values(self) -> tuple[AxisValue, ...]:
         """The explicit coordinate values, materializing the regular form.
