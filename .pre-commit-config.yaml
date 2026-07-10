@@ -17,6 +17,10 @@ repos:
       - id: check-case-conflict
       - id: check-executables-have-shebangs
       - id: check-json
+        # .vscode/*.json are JSONC: VS Code permits // comments (and trailing
+        # commas) there, which check-json's strict json.load rejects. Exclude
+        # them so the committed editor config can keep its inline rationale.
+        exclude: ^\.vscode/.*\.json$
       - id: check-merge-conflict
       - id: check-shebang-scripts-are-executable
       - id: check-toml

@@ -1,0 +1,20 @@
+{
+  // Ruff formats and lints this project (CI runs `ruff format --check` and
+  // `ruff check`). Scope the formatter under "[python]" so it overrides any
+  // user-level "[python]" default formatter: language-specific settings win
+  // over general ones regardless of user-vs-workspace scope.
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true
+  },
+  // Use the ruff and mypy pinned in the uv environment so editor diagnostics
+  // match CI exactly, not the extensions' bundled copies. Drop either line if
+  // the extension cannot locate the environment.
+  "ruff.importStrategy": "fromEnvironment",
+  "mypy-type-checker.importStrategy": "fromEnvironment",
+  // This repo runs two blocking type checkers (see pyproject.toml). The mypy
+  // extension covers the mypy gate; this line makes Pylance's bundled pyright
+  // run strict in-editor, a close proxy for the basedpyright gate. CI stays
+  // authoritative.
+  "python.analysis.typeCheckingMode": "strict"
+}
