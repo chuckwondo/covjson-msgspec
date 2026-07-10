@@ -94,6 +94,18 @@ ambiguous.
 - `decode -> encode` is lossy for foreign members. This is recorded as the one
   carve-out to the byte-faithful tenet (CLAUDE.md) and is the documented
   behavior of the corpus round-trip test.
+- `omit_defaults` (on the `CovJSONStruct` base) is a second, milder source of
+  byte-level round-trip difference: normalization, not information loss. Encode
+  drops any field still equal to its default, so an explicit `null` on a `None`
+  optional, or an explicit `[]` on one of the empty-tuple-default fields
+  (`NdArray.shape` and `axisNames`; `Domain` and `Coverage` `referencing`),
+  re-encodes as an absent member. This loses nothing: the round-tripped object
+  is unchanged (`decode(encode(x)) == x`), and CoverageJSON treats an absent
+  optional and an explicit-default one as equivalent. It differs in kind from a
+  dropped foreign member, whose value is absent from the decoded object itself
+  and unrecoverable. The motive is the CoverageJSON wire idiom (optional
+  members are omitted, never emitted as `null`), yielding one canonical,
+  null-free encoding; reduced size is incidental.
 - Lossless relay/proxy is a tool-choice, not a feature: forward raw bytes (or
   reformat the raw `dict[str, msgspec.Raw]` tree), never `decode -> encode`.
 - [Section 5.1.4][spec-5.1.4] `cs` / `datum` inline CRS definitions stay
