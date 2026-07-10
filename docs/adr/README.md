@@ -63,6 +63,10 @@ CLAUDE.md.
   (spec extensions) are dropped on decode and not captured; the typed model is a
   lossy projection, and lossless relay forwards raw bytes rather than
   round-tripping
+- [ADR-0013](0013-unset-for-omittable-inheritance-members.md): the five
+  collection-inheritance members use `X | UnsetType = UNSET`, rejecting a
+  spec-forbidden `null` at decode and separating "omitted" from "null"; narrow by
+  design, reconciled with the ADR-0002 permissive-decode stance
 
 Some decisions are recorded in ADRs that land with their implementation rather
 than here; see the issue tracker for the in-flight set.

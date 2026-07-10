@@ -376,7 +376,7 @@ def _collection_to_geopandas(
     crs = next((frame.crs for frame in frames if frame.crs is not None), None)
     result = gpd.GeoDataFrame(combined, geometry="geometry", crs=crs)
 
-    if collection.domain_type is not None:
+    if collection.domain_type:
         result.attrs["domain_type"] = collection.domain_type
 
     return result

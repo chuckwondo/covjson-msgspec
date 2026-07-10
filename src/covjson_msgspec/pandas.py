@@ -330,7 +330,7 @@ def _collection_to_pandas(collection: CoverageCollection) -> pd.DataFrame:
         names=["coverage"],
     )
 
-    if collection.domain_type is not None:
+    if collection.domain_type:
         frame.attrs["domain_type"] = collection.domain_type
 
     return frame

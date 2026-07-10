@@ -2,6 +2,7 @@
 
 import msgspec
 import pytest
+from msgspec import UNSET
 
 from covjson_msgspec import (
     Axis,
@@ -11,6 +12,7 @@ from covjson_msgspec import (
     NdArray,
     ObservedProperty,
     Parameter,
+    ParameterGroup,
     ReferenceSystemConnection,
     Unit,
     VerticalCRS,
@@ -103,7 +105,7 @@ def test_resolved_coverages_inherits_shared_fields() -> None:
     (resolved,) = collection.resolved_coverages()
 
     assert resolved.domain_type == "Point"
-    assert resolved.parameters is not None
+    assert resolved.parameters is not UNSET
     assert resolved.parameters["t"].unit == Unit(symbol="K")
 
 
@@ -128,7 +130,7 @@ def test_resolved_coverages_keeps_member_overrides() -> None:
     (resolved,) = collection.resolved_coverages()
 
     assert resolved.domain_type == "Grid"
-    assert resolved.parameters is not None
+    assert resolved.parameters is not UNSET
     assert resolved.parameters["t"].unit == Unit(symbol="degC")
 
 
@@ -163,6 +165,83 @@ def test_resolved_coverages_skips_referencing_for_url_domain() -> None:
 def test_decode_rejects_unknown_type() -> None:
     with pytest.raises(msgspec.ValidationError):
         decode(b'{"type":"Nonsense"}')
+
+
+@pytest.mark.parametrize("wire_name", ["domainType", "parameters", "parameterGroups"])
+@pytest.mark.parametrize(
+    ("type_", "head"),
+    [
+        (Coverage, '"domain": "x", "ranges": {}'),
+        (CoverageCollection, '"coverages": []'),
+    ],
+)
+def test_decode_rejects_null_for_inheritance_fields(
+    wire_name: str,
+    type_: type[Coverage] | type[CoverageCollection],
+    head: str,
+) -> None:
+    # The spec forbids `null` for these omittable members; UNSET typing rejects
+    # it loudly at decode rather than silently coercing it to "absent" (which
+    # would let a member's explicit `null` inherit the collection's value).
+    blob = f"""
+    {{
+      "type": "{type_.__name__}",
+      {head},
+      "{wire_name}": null
+    }}
+    """
+
+    with pytest.raises(msgspec.ValidationError, match="got `null`"):
+        msgspec.json.decode(blob, type=type_)
+
+
+def test_omitted_inheritance_fields_decode_to_unset() -> None:
+    cov = decode_coverage(b'{"type":"Coverage","domain":"x","ranges":{}}')
+
+    assert cov.domain_type is UNSET
+    assert cov.parameters is UNSET
+    assert cov.parameter_groups is UNSET
+    # UNSET is omitted on encode, so an absent member round-trips as absent.
+    assert b"parameters" not in encode(cov)
+
+
+def test_present_empty_fields_suppress_inheritance() -> None:
+    # A present-but-empty value (`{}` / `()`) is not `UNSET`: the member
+    # explicitly declares "none of its own", so the collection's value must NOT
+    # be grafted on. This present-vs-absent split is the whole point of the UNSET
+    # modeling. It is also the regression tripwire for `_resolve`: were its
+    # `is UNSET` checks "simplified" to truthiness, an empty `{}` / `()` (falsy
+    # but present) would wrongly inherit, and these assertions would fail.
+    shared = Parameter.continuous(
+        ObservedProperty(label=i18n("Shared temp")), Unit(symbol="K")
+    )
+    group = ParameterGroup(members=("t",), label=i18n("Shared group"))
+    member = Coverage(
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={"t": NdArray(data_type="float", values=(280.0,))},
+        parameters={},
+        parameter_groups=(),
+    )
+    collection = CoverageCollection(
+        coverages=(member,),
+        parameters={"t": shared},
+        parameter_groups=(group,),
+    )
+    (resolved,) = collection.resolved_coverages()
+
+    assert resolved.parameters == {}
+    assert resolved.parameter_groups == ()
+
+
+def test_iterable_fields_keep_empty_tuple_not_unset() -> None:
+    # Scope tripwire: the always-iterable `referencing` / `shape` / `axis_names`
+    # keep their `()` defaults (empty is a valid representation), unlike the five
+    # inheritance fields that adopted UNSET.
+    assert CoverageCollection(coverages=()).referencing == ()
+
+    array = NdArray(data_type="float", values=(1.0,))
+    assert array.shape == ()
+    assert array.axis_names == ()
 
 
 def _point_coverage() -> Coverage:

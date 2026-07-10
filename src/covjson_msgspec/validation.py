@@ -48,6 +48,7 @@ from typing import Any, Literal, assert_never, cast
 
 import langcodes
 import msgspec
+from msgspec import UNSET
 
 from covjson_msgspec._bridging import (
     coordinate_systems,
@@ -2661,12 +2662,12 @@ def _validate_coverage(
 
     # Spec 6.4: a coverage MUST carry `parameters` unless it is a member of a
     # collection that supplies them. `_validate_collection` resolves each member
-    # first (inheriting the collection's parameters), so a `None` here means none
-    # is in scope. Unlike referencing, this does not depend on the domain form: a
-    # URL-reference domain still needs the coverage's own parameters.
+    # first (inheriting the collection's parameters), so an `UNSET` here means
+    # none is in scope. Unlike referencing, this does not depend on the domain
+    # form: a URL-reference domain still needs the coverage's own parameters.
     parameter_issues: Iterable[Issue] = (
         (CoverageMissingParameters(at=_ptr(path, "parameters")),)
-        if parameters is None
+        if parameters is UNSET
         else _validate_parameter_groups(coverage, parameters, path)
     )
 
@@ -2679,12 +2680,17 @@ def _validate_coverage(
         for i, group in enumerate(coverage.parameter_groups or ())
     )
 
+    # `_validate_ranges` wants `dict | None`. Only genuine absence (`UNSET`)
+    # maps to None; a present empty `{}` must stay `{}` so that a range without a
+    # matching parameter is still flagged (`range-without-parameter`).
+    param_map = None if parameters is UNSET else parameters
+
     return chain(
         domain_issues,
         parameter_issues,
         parameter_i18n_issues,
         parameter_group_i18n_issues,
-        _validate_ranges(coverage, domain, parameters, path, check_values),
+        _validate_ranges(coverage, domain, param_map, path, check_values),
     )
 
 
@@ -2724,7 +2730,7 @@ def _validate_collection(
     return chain.from_iterable(
         chain(
             _member_domain_type_issues(
-                raw, collection.domain_type, _ptr(path, "coverages", i)
+                raw, collection.domain_type or None, _ptr(path, "coverages", i)
             ),
             _validate_coverage(
                 resolved, _ptr(path, "coverages", i), check_values, axis_order_checker
@@ -2852,7 +2858,7 @@ def _member_domain_type_issues(
             collection_domain_type=collection_domain_type,
             at=at,
         )
-    elif coverage.domain_type is not None:
+    elif coverage.domain_type is not UNSET:
         # The type matches, but the coverage still carries its own domainType
         # member, which Spec 6.4 says it SHOULD omit.
         yield CoverageDomainTypeNotOmitted(
