@@ -82,9 +82,15 @@ Bridges (each behind an extra): `numpy` (NdArray <-> numpy, methods on NdArray),
   one object). Anything cross-cutting or data-scanning lives in `validate()` so
   decode stays permissive.
 - **A byte-faithful model with lossy conversion confined to opt-in bridges.**
-  Decode preserves the document (for example temporal values stay raw ISO 8601
-  strings, never parsed to `datetime`); conversions that lose information happen
-  only in the export bridges.
+  Decode preserves every spec-defined member (for example temporal values stay
+  raw ISO 8601 strings, never parsed to `datetime`); conversions that lose
+  information happen only in the export bridges. The one carve-out is *foreign
+  members* (custom extension keys the CoverageJSON spec does not define):
+  msgspec drops them on decode, so `decode -> encode` is lossy for them. The
+  spec permits extensions but does not require preserving them; the model
+  deliberately does not capture them (ADR-0012), so relaying a document
+  unchanged means forwarding its raw bytes, not round-tripping through the
+  model.
 - **Opt-in typed projection over a faithful core.** Where one concrete type
   encodes several logical types, expose precise typing as an explicit, opt-in
   projection (an accessor), never as the stored/decoded representation, and not
