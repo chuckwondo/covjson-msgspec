@@ -128,7 +128,7 @@ build-backend = "uv_build"
 
 [tool.ruff]
 line-length = 88
-src         = [ "src", "tests" ]
+src         = [ "src", "tests", "benchmarks" ]
 
 [tool.ruff.lint]
 # PLC2701 bans importing another package's `_private` names (third-party or
@@ -160,7 +160,7 @@ select = [
 ban-relative-imports = "all"
 
 [tool.mypy]
-files             = [ "src", "tests" ]
+files             = [ "src", "tests", "benchmarks" ]
 strict            = true
 warn_unreachable  = true
 enable_error_code = [ "redundant-expr", "truthy-bool", "ignore-without-code" ]
@@ -174,13 +174,13 @@ module                 = [ "cftime" ]
 ignore_missing_imports = true
 
 [tool.basedpyright]
-include          = [ "src", "tests" ]
+include          = [ "src", "tests", "benchmarks" ]
 typeCheckingMode = "strict"
 
 # Check src + tests (mirroring mypy's `files` and basedpyright's `include`) so a
 # bare `uvx ty check` covers the same set as the blocking checkers.
 [tool.ty.src]
-include = [ "src", "tests" ]
+include = [ "src", "tests", "benchmarks" ]
 
 # ty is an informational (non-blocking) checker. Two negative tests deliberately
 # pass a wrong-typed argument to a public function, guarded by mypy's precise
@@ -202,8 +202,8 @@ rules   = { invalid-argument-type = "ignore" }
 # to "strict" is tracked in #71.
 [tool.pyrefly]
 preset           = "legacy"
-project_includes = [ "src", "tests" ]
-search_path      = [ "src", "tests" ]
+project_includes = [ "src", "tests", "benchmarks" ]
+search_path      = [ "src", "tests", "benchmarks" ]
 
 [tool.pytest.ini_options]
 # Run doctests in the package modules alongside the test suite. `importlib`

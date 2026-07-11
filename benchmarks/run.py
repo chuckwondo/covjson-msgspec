@@ -27,6 +27,8 @@ is the only honest like-for-like against pydantic's decode.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import functools
 import itertools
 import json
 import pathlib
@@ -36,8 +38,12 @@ import timeit
 from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass
 from importlib.metadata import version
+from typing import TYPE_CHECKING, Any, cast
 
 import covjson_msgspec as cm
+
+if TYPE_CHECKING:
+    from pydantic import BaseModel
 
 _REPO = pathlib.Path(__file__).resolve().parent.parent
 _CORPUS = _REPO / "tests" / "corpus"
@@ -242,7 +248,7 @@ class Cell:
 
     name: str
     raw: bytes
-    pyd_cls: type
+    pyd_cls: type[BaseModel]
     t_values: tuple[str, ...]
 
 
@@ -281,7 +287,7 @@ def main() -> None:
     env = collect_env()
     versions = {name: version(name) for name in _PINNED}
 
-    payload = {
+    payload: dict[str, object] = {
         "env": env,
         "versions": versions,
         "semantics": _SEMANTICS,
@@ -319,14 +325,11 @@ def build_cells(*, quick: bool) -> list[Cell]:
     >>> any(c.t_values for c in cells)  # the datetime rung has something to run
     True
     """
-    from covjson_pydantic.coverage import (
-        Coverage,
-        CoverageCollection,
-        Domain,
-        TiledNdArray,
-    )
+    from covjson_pydantic.coverage import Coverage, CoverageCollection
+    from covjson_pydantic.domain import Domain
+    from covjson_pydantic.ndarray import TiledNdArray
 
-    dispatch: dict[str, type] = {
+    dispatch: dict[str, type[BaseModel]] = {
         "Coverage": Coverage,
         "CoverageCollection": CoverageCollection,
         "TiledNdArray": TiledNdArray,
@@ -372,14 +375,11 @@ def measure_probes(*, quick: bool) -> list[Row]:
     blank. This is where "we can, they cannot" (and, symmetrically, its absence)
     becomes visible inside the benchmark itself.
     """
-    from covjson_pydantic.coverage import (
-        Coverage,
-        CoverageCollection,
-        Domain,
-        TiledNdArray,
-    )
+    from covjson_pydantic.coverage import Coverage, CoverageCollection
+    from covjson_pydantic.domain import Domain
+    from covjson_pydantic.ndarray import TiledNdArray
 
-    dispatch: dict[str, type] = {
+    dispatch: dict[str, type[BaseModel]] = {
         "Coverage": Coverage,
         "CoverageCollection": CoverageCollection,
         "TiledNdArray": TiledNdArray,
@@ -390,7 +390,7 @@ def measure_probes(*, quick: bool) -> list[Row]:
     for name, raw, _note in _PROBES:
         pyd_cls = dispatch.get(json.loads(raw)["type"])
         attempts: list[tuple[str, Callable[[], object]]] = [
-            ("msgspec", lambda raw=raw: cm.decode(raw))
+            ("msgspec", functools.partial(cm.decode, raw))
         ]
 
         if pyd_cls is None:
@@ -399,7 +399,7 @@ def measure_probes(*, quick: bool) -> list[Row]:
             )
         else:
             attempts.append(
-                ("pydantic", lambda raw=raw, cls=pyd_cls: cls.model_validate_json(raw))
+                ("pydantic", functools.partial(pyd_cls.model_validate_json, raw))
             )
 
         for lib, fn in attempts:
@@ -482,7 +482,7 @@ def render_markdown(
     return "\n".join(lines)
 
 
-def _make_cell(name: str, raw: bytes, dispatch: dict[str, type]) -> Cell:
+def _make_cell(name: str, raw: bytes, dispatch: dict[str, type[BaseModel]]) -> Cell:
     """Build a `Cell`, asserting it decodes on msgspec and pydantic alike."""
     doc_type = json.loads(raw)["type"]
     pyd_cls = dispatch[doc_type]
@@ -554,7 +554,7 @@ def _synthetic_grid(*, quick: bool) -> bytes:
         ),
         ranges={
             "v": NdArray.from_numpy(
-                np.arange(side * side, dtype=float).reshape(side, side), ("y", "x")
+                np.arange(side**2, dtype=float).reshape(side, side), ("y", "x")
             )
         },
     )
@@ -746,10 +746,10 @@ def _reason(exc: Exception) -> str:
     errors = getattr(exc, "errors", None)
 
     if callable(errors):
-        try:
-            return f"{kind}: {errors()[0]['msg']}"
-        except (IndexError, KeyError, TypeError, AttributeError):
-            pass
+        with contextlib.suppress(IndexError, KeyError, TypeError, AttributeError):
+            details = cast("list[dict[str, Any]]", errors())
+
+            return f"{kind}: {details[0]['msg']}"
 
     return f"{kind}: {str(exc).splitlines()[0][:80]}"
 
@@ -955,10 +955,7 @@ def _probe_cell(row: Row | None) -> str:
     if row is None:
         return "n/a"
 
-    if row.status == "skipped":
-        return f"raises {row.reason}"
-
-    return _cell(row)
+    return f"raises {row.reason}" if row.status == "skipped" else _cell(row)
 
 
 def _cell(row: Row, reference: Row | None = None) -> str:
@@ -976,7 +973,7 @@ def _cell(row: Row, reference: Row | None = None) -> str:
 
 def _ratio(numerator: Row, denominator: Row) -> str:
     """Speedup ``numerator / denominator`` (e.g. pydantic over msgspec)."""
-    if numerator.status == "skipped" or denominator.status == "skipped":
+    if numerator.median_us is None or denominator.median_us is None:
         return "--"
 
     return f"{numerator.median_us / denominator.median_us:.1f}x"
