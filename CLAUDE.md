@@ -193,6 +193,7 @@ This project uses [uv](https://docs.astral.sh/uv/).
 uv sync                          # core + all bridges + dev tooling
 uv sync --group typecheck        # also installs basedpyright (Node runtime)
 uv sync --group bench            # also installs the benchmark deps
+uv sync --group docs             # also installs the docs toolchain (ProperDocs)
 
 uv run pytest                    # tests + doctests (--doctest-modules is on)
 uv run ruff check                # lint
@@ -202,6 +203,8 @@ uv run basedpyright              # strict; blocking in CI (needs typecheck group
 uvx ty check                     # informational
 uvx pyrefly check                # informational
 uv run prek run --all-files      # the pre-commit suite
+
+uv run --group docs properdocs build   # build the docs site (serve: ... serve)
 ```
 
 Type checking runs four checkers: mypy (strict) and basedpyright (strict) are

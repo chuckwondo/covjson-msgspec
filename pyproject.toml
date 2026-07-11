@@ -105,6 +105,22 @@ bench = [
   "covjson-msgspec[all]",
   "covjson-pydantic>=0.7",
 ]
+# Documentation site (see ADR-0014). ProperDocs is a maintained fork of MkDocs
+# 1.x (the upstream is diverging toward a plugin-less, incompatible 2.0); the
+# Material theme skins it; mkdocstrings extracts the API reference statically
+# from source via griffe. Static extraction is the load-bearing reason for this
+# stack: it renders our `from __future__ import annotations`, TYPE_CHECKING-only
+# bridge signatures (e.g. `to_xarray(coverage: Coverage) -> xr.Dataset`)
+# faithfully without importing numpy/xarray/pandas at build time. This group is
+# dev-only tooling, not a runtime dependency of the published package, so
+# ADR-0010's wheel-floor policy does not apply; the floors are simply the
+# versions the toolchain was validated against. Signature formatting reuses the
+# `ruff` from the `dev` group.
+docs = [
+  "properdocs>=1.6.7",
+  "mkdocs-material>=9.7",
+  "mkdocstrings[python]>=1.0",
+]
 
 [build-system]
 requires      = [ "uv_build>=0.11.23,<0.12.0" ]

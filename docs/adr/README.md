@@ -67,6 +67,10 @@ CLAUDE.md.
   collection-inheritance members use `X | UnsetType = UNSET`, rejecting a
   spec-forbidden `null` at decode and separating "omitted" from "null"; narrow by
   design, reconciled with the ADR-0002 permissive-decode stance
+- [ADR-0014](0014-documentation-toolchain.md): documentation via ProperDocs +
+  mkdocstrings, chosen for static (griffe) API extraction that renders the
+  `TYPE_CHECKING`-only bridge signatures faithfully; the engine is a reversible
+  swap over a portable Markdown + `objects.inv` substrate
 
 Some decisions are recorded in ADRs that land with their implementation rather
 than here; see the issue tracker for the in-flight set.
