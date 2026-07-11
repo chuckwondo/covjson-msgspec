@@ -45,7 +45,7 @@ def test_unit_requires_label_or_symbol_on_decode() -> None:
 def test_categorical_parameter_with_unit_rejected_on_decode() -> None:
     # A categorical parameter that also carries a unit must be rejected even
     # when it arrives as JSON, via __post_init__ during decode.
-    payload = {
+    payload: dict[str, object] = {
         "type": "Parameter",
         "observedProperty": {
             "label": {"en": "Land cover"},

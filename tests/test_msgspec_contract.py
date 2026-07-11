@@ -63,7 +63,7 @@ def test_dict_field_contents_remain_mutable_despite_frozen() -> None:
     # frozen=True prevents rebinding the attribute, but a dict field's *contents*
     # are still mutable: the known hole for Coverage.ranges (dict[str, Range]).
     class HasRanges(_CovJSONStruct, frozen=True, tag="HasRanges"):
-        ranges: dict[str, int] = msgspec.field(default_factory=dict)
+        ranges: dict[str, int] = msgspec.field(default_factory=dict[str, int])
 
     obj = HasRanges(ranges={"a": 1})
     field = "ranges"
