@@ -189,6 +189,30 @@ jobs:
       - name: Write coverage summary to the job summary
         run: uv run --quiet coverage report --format=markdown --show-missing >> "$GITHUB_STEP_SUMMARY"
 
+  # Docs site must build under --strict, so a broken link or dead cross-reference
+  # fails CI. Installing only the `docs` group (no dev group, no bridges) also
+  # asserts ADR-0014's claim that static griffe extraction renders the
+  # TYPE_CHECKING-only bridge signatures without importing numpy/xarray/pandas.
+  docs:
+    needs: config
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Set up uv and Python ${{ fromJSON(needs.config.outputs.python-versions)[0] }}
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          python-version: ${{ fromJSON(needs.config.outputs.python-versions)[0] }}
+          enable-cache: true
+          cache-suffix: docs
+      - name: Install docs toolchain (only the docs group, no bridges)
+        run: uv sync --locked --only-group docs --quiet
+      - name: Build the docs (strict)
+        run: uv run --no-sync properdocs build --strict
+
   # Single stable status check for branch protection to require. `typecheck`
   # and `test` are matrix jobs, so each Python version reports its own
   # separately-named check (e.g. "typecheck (3.11)"); since the matrix is
@@ -199,7 +223,7 @@ jobs:
   required-checks:
     name: Required checks
     if: always()
-    needs: [config, checks, typecheck, test, coverage]
+    needs: [config, checks, typecheck, test, coverage, docs]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
