@@ -1,0 +1,29 @@
+/* Starter brand layer for the docs site.
+ *
+ * Rung 2 of the customization ladder in ADR-0014 ("Theme and customization"):
+ * override Material's CSS custom properties here, not its Jinja templates, so
+ * the look stays portable across theme upgrades and a future Zensical
+ * migration. This file is the wired seam with the key variables stubbed and
+ * commented; the actual visual design belongs to issue #21.
+ *
+ * properdocs.yml already sets the palette to teal/cyan (rung 1). Uncomment and
+ * set exact hex values below to go beyond Material's named palette.
+ */
+
+/* Light scheme ("default"). Material derives hover/visited/focus shades from
+ * these, so setting the two foreground colors is usually enough. */
+[data-md-color-scheme="default"] {
+  /* --md-primary-fg-color: #00695c; */
+  /* --md-accent-fg-color:  #00838f; */
+}
+
+/* Dark scheme ("slate"). */
+[data-md-color-scheme="slate"] {
+  /* --md-primary-fg-color: #26a69a; */
+  /* --md-accent-fg-color:  #4dd0e1; */
+}
+
+/* API reference. mkdocstrings emits .doc-* classes, so the reference can carry
+ * its own emphasis independent of the prose pages. Example seam, left commented
+ * until #21 sets the design. */
+/* .doc-heading code { font-weight: 600; } */

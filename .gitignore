@@ -23,6 +23,9 @@ htmlcov/
 coverage.xml
 .benchmarks/
 
+# Docs build output (ProperDocs / MkDocs)
+site/
+
 # Editors / OS
 .idea/
 *.swp

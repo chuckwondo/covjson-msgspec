@@ -1,0 +1,82 @@
+# ProperDocs configuration (see ADR-0014 for the toolchain decision).
+# ProperDocs is a fork of MkDocs 1.x, so this is MkDocs-1.x-schema YAML: a
+# future migration to Zensical or MkDocs is a rename plus a dependency swap.
+# Build with: uv run --group docs properdocs build   (serve: ... properdocs serve)
+site_name: covjson-msgspec
+site_description: Fast, fully-typed CoverageJSON models built on msgspec
+repo_url: https://github.com/chuckwondo/covjson-msgspec
+repo_name: chuckwondo/covjson-msgspec
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - toc.follow
+  # Rung-1 customization (see ADR-0014 "Theme and customization"): named-palette
+  # brand colors, a one-word swap. Exact hex values are the rung-2 seam below.
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: cyan
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: cyan
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+# Rung-2 seam: override Material's CSS custom properties here, not its templates,
+# so the look stays portable across theme upgrades and a future Zensical
+# migration. The real visual design is #21; this is just the wired seam.
+extra_css:
+  - stylesheets/extra.css
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          # Static (griffe) extraction: griffe parses src/ and never imports the
+          # package, so TYPE_CHECKING-only bridge annotations render faithfully
+          # without numpy/xarray/pandas installed at build time.
+          paths: [src]
+          # Load dependency inventories so bridge signatures cross-link into the
+          # upstream docs (the intersphinx equivalent); mkdocstrings also emits
+          # our own objects.inv for downstream projects to link into.
+          inventories:
+            - https://docs.python.org/3/objects.inv
+            - https://numpy.org/doc/stable/objects.inv
+            - https://docs.xarray.dev/en/stable/objects.inv
+            - https://pandas.pydata.org/docs/objects.inv
+          options:
+            docstring_style: numpy
+            show_source: false
+            show_root_heading: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            separate_signature: true
+            show_signature_annotations: true
+            signature_crossrefs: true
+            merge_init_into_class: true
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - API reference:
+      - Coverage: reference/coverage.md
+  - Design decisions (ADRs):
+      - Overview: adr/README.md
