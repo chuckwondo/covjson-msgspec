@@ -76,7 +76,49 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Getting started: getting-started.md
+  - Core concepts: concepts.md
+  - Guides:
+      - Bridges:
+          - xarray: guides/xarray.md
+          - pandas: guides/pandas.md
+          - geo / GeoJSON: guides/geo.md
+          - numpy: guides/numpy.md
+      - Validation: guides/validation.md
+      - Subsetting: guides/subsetting.md
+      - Serving over HTTP: guides/http.md
+      - Resolving references: guides/references.md
+      - Assembling tiles: guides/tiles.md
+      - Advanced patterns: guides/advanced.md
   - API reference:
-      - Coverage: reference/coverage.md
-  - Design decisions (ADRs):
-      - Overview: adr/README.md
+      - Overview: reference/index.md
+      - Coverage & collections: reference/coverage.md
+      - Domain & axes: reference/domain.md
+      - Ranges: reference/range.md
+      - Referencing systems: reference/referencing.md
+      - Parameters & i18n: reference/parameter.md
+      - Validation: reference/validation.md
+      - Subsetting: reference/subset.md
+      - Reference resolution & fetching: reference/references.md
+      - Temporal: reference/temporal.md
+      - HTTP, media type & schema: reference/media-type.md
+      - Bridges: reference/bridges.md
+  - Design decisions:
+      - Overview: design/index.md
+      - Design tenets: design/tenets.md
+      - Architecture decision records:
+          - About the ADRs: adr/README.md
+          - "ADR-0001: Python 3.11 floor": adr/0001-python-3-11-floor.md
+          - "ADR-0002: Opt-in tiered validation": adr/0002-opt-in-tiered-validation.md
+          - "ADR-0003: IssueCode enum": adr/0003-issue-code-enum.md
+          - "ADR-0004: Single non-generic NdArray": adr/0004-ndarray-single-non-generic-class.md
+          - "ADR-0005: langcodes core dependency": adr/0005-langcodes-core-dependency.md
+          - "ADR-0006: Validation findings sum type": adr/0006-validation-findings-sum-type.md
+          - "ADR-0007: Functional-core best-effort fetching": adr/0007-functional-core-errors-as-values.md
+          - "ADR-0008: Temporal result projection": adr/0008-temporal-conversion-result-projection.md
+          - "ADR-0009: OpenAPI schema bridge": adr/0009-openapi-schema-bridge.md
+          - "ADR-0010: Dependency floor policy": adr/0010-dependency-floor-policy.md
+          - "ADR-0011: Axis-ordering checker seam": adr/0011-axis-ordering-checker-seam.md
+          - "ADR-0012: Foreign members dropped on decode": adr/0012-foreign-members-dropped-on-decode.md
+          - "ADR-0013: UNSET for inheritance members": adr/0013-unset-for-omittable-inheritance-members.md
+          - "ADR-0014: Documentation toolchain": adr/0014-documentation-toolchain.md
