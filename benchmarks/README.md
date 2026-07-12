@@ -5,8 +5,12 @@ Throughput numbers for the core codec operations, comparing this library against
 Pydantic-based CoverageJSON library). This is issue #18; the results feed the
 covjson-pydantic comparison documentation (issue #22).
 
-`results.md` is the human-readable table; `results.json` is the machine-readable
-record. Both are generated, committed artifacts. **Do not edit them by hand.**
+The report is assembled from three pieces: `run.py` measures and writes
+`results.json` (the machine-readable data); `results.template.md` holds the prose
+with `{{placeholder}}` tokens; and rendering fills those placeholders from the
+data to produce `results.md` (the human-readable report). `results.md` and
+`results.json` are generated, committed artifacts. **Do not edit them by hand**:
+edit the template for prose, or the generator for numbers.
 
 ## Running
 
@@ -15,45 +19,42 @@ the library), so it lives in the `bench` dependency group:
 
 ```sh
 uv sync --group bench
-uv run --group bench python benchmarks/run.py            # full run
-uv run --group bench python benchmarks/run.py --quick    # fast smoke run
+uv run --group bench python benchmarks/run.py               # measure + render
+uv run --group bench python benchmarks/run.py --quick       # fast smoke run
+uv run --group bench python benchmarks/run.py --render-only  # re-render prose only
 ```
 
-Both artifacts are rendered from one in-memory result set, so they cannot
-disagree; regenerate them together with the command above.
+`--render-only` re-renders `results.md` from the committed `results.json` and the
+template without measuring, so editing prose costs a second rather than a full
+run. On a measured run both artifacts are written together, so they cannot
+disagree.
 
-## What is measured
+## The document set (provenance)
 
-The core operations on a representative document set: **decode** (JSON bytes to
-model), **encode** (model to JSON bytes), and **round-trip** (decode then
-encode).
+The five documents the tables are measured against, and where they come from.
+`results.md` describes what each one exercises and why its cost is what it is;
+this records their source. Each is verified to parse on both libraries at setup,
+since a document only one side accepts is not a fair timing cell.
 
-### The document set (benchmark cells)
-
-Five documents spanning sizes and shapes. Each is verified to parse on both
-libraries at setup; a document only one side accepts is not a fair timing cell
-(see "Capability gaps" below).
-
-| Cell | Source | Shape |
-| --- | --- | --- |
-| `point-series (small)` | `example_py.json` | PointSeries coverage (temporal) |
-| `grid (medium)` | `doc-example-coverage.json` | Grid coverage (temporal) |
-| `tiled-ndarray` | `spec-tiled-ndarray.json` | bare TiledNdArray |
-| `coverage-collection` | `doc-example-coverage-collection.json` | multi-member collection (temporal) |
-| `grid-large (synthetic)` | generated at runtime | large Grid coverage, ~40k floats |
+| Cell | Source |
+| --- | --- |
+| `point-series (small)` | `example_py.json` |
+| `grid (medium)` | `doc-example-coverage.json` |
+| `tiled-ndarray` | `spec-tiled-ndarray.json` |
+| `coverage-collection` | `doc-example-coverage-collection.json` |
+| `grid-large (synthetic)` | generated at runtime |
 
 The corpus cells come from `tests/corpus/covjson-pydantic/` (covjson-pydantic's
-own vendored test data). They are used in preference to the `playground/`
-documents on purpose: the playground documents carry timezone-naive temporal
-values, which covjson-pydantic's `AwareDatetime` rejects, so they cannot be
-timed head-to-head at all.
+own vendored test data), used in preference to the `playground/` documents on
+purpose: the playground documents carry timezone-naive temporal values, which
+covjson-pydantic's `AwareDatetime` rejects, so they cannot be timed head-to-head.
 
-The large NdArray cell is generated because the largest corpus document is only
-about 5 KB. It is built from the public builders and encoded to canonical
-CoverageJSON bytes that both libraries decode, so the "large array" comparison
-is exercised without shipping a large fixture.
+The large cell is generated because the largest corpus document is only about
+5 KB. It is built from the public builders and encoded to canonical CoverageJSON
+that both libraries decode, so the large-array comparison is exercised without
+shipping a large fixture.
 
-### Capability probes
+## Capability probes
 
 A timing table can only compare documents both libraries accept. To keep the
 one-sided gaps visible instead of silently dropping them, `run.py` also decodes
@@ -71,88 +72,35 @@ rendered section states that explicitly rather than leaving it implied. This is
 a decode-*acceptance* comparison only; the fuller capability and correctness
 story stays with issue #22 (see below).
 
-## Fairness: the coupling-aware ladder
+## How the comparison is constructed
 
-The libraries divide the work differently, and hiding that would make the
-numbers dishonest. covjson-pydantic's decode is **one fused, mandatory step**:
-structural decode, validation, and parsing every temporal value to a
-`datetime`. covjson-msgspec keeps those concerns **separate and opt-in**: decode
-is structural only and leaves temporal values as strings; validation and
-`datetime` conversion are things you ask for when you need them.
+The two libraries divide the work differently, and `results.md` explains that
+split where you read it: covjson-pydantic's decode is one fused step (structural
+decode, validation, and datetime parsing), while covjson-msgspec exposes those as
+an opt-in ladder. See the **Decode and the validation ladder** and **Validation
+parity** sections of `results.md` for how to read the rungs, the speedup markers,
+and the ⚠️ that flags where covjson-pydantic skips a MUST check.
 
-So the msgspec side is measured as a **cumulative ladder**, each rung a superset
-of the one before, and each adjacent step isolating one cost:
+### Matched-work framings
 
-1. `decode`: structural only; temporal values stay strings (what you pay by
-   default).
-2. `decode + validate`: adds the cross-cutting spec checks (no value scan).
-3. `decode + validate(check_values=True)`: adds the O(n) value scans
-   (value-vs-dataType, categorical codes, temporal lexical form, monotonic
-   axes).
-4. `decode + validate(check_values=True) + to_datetime(t)`: adds a `datetime`
-   for every temporal coordinate.
+The full ladder does more validation than covjson-pydantic, which flatters
+covjson-pydantic on the cells where the extra work matters. The matched-work
+tables neutralize the one ours-only check that is both removable from
+covjson-msgspec and addable to covjson-pydantic, the monotonic axis scan:
 
-Rung 4 is the **only honest like-for-like** with covjson-pydantic's decode: both
-end with a validated model whose temporal values are real `datetime` objects.
-The `+ datetime` column is skipped for a cell with no temporal axis (the bare
-TiledNdArray and the synthetic Grid), shown as `n/a (no-temporal-axis)`.
+- **Framing A** passes a no-op `axis_order_checker`, so covjson-msgspec does no
+  more validation than covjson-pydantic's plain decode.
+- **Framing B** bolts a manual monotonic scan onto a decoded covjson-pydantic
+  model, so covjson-pydantic does covjson-msgspec's full validation.
 
-Read the asymmetry precisely (the results file has a **validation parity**
-scorecard, and the numbers below are from the harness's own probing). Each row's
-**expected** behavior is the proportional response the spec calls for, graded by
-requirement level: a `MUST` violation should error, a `SHOULD` violation should
-warn (the document stays loadable), and a conformant input should be accepted. A
-check or cross on each library then shows whether its response was proportional.
-Both libraries error on **value-vs-dataType** and **value-count-vs-shape** (MUST
-violations), so those overlap. covjson-msgspec also errors on **categorical
-codes** and **monotonic axis order** (both MUST; the latter via an axis-order
-checker that `check_values=True` applies by default but callers can replace or
-disable, which the matched-work section below relies on); covjson-pydantic checks
-neither, missing two MUST violations. The remaining two rows both go against
-covjson-pydantic: on a **malformed** temporal value (`"2010-13-99"`, a Spec 5.2
-SHOULD) covjson-msgspec warns and keeps the document while covjson-pydantic
-raises, over-enforcing a SHOULD on a document the spec lets you load; and on the
-**spec-valid** reduced-precision form (`"2020-06"`) covjson-pydantic rejects a
-conformant document outright.
-
-So covjson-msgspec's response is proportional on every row, and its detection is a
-**superset** of covjson-pydantic's legitimate checks: at rung 4 it wins (where it
-wins) while validating at least as thoroughly, and where covjson-pydantic's fused
-decode comes out ahead, the table shows that plainly rather than hiding it.
-
-### Matched-work comparison
-
-Because rung 4 does more validation than covjson-pydantic, comparing it directly
-can flatter covjson-pydantic on the cells where the extra work matters. The
-**matched-work** section removes that confound by isolating the one ours-only
-check that is both removable from our side and addable to theirs: the monotonic
-axis scan (covjson-pydantic cannot be tuned, but we can pass a no-op
-`axis_order_checker`, and we can bolt a manual monotonic scan onto a decoded
-pydantic model). Two framings:
-
-- **A, trim ours:** `validate` with the monotonic scan disabled, versus
-  covjson-pydantic's plain decode.
-- **B, add theirs:** our full `validate` versus covjson-pydantic decode plus a
-  manual monotonic scan.
-
-On the mid-size cells this **flips the result** (for example the coverage
-collection goes from roughly parity to covjson-msgspec ahead), confirming the
-monotonic scan was the reason covjson-msgspec looked slower. It does **not**
-rescue `tiled-ndarray` or `grid-large`, and the section says so: those reflect
-covjson-msgspec running validation as a **separate pass** over decoded objects
-(a fixed per-call cost on the tiny document, a pure-Python per-element cost on
-the 40k-element one) rather than the fused, native validation covjson-pydantic
-performs during decode. That is a real architectural difference, not extra work
--- and a candidate for a future optimization, out of scope for this
-measurement-only issue.
-
-The **round-trip** table carries the same asymmetry (pydantic validates and
-parses datetimes on its decode half), so it is reported with two msgspec
-anchors, not one: a `structural` round-trip (`decode + encode`, the realistic
-default cost of a faithful read and write) and a `full` round-trip (`decode +
-validate(check_values=True) + to_datetime(t) + encode`, the like-for-like with
-pydantic's fused round-trip). The encode table needs no such split: encoding is
-symmetric, since both libraries simply serialize a model in hand.
+`results.md` reads the outcome; the one subtlety worth recording here is the
+`coverage-collection` Framing B row. It is like-for-like (both run the monotonic
+check) yet leaves covjson-msgspec slightly behind, and the gap is not a skipped
+check: covjson-msgspec's monotonic pass resolves temporal values from their
+strings per member domain (roughly 35us across the two members), while
+covjson-pydantic compares `datetime`s it already parsed during its fused decode
+(roughly 9us). It is a separate-pass cost, and a candidate for the same kind of
+native fast path the value scan now has.
 
 ## Methodology
 

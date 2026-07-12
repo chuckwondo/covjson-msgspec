@@ -14,17 +14,11 @@
 
 ## Environment
 
-- platform: macOS-12.7.6-x86_64-i386-64bit
-- python: 3.11.10 (CPython), x86_64
+{{environment}}
 
 ## Versions
 
-- covjson-msgspec: 0.1.0
-- covjson-pydantic: 0.8.0
-- msgspec: 0.21.1
-- pydantic: 2.13.4
-- pydantic-core: 2.46.4
-- numpy: 2.4.6
+{{versions}}
 
 ## The document set
 
@@ -67,13 +61,7 @@ The documents themselves:
   one inline float range of 40,000 values. The large-array case: its cost is the
   per-element value scan.
 
-| cell | size (KB) | inline values | temporal coords | covjson-pydantic spec compliance |
-| :--- | ---: | ---: | ---: | :--- |
-| point-series (small) | 0.8 | 1 | 1 | ❌ non-compliant: skips monotonic axis order |
-| grid (medium) | 1.8 | 0 | 1 | ❌ non-compliant: skips monotonic axis order |
-| tiled-ndarray | 0.7 | 0 | 0 | ❌ non-compliant: skips tile-set consistency |
-| coverage-collection | 4.2 | 6 | 2 | ❌ non-compliant: skips monotonic axis order |
-| grid-large (synthetic) | 302.0 | 40,000 | 0 | ✅ compliant |
+{{document_set_table}}
 
 ## Decode and the validation ladder (median us/op)
 
@@ -123,23 +111,11 @@ Reading the table:
 > covjson-pydantic drops. The `covjson-pydantic spec compliance` column in The
 > document set names the failing check per cell.
 
-| cell | pydantic decode (us) | msgspec decode (us, x) | + validate (us, x) | + validate(values) (us, x) | + datetime (us, x) |
-| :--- | ---: | ---: | ---: | ---: | ---: |
-| point-series (small) | 53.16 (+-14.94) ⚠️ | 3.65 (+-0.14)<br>*14.5x* ⬆️ | 18.22 (+-1.82)<br>*2.9x* ⬆️ | 30.02 (+-2.03)<br>*1.8x* ⬆️ | 37.70 (+-4.28)<br>*1.4x* ⬆️ |
-| grid (medium) | 51.59 (+-1.41) ⚠️ | 6.03 (+-0.26)<br>*8.6x* ⬆️ | 31.63 (+-1.09)<br>*1.6x* ⬆️ | 53.23 (+-3.89)<br>1.0x 🟰 | 54.47 (+-1.33)<br>0.9x ⬇️ |
-| tiled-ndarray | 10.60 (+-0.41) ⚠️ | 2.44 (+-0.06)<br>*4.3x* ⬆️ | 19.67 (+-0.78)<br>0.5x ⬇️ | 18.65 (+-2.08)<br>0.6x ⬇️ | n/a (no-temporal-axis)<br>0.6x ⬇️ |
-| coverage-collection | 153.26 (+-12.31) ⚠️ | 13.04 (+-1.00)<br>*11.8x* ⬆️ | 87.90 (+-2.06)<br>*1.7x* ⬆️ | 190.08 (+-43.42)<br>0.8x ⬇️ | 188.02 (+-72.21)<br>0.8x ⬇️ |
-| grid-large (synthetic) | 7099.48 (+-464.43) | 1807.07 (+-893.11)<br>*3.9x* ⬆️ | 1690.68 (+-84.92)<br>*4.2x* ⬆️ | 2371.52 (+-623.10)<br>*3.0x* ⬆️ | n/a (no-temporal-axis)<br>*3.0x* ⬆️ |
+{{decode_ladder_table}}
 
 ## Encode (median us/op)
 
-| cell | msgspec (us) | pydantic (us) | speedup |
-| :--- | ---: | ---: | ---: |
-| point-series (small) | 1.20 (+-0.13) | 16.06 (+-0.70) | *13.3x* ⬆️ |
-| grid (medium) | 2.45 (+-0.14) | 54.23 (+-12.38) | *22.1x* ⬆️ |
-| tiled-ndarray | 0.76 (+-0.05) | 4.43 (+-0.21) | *5.8x* ⬆️ |
-| coverage-collection | 3.93 (+-0.25) | 51.31 (+-3.49) | *13.1x* ⬆️ |
-| grid-large (synthetic) | 2886.29 (+-117.87) | 5187.54 (+-403.53) | *1.8x* ⬆️ |
+{{encode_table}}
 
 ## Round-trip (median us/op)
 
@@ -147,13 +123,7 @@ The same asymmetry as decode: covjson-pydantic's round-trip validates and parses
 datetimes on its decode half. `structural` does neither (the default read + write
 cost); `full` adds validation and datetimes to match.
 
-| cell | pydantic (us) | msgspec structural (us, x) | msgspec full (us, x) |
-| :--- | ---: | ---: | ---: |
-| point-series (small) | 77.91 (+-2.48) ⚠️ | 5.39 (+-0.99)<br>*14.5x* ⬆️ | 36.95 (+-3.45)<br>*2.1x* ⬆️ |
-| grid (medium) | 142.44 (+-80.10) ⚠️ | 8.56 (+-0.35)<br>*16.6x* ⬆️ | 58.09 (+-3.08)<br>*2.5x* ⬆️ |
-| tiled-ndarray | 15.55 (+-0.68) ⚠️ | 4.32 (+-1.62)<br>*3.6x* ⬆️ | 20.62 (+-0.57)<br>0.8x ⬇️ |
-| coverage-collection | 240.96 (+-27.52) ⚠️ | 17.50 (+-0.80)<br>*13.8x* ⬆️ | 170.97 (+-4.87)<br>*1.4x* ⬆️ |
-| grid-large (synthetic) | 12736.09 (+-990.76) | 4567.21 (+-1959.59)<br>*2.8x* ⬆️ | 5061.24 (+-425.01)<br>*2.5x* ⬆️ |
+{{roundtrip_table}}
 
 ## Validation parity (decode-time checks)
 
@@ -168,16 +138,7 @@ consistency, so it silently accepts documents the spec requires be rejected. It
 also over-enforces one SHOULD (raising on a malformed temporal value the spec lets
 you load) and rejects one conformant input (a reduced-precision time).
 
-| check | expected | msgspec full | pydantic decode |
-| --- | --- | --- | --- |
-| structure and field types | error (MUST) | ✅ error | ✅ error |
-| value vs dataType | error (MUST) | ✅ error | ✅ error |
-| value count vs shape product | error (MUST) | ✅ error | ✅ error |
-| monotonic axis order | error (MUST) | ✅ error (default policy) | ❌ not checked |
-| categorical code vs categories | error (MUST) | ✅ error | ❌ not checked |
-| tile set consistency (shape, url template) | error (MUST) | ✅ error | ❌ not checked |
-| malformed temporal (2010-13-99) | warning (SHOULD) | ✅ warning, preserved | ❌ error (overreach) |
-| reduced-precision t (2020-06) | accept (valid) | ✅ accepted | ❌ rejects |
+{{validation_parity_table}}
 
 ## Matched-work comparison (median us/op)
 
@@ -206,23 +167,11 @@ the `coverage-collection` result through.
 
 Framing A, trim our extra so covjson-msgspec does no more than covjson-pydantic:
 
-| cell | pydantic decode (us) | msgspec matched-trim (us) | speedup |
-| :--- | ---: | ---: | ---: |
-| point-series (small) | 53.16 (+-14.94) | 39.41 (+-13.97) | *1.3x* ⬆️ |
-| grid (medium) | 51.59 (+-1.41) | 48.02 (+-1.82) | *1.1x* ⬆️ |
-| tiled-ndarray | 10.60 (+-0.41) ⚠️ | 21.45 (+-4.27) | 0.5x ⬇️ |
-| coverage-collection | 153.26 (+-12.31) | 142.59 (+-8.82) | *1.1x* ⬆️ |
-| grid-large (synthetic) | 7099.48 (+-464.43) | 2030.19 (+-220.86) | *3.5x* ⬆️ |
+{{matched_a_table}}
 
 Framing B, add covjson-msgspec's monotonic check to covjson-pydantic:
 
-| cell | msgspec matched-full (us) | pydantic decode+monotonic (us) | speedup |
-| :--- | ---: | ---: | ---: |
-| point-series (small) | 37.89 (+-2.80) | 57.17 (+-4.24) | *1.5x* ⬆️ |
-| grid (medium) | 58.46 (+-5.63) | 72.37 (+-7.03) | *1.2x* ⬆️ |
-| tiled-ndarray | 22.26 (+-2.70) | 17.23 (+-1.11) ⚠️ | 0.8x ⬇️ |
-| coverage-collection | 175.78 (+-15.76) | 163.87 (+-9.82) | 0.9x ⬇️ |
-| grid-large (synthetic) | 1929.48 (+-127.95) | 7587.49 (+-979.27) | *3.9x* ⬆️ |
+{{matched_b_table}}
 
 ## Capability probes (decode, median us/op)
 
@@ -231,36 +180,11 @@ decoded it; `raises ...` is the exact exception the library throws instead,
 verbatim (type and message), so the gap is a concrete failure rather than a
 paraphrase.
 
-| probe | the gap | msgspec | pydantic |
-| --- | --- | --- | --- |
-| naive datetime | a full-form t value with no timezone | 3.32 (+-0.17) | raises ValidationError: Input should have timezone info |
-| date-only t | a reduced-precision date (spec form YYYY-MM-DD) | 3.22 (+-0.03) | raises ValidationError: Input should have timezone info |
-| year-month t | a reduced-precision month (spec form YYYY-MM) | 3.42 (+-0.14) | raises ValidationError: Input should be a valid datetime or date, input is too short |
-| extra custom axis | a domain axis beyond the fixed x/y/z/t/composite slots | 2.83 (+-0.09) | raises ValidationError: Extra inputs are not permitted |
-| mixed-type axis | one axis mixing numeric and string values | 2.34 (+-0.04) | raises ValidationError: Input should be a valid number, unable to parse string as a number |
-
-Reverse direction: no probe was found that covjson-pydantic accepts and covjson-msgspec rejects. covjson-pydantic's advantage is static type precision and discoverability (see issue #22), not document acceptance.
+{{capability_probes_table}}
 
 ## What each operation does
 
 Every row in the tables above is one of these operations. This is exactly what
 each one runs, so a timing is never a black box.
 
-**covjson-msgspec**
-
-- `decode`: structural decode only: builds the typed model and leaves every temporal value as its raw ISO 8601 string
-- `encode`: serialize the model back to CoverageJSON bytes
-- `roundtrip`: structural decode then encode; no validation or datetime parsing (the realistic default cost of a faithful read + write)
-- `roundtrip(full)`: decode + validate(check_values=True) + to_datetime(t) + encode: the closest like-for-like with pydantic round-trip (see the validation parity table for the exact check overlap)
-- `decode+validate`: decode + cross-cutting validate() (no value scan)
-- `decode+validate(values)`: decode + validate(check_values=True): adds the O(n) value scans (value-vs-dataType, categorical, temporal lexical form, and monotonic axes, the last under the default, replaceable axis-order checker)
-- `decode+validate(values)+datetime`: the row above plus to_datetime() over every temporal coordinate: the closest like-for-like with pydantic decode (see the validation parity table for the exact check overlap)
-- `matched-full`: decode + validate(check_values=True) + to_datetime(t): full validation, including the monotonic and categorical checks pydantic omits
-- `matched-trim`: decode + validate(check_values=True, monotonic disabled) + to_datetime(t): trimmed to pydantic's check set for a like-for-like
-
-**covjson-pydantic**
-
-- `decode`: model_validate_json: structural decode + validation + datetime parsing, fused and mandatory
-- `encode`: model_dump_json: serialize the model to JSON bytes
-- `roundtrip`: model_validate_json then model_dump_json
-- `decode+monotonic`: model_validate_json + a manual monotonic-axis scan, so pydantic does the same validation as msgspec's full pass
+{{operations_glossary}}
