@@ -2297,6 +2297,18 @@ def _matches_data_type(value: float | int | str, data_type: str) -> bool:
     return isinstance(value, str)  # "string"
 
 
+# The narrow element type per ``dataType``, for the fast screen in
+# `_check_value_data_types`. ``"float"`` keeps ``int`` (a JSON integer like ``5``
+# is a spec-valid float value) and excludes ``str``; the three mirror
+# `_matches_data_type` exactly (``bool`` is excluded by msgspec's strict
+# ``convert``, ``None`` is always allowed as missing data).
+_NARROW_VALUE_TYPE: dict[str, Any] = {
+    "float": tuple[int | float | None, ...],
+    "integer": tuple[int | None, ...],
+    "string": tuple[str | None, ...],
+}
+
+
 def _check_value_data_types(arr: NdArray, path: str) -> Iterator[Issue]:
     """Yield each value that does not match the declared ``dataType``.
 
@@ -2309,7 +2321,11 @@ def _check_value_data_types(arr: NdArray, path: str) -> Iterator[Issue]:
 
     This is one of the value-scanning checks gated behind ``check_values=True``;
     it is O(number of values). An offending value yields one
-    ``range.value-type-mismatch`` issue (ERROR).
+    ``range.value-type-mismatch`` issue (ERROR). A fast path first screens the
+    whole tuple with a single strict `msgspec.convert` (native, much cheaper than
+    the per-element scan on large arrays); the per-element scan runs only when
+    that screen finds a nonconforming value, enumerating every mismatch with its
+    pointer, so the reported issues are identical either way.
 
     Parameters
     ----------
@@ -2343,13 +2359,22 @@ def _check_value_data_types(arr: NdArray, path: str) -> Iterator[Issue]:
     """
     data_type = arr.data_type
 
-    return (
-        RangeValueTypeMismatch(
-            value=value, data_type=data_type, at=_ptr(path, "values", i)
+    # Screen the whole tuple in one native pass; on success (the common case)
+    # there are no issues and the Python loop never runs. Only a nonconforming
+    # array pays the per-element scan, which then reports every mismatch (convert
+    # stops at the first) so the issue stream is identical to the scan alone.
+    try:
+        msgspec.convert(arr.values, _NARROW_VALUE_TYPE[data_type], strict=True)
+    except msgspec.ValidationError:
+        return (
+            RangeValueTypeMismatch(
+                value=value, data_type=data_type, at=_ptr(path, "values", i)
+            )
+            for i, value in enumerate(arr.values)
+            if value is not None and not _matches_data_type(value, data_type)
         )
-        for i, value in enumerate(arr.values)
-        if value is not None and not _matches_data_type(value, data_type)
-    )
+
+    return iter(())
 
 
 def _unit_i18n_issues(unit: Unit | None, path: str) -> Iterator[Issue]:

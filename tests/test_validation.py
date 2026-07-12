@@ -1,7 +1,7 @@
 """Behavioral tests for document-level validation."""
 
 from collections.abc import Sequence
-from typing import assert_never
+from typing import Literal, assert_never
 
 import msgspec
 import pytest
@@ -319,6 +319,37 @@ def test_standalone_ndarray_value_types_checked() -> None:
     # Off by default, on with check_values; path is relative to the array root.
     assert _value_type_paths(validate(arr)) == []
     assert _value_type_paths(validate(arr, check_values=True)) == ["/values/1"]
+
+
+@pytest.mark.parametrize(
+    ("data_type", "values"),
+    [
+        ("float", (1.5, 2, None, 3.0)),  # all valid (int, float, None)
+        ("float", (1.0, "x", 2.0, "y")),  # two string mismatches
+        ("float", (True, 1.0)),  # a bool, at index 0
+        ("integer", (1, 2, 3, None)),  # all valid
+        ("integer", (1, 1.0, 1.5)),  # whole-valued and fractional float
+        ("integer", (1, "x", 2.0, True)),  # three mismatches, one per kind
+        ("string", ("a", None, "b")),  # all valid
+        ("string", ("a", 1, 2.0, True)),  # three mismatches
+    ],
+)
+def test_value_screen_matches_reference_scan(
+    data_type: Literal["float", "integer", "string"],
+    values: tuple[float | int | str | None, ...],
+) -> None:
+    """The fast value screen flags exactly what an independent scan flags.
+
+    The differential guard for #74: the native screen and its per-element
+    fallback must agree with a from-scratch oracle on every shape. The
+    multi-mismatch rows in particular prove the fallback enumerates *all*
+    offenders, not just the first (which is where ``convert`` stops).
+    """
+    arr = NdArray(data_type=data_type, values=values)
+
+    assert _value_type_paths(
+        validate(arr, check_values=True)
+    ) == _expected_value_type_paths(data_type, values)
 
 
 def test_collection_validates_resolved_members() -> None:
@@ -1086,6 +1117,42 @@ def test_custom_axis_order_checker_overrides_the_default() -> None:
 def _value_type_paths(issues: list[Issue]) -> list[str]:
     """Paths of the value-type-mismatch issues, in document order."""
     return [i.at for i in issues if i.code == "range.value-type-mismatch"]
+
+
+def _expected_value_type_paths(
+    data_type: Literal["float", "integer", "string"],
+    values: tuple[float | int | str | None, ...],
+) -> list[str]:
+    """Independent oracle: which value indices a from-scratch scan flags.
+
+    Restates the spec rule directly rather than calling the library's own
+    matcher, so the differential test is a genuine check of the fast screen and
+    not a tautology: a real number for ``"float"`` (``bool`` excluded), a Python
+    ``int`` for ``"integer"`` (``bool`` and any ``float`` excluded), a ``str``
+    for ``"string"``; ``None`` is always allowed.
+
+    Examples
+    --------
+    >>> _expected_value_type_paths("integer", (1, 1.5, None, "x"))
+    ['/values/1', '/values/3']
+    """
+
+    def ok(value: float | int | str | None) -> bool:
+        if value is None:
+            return True
+
+        if isinstance(value, bool):
+            return False
+
+        if data_type == "float":
+            return isinstance(value, (int, float))
+
+        if data_type == "integer":
+            return isinstance(value, int)
+
+        return isinstance(value, str)
+
+    return [f"/values/{i}" for i, value in enumerate(values) if not ok(value)]
 
 
 def _coverage_with_range(arr: NdArray) -> Coverage:
