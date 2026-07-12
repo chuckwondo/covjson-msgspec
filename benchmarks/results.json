@@ -15,8 +15,8 @@
     "numpy": "2.4.6"
   },
   "semantics": {
-    "msgspec:decode": "structural decode only; temporal values stay strings",
-    "msgspec:encode": "model to JSON bytes",
+    "msgspec:decode": "structural decode only: builds the typed model and leaves every temporal value as its raw ISO 8601 string",
+    "msgspec:encode": "serialize the model back to CoverageJSON bytes",
     "msgspec:roundtrip": "structural decode then encode; no validation or datetime parsing (the realistic default cost of a faithful read + write)",
     "msgspec:roundtrip(full)": "decode + validate(check_values=True) + to_datetime(t) + encode: the closest like-for-like with pydantic round-trip (see the validation parity table for the exact check overlap)",
     "msgspec:decode+validate": "decode + cross-cutting validate() (no value scan)",
@@ -25,18 +25,63 @@
     "msgspec:matched-full": "decode + validate(check_values=True) + to_datetime(t): full validation, including the monotonic and categorical checks pydantic omits",
     "msgspec:matched-trim": "decode + validate(check_values=True, monotonic disabled) + to_datetime(t): trimmed to pydantic's check set for a like-for-like",
     "pydantic:decode": "model_validate_json: structural decode + validation + datetime parsing, fused and mandatory",
-    "pydantic:encode": "model_dump_json",
+    "pydantic:encode": "model_dump_json: serialize the model to JSON bytes",
     "pydantic:roundtrip": "model_validate_json then model_dump_json",
     "pydantic:decode+monotonic": "model_validate_json + a manual monotonic-axis scan, so pydantic does the same validation as msgspec's full pass"
   },
+  "cells": [
+    {
+      "name": "point-series (small)",
+      "bytes": 852,
+      "inline_values": 1,
+      "temporal_coords": 1,
+      "pydantic_omits": [
+        "monotonic axis order"
+      ]
+    },
+    {
+      "name": "grid (medium)",
+      "bytes": 1890,
+      "inline_values": 0,
+      "temporal_coords": 1,
+      "pydantic_omits": [
+        "monotonic axis order"
+      ]
+    },
+    {
+      "name": "tiled-ndarray",
+      "bytes": 764,
+      "inline_values": 0,
+      "temporal_coords": 0,
+      "pydantic_omits": [
+        "tile-set consistency"
+      ]
+    },
+    {
+      "name": "coverage-collection",
+      "bytes": 4306,
+      "inline_values": 6,
+      "temporal_coords": 2,
+      "pydantic_omits": [
+        "monotonic axis order"
+      ]
+    },
+    {
+      "name": "grid-large (synthetic)",
+      "bytes": 309227,
+      "inline_values": 40000,
+      "temporal_coords": 0,
+      "pydantic_omits": []
+    }
+  ],
   "results": [
     {
       "cell": "point-series (small)",
       "lib": "msgspec",
       "op": "decode",
       "status": "measured",
-      "median_us": 3.560680199880153,
-      "iqr_us": 0.1238798862323165,
+      "median_us": 3.654385239351541,
+      "iqr_us": 0.14193153125233948,
       "n": 100000,
       "reason": null
     },
@@ -45,8 +90,8 @@
       "lib": "msgspec",
       "op": "encode",
       "status": "measured",
-      "median_us": 1.1028720950707793,
-      "iqr_us": 0.016454837750643492,
+      "median_us": 1.2047044292557985,
+      "iqr_us": 0.1299950381508097,
       "n": 200000,
       "reason": null
     },
@@ -55,9 +100,9 @@
       "lib": "msgspec",
       "op": "roundtrip",
       "status": "measured",
-      "median_us": 4.616503496654332,
-      "iqr_us": 0.1495287986472249,
-      "n": 50000,
+      "median_us": 5.390093801543117,
+      "iqr_us": 0.9920690907165408,
+      "n": 5000,
       "reason": null
     },
     {
@@ -65,8 +110,8 @@
       "lib": "msgspec",
       "op": "matched-full",
       "status": "measured",
-      "median_us": 30.488887894898653,
-      "iqr_us": 1.6230009030550718,
+      "median_us": 37.89091289509088,
+      "iqr_us": 2.8012193040922284,
       "n": 10000,
       "reason": null
     },
@@ -75,8 +120,8 @@
       "lib": "msgspec",
       "op": "matched-trim",
       "status": "measured",
-      "median_us": 28.073763800784945,
-      "iqr_us": 1.6173488576896489,
+      "median_us": 39.40913218539208,
+      "iqr_us": 13.97170522250235,
       "n": 10000,
       "reason": null
     },
@@ -85,9 +130,9 @@
       "lib": "msgspec",
       "op": "roundtrip(full)",
       "status": "measured",
-      "median_us": 33.08266750536859,
-      "iqr_us": 1.487646042369306,
-      "n": 10000,
+      "median_us": 36.948430398479104,
+      "iqr_us": 3.44956221524626,
+      "n": 5000,
       "reason": null
     },
     {
@@ -95,8 +140,8 @@
       "lib": "msgspec",
       "op": "decode+validate",
       "status": "measured",
-      "median_us": 19.470659142825752,
-      "iqr_us": 2.121852047275752,
+      "median_us": 18.22131455410272,
+      "iqr_us": 1.8198468955233693,
       "n": 20000,
       "reason": null
     },
@@ -105,8 +150,8 @@
       "lib": "msgspec",
       "op": "decode+validate(values)",
       "status": "measured",
-      "median_us": 25.20443231333047,
-      "iqr_us": 1.5499726869165897,
+      "median_us": 30.023171100765467,
+      "iqr_us": 2.0285616046749055,
       "n": 10000,
       "reason": null
     },
@@ -115,8 +160,8 @@
       "lib": "msgspec",
       "op": "decode+validate(values)+datetime",
       "status": "measured",
-      "median_us": 31.085635907948014,
-      "iqr_us": 0.9191532502882183,
+      "median_us": 37.700475682504475,
+      "iqr_us": 4.2762179975397885,
       "n": 10000,
       "reason": null
     },
@@ -125,8 +170,8 @@
       "lib": "pydantic",
       "op": "decode",
       "status": "measured",
-      "median_us": 50.000646244734526,
-      "iqr_us": 2.195023512467742,
+      "median_us": 53.164781583473086,
+      "iqr_us": 14.93955256883055,
       "n": 5000,
       "reason": null
     },
@@ -135,8 +180,8 @@
       "lib": "pydantic",
       "op": "encode",
       "status": "measured",
-      "median_us": 15.748143906239418,
-      "iqr_us": 1.6458343481644988,
+      "median_us": 16.055303649045527,
+      "iqr_us": 0.7045152247883362,
       "n": 20000,
       "reason": null
     },
@@ -145,9 +190,9 @@
       "lib": "pydantic",
       "op": "roundtrip",
       "status": "measured",
-      "median_us": 93.46144809387624,
-      "iqr_us": 22.06676360219717,
-      "n": 2000,
+      "median_us": 77.91000581346452,
+      "iqr_us": 2.48087199870497,
+      "n": 5000,
       "reason": null
     },
     {
@@ -155,8 +200,8 @@
       "lib": "pydantic",
       "op": "decode+monotonic",
       "status": "measured",
-      "median_us": 59.1894316021353,
-      "iqr_us": 2.493095677345991,
+      "median_us": 57.171436212956905,
+      "iqr_us": 4.238940798677504,
       "n": 5000,
       "reason": null
     },
@@ -165,8 +210,8 @@
       "lib": "msgspec",
       "op": "decode",
       "status": "measured",
-      "median_us": 6.001301519572735,
-      "iqr_us": 0.1489495299756527,
+      "median_us": 6.026465799659491,
+      "iqr_us": 0.25653342017903924,
       "n": 50000,
       "reason": null
     },
@@ -175,8 +220,8 @@
       "lib": "msgspec",
       "op": "encode",
       "status": "measured",
-      "median_us": 2.314613990020007,
-      "iqr_us": 0.07635730202309787,
+      "median_us": 2.4533655494451523,
+      "iqr_us": 0.1364718866534531,
       "n": 100000,
       "reason": null
     },
@@ -185,9 +230,9 @@
       "lib": "msgspec",
       "op": "roundtrip",
       "status": "measured",
-      "median_us": 8.395307739265263,
-      "iqr_us": 0.09190906770527363,
-      "n": 50000,
+      "median_us": 8.5604760912247,
+      "iqr_us": 0.3523084451444447,
+      "n": 20000,
       "reason": null
     },
     {
@@ -195,8 +240,8 @@
       "lib": "msgspec",
       "op": "matched-full",
       "status": "measured",
-      "median_us": 57.34197376295924,
-      "iqr_us": 2.1404291735962033,
+      "median_us": 58.46107662655413,
+      "iqr_us": 5.628822580911219,
       "n": 5000,
       "reason": null
     },
@@ -205,8 +250,8 @@
       "lib": "msgspec",
       "op": "matched-trim",
       "status": "measured",
-      "median_us": 48.547468008473516,
-      "iqr_us": 1.996706728823483,
+      "median_us": 48.02186661399901,
+      "iqr_us": 1.8245375948026776,
       "n": 5000,
       "reason": null
     },
@@ -215,8 +260,8 @@
       "lib": "msgspec",
       "op": "roundtrip(full)",
       "status": "measured",
-      "median_us": 59.72522338852286,
-      "iqr_us": 0.8853544713929296,
+      "median_us": 58.09029103256762,
+      "iqr_us": 3.0784413684159517,
       "n": 5000,
       "reason": null
     },
@@ -225,8 +270,8 @@
       "lib": "msgspec",
       "op": "decode+validate",
       "status": "measured",
-      "median_us": 31.897336500696838,
-      "iqr_us": 1.4664403977803886,
+      "median_us": 31.626277999021113,
+      "iqr_us": 1.0887945420108736,
       "n": 10000,
       "reason": null
     },
@@ -235,8 +280,8 @@
       "lib": "msgspec",
       "op": "decode+validate(values)",
       "status": "measured",
-      "median_us": 52.42733042687178,
-      "iqr_us": 1.4582773204892874,
+      "median_us": 53.230884578078985,
+      "iqr_us": 3.887972515076399,
       "n": 5000,
       "reason": null
     },
@@ -245,8 +290,8 @@
       "lib": "msgspec",
       "op": "decode+validate(values)+datetime",
       "status": "measured",
-      "median_us": 55.1358793862164,
-      "iqr_us": 0.5296968622133136,
+      "median_us": 54.46562357246876,
+      "iqr_us": 1.3259518891572952,
       "n": 5000,
       "reason": null
     },
@@ -255,8 +300,8 @@
       "lib": "pydantic",
       "op": "decode",
       "status": "measured",
-      "median_us": 53.8455612026155,
-      "iqr_us": 1.8230941146612167,
+      "median_us": 51.589296804741025,
+      "iqr_us": 1.4129327842965722,
       "n": 5000,
       "reason": null
     },
@@ -265,8 +310,8 @@
       "lib": "pydantic",
       "op": "encode",
       "status": "measured",
-      "median_us": 44.15525542572141,
-      "iqr_us": 1.3511955738067627,
+      "median_us": 54.22840639948845,
+      "iqr_us": 12.377094919793308,
       "n": 5000,
       "reason": null
     },
@@ -275,9 +320,9 @@
       "lib": "pydantic",
       "op": "roundtrip",
       "status": "measured",
-      "median_us": 137.09875801578164,
-      "iqr_us": 5.516872683074325,
-      "n": 2000,
+      "median_us": 142.44184806011617,
+      "iqr_us": 80.09601850062609,
+      "n": 1000,
       "reason": null
     },
     {
@@ -285,8 +330,8 @@
       "lib": "pydantic",
       "op": "decode+monotonic",
       "status": "measured",
-      "median_us": 76.19032678194344,
-      "iqr_us": 11.03093430865556,
+      "median_us": 72.36921479925513,
+      "iqr_us": 7.030033855699003,
       "n": 5000,
       "reason": null
     },
@@ -295,8 +340,8 @@
       "lib": "msgspec",
       "op": "decode",
       "status": "measured",
-      "median_us": 2.3874434013850987,
-      "iqr_us": 0.07244396023452282,
+      "median_us": 2.440897838678211,
+      "iqr_us": 0.05859886412508786,
       "n": 100000,
       "reason": null
     },
@@ -305,8 +350,8 @@
       "lib": "msgspec",
       "op": "encode",
       "status": "measured",
-      "median_us": 0.7405876056291163,
-      "iqr_us": 0.019475454930216074,
+      "median_us": 0.7572107799351215,
+      "iqr_us": 0.04614773695357144,
       "n": 500000,
       "reason": null
     },
@@ -315,8 +360,8 @@
       "lib": "msgspec",
       "op": "roundtrip",
       "status": "measured",
-      "median_us": 3.1030059698969126,
-      "iqr_us": 0.1000596338417381,
+      "median_us": 4.316092231310904,
+      "iqr_us": 1.6166854451876134,
       "n": 100000,
       "reason": null
     },
@@ -325,9 +370,9 @@
       "lib": "msgspec",
       "op": "matched-full",
       "status": "measured",
-      "median_us": 19.13766018114984,
-      "iqr_us": 0.5044663790613413,
-      "n": 5000,
+      "median_us": 22.26175549440086,
+      "iqr_us": 2.695651422254741,
+      "n": 10000,
       "reason": null
     },
     {
@@ -335,9 +380,9 @@
       "lib": "msgspec",
       "op": "matched-trim",
       "status": "measured",
-      "median_us": 20.855501445475966,
-      "iqr_us": 1.72118324553594,
-      "n": 20000,
+      "median_us": 21.451915497891605,
+      "iqr_us": 4.274115711450577,
+      "n": 10000,
       "reason": null
     },
     {
@@ -345,8 +390,8 @@
       "lib": "msgspec",
       "op": "roundtrip(full)",
       "status": "measured",
-      "median_us": 20.09666769299656,
-      "iqr_us": 0.3531809081323445,
+      "median_us": 20.62334888614714,
+      "iqr_us": 0.5739356041885912,
       "n": 10000,
       "reason": null
     },
@@ -355,9 +400,9 @@
       "lib": "msgspec",
       "op": "decode+validate",
       "status": "measured",
-      "median_us": 19.426676002331078,
-      "iqr_us": 0.729982543271035,
-      "n": 10000,
+      "median_us": 19.67061209725216,
+      "iqr_us": 0.7846822729334235,
+      "n": 20000,
       "reason": null
     },
     {
@@ -365,8 +410,8 @@
       "lib": "msgspec",
       "op": "decode+validate(values)",
       "status": "measured",
-      "median_us": 18.934341508429497,
-      "iqr_us": 0.6268934230320156,
+      "median_us": 18.649956805165857,
+      "iqr_us": 2.0809698675293475,
       "n": 20000,
       "reason": null
     },
@@ -385,9 +430,9 @@
       "lib": "pydantic",
       "op": "decode",
       "status": "measured",
-      "median_us": 9.74282159935683,
-      "iqr_us": 0.4459774121642113,
-      "n": 50000,
+      "median_us": 10.597305546980351,
+      "iqr_us": 0.4070785304065794,
+      "n": 20000,
       "reason": null
     },
     {
@@ -395,8 +440,8 @@
       "lib": "pydantic",
       "op": "encode",
       "status": "measured",
-      "median_us": 4.458528021350503,
-      "iqr_us": 0.2777525596320629,
+      "median_us": 4.426474957726896,
+      "iqr_us": 0.20550512010231614,
       "n": 50000,
       "reason": null
     },
@@ -405,8 +450,8 @@
       "lib": "pydantic",
       "op": "roundtrip",
       "status": "measured",
-      "median_us": 15.182124299462885,
-      "iqr_us": 0.3326267993543297,
+      "median_us": 15.554519451688977,
+      "iqr_us": 0.6750605069100857,
       "n": 20000,
       "reason": null
     },
@@ -415,8 +460,8 @@
       "lib": "pydantic",
       "op": "decode+monotonic",
       "status": "measured",
-      "median_us": 16.67281665140763,
-      "iqr_us": 0.13421710464172065,
+      "median_us": 17.2278581536375,
+      "iqr_us": 1.108095422387123,
       "n": 20000,
       "reason": null
     },
@@ -425,8 +470,8 @@
       "lib": "msgspec",
       "op": "decode",
       "status": "measured",
-      "median_us": 12.315645709168166,
-      "iqr_us": 0.40491370600648224,
+      "median_us": 13.040187407750636,
+      "iqr_us": 1.0025892755948007,
       "n": 20000,
       "reason": null
     },
@@ -435,9 +480,9 @@
       "lib": "msgspec",
       "op": "encode",
       "status": "measured",
-      "median_us": 4.03862833045423,
-      "iqr_us": 0.156463062157854,
-      "n": 100000,
+      "median_us": 3.926347540691495,
+      "iqr_us": 0.2470523677766323,
+      "n": 50000,
       "reason": null
     },
     {
@@ -445,8 +490,8 @@
       "lib": "msgspec",
       "op": "roundtrip",
       "status": "measured",
-      "median_us": 16.35344389360398,
-      "iqr_us": 0.5853785725776106,
+      "median_us": 17.49821800040081,
+      "iqr_us": 0.7963332172948867,
       "n": 20000,
       "reason": null
     },
@@ -455,8 +500,8 @@
       "lib": "msgspec",
       "op": "matched-full",
       "status": "measured",
-      "median_us": 153.26692711096257,
-      "iqr_us": 2.5902604684233665,
+      "median_us": 175.78333499841392,
+      "iqr_us": 15.761976304929703,
       "n": 2000,
       "reason": null
     },
@@ -465,8 +510,8 @@
       "lib": "msgspec",
       "op": "matched-trim",
       "status": "measured",
-      "median_us": 128.0996419955045,
-      "iqr_us": 7.1761939325369895,
+      "median_us": 142.59135001339018,
+      "iqr_us": 8.817024470772594,
       "n": 2000,
       "reason": null
     },
@@ -475,8 +520,8 @@
       "lib": "msgspec",
       "op": "roundtrip(full)",
       "status": "measured",
-      "median_us": 180.2066155942157,
-      "iqr_us": 15.235357452183962,
+      "median_us": 170.97434750758111,
+      "iqr_us": 4.865126742515713,
       "n": 2000,
       "reason": null
     },
@@ -485,8 +530,8 @@
       "lib": "msgspec",
       "op": "decode+validate",
       "status": "measured",
-      "median_us": 88.29405000433326,
-      "iqr_us": 2.5848694145679474,
+      "median_us": 87.903410801664,
+      "iqr_us": 2.062825416214764,
       "n": 5000,
       "reason": null
     },
@@ -495,8 +540,8 @@
       "lib": "msgspec",
       "op": "decode+validate(values)",
       "status": "measured",
-      "median_us": 148.1125825084746,
-      "iqr_us": 2.92538502253592,
+      "median_us": 190.08047645911574,
+      "iqr_us": 43.42361353337765,
       "n": 2000,
       "reason": null
     },
@@ -505,9 +550,9 @@
       "lib": "msgspec",
       "op": "decode+validate(values)+datetime",
       "status": "measured",
-      "median_us": 156.81735204998404,
-      "iqr_us": 6.313926423899829,
-      "n": 2000,
+      "median_us": 188.0161880981177,
+      "iqr_us": 72.21221656072885,
+      "n": 1000,
       "reason": null
     },
     {
@@ -515,8 +560,8 @@
       "lib": "pydantic",
       "op": "decode",
       "status": "measured",
-      "median_us": 159.46310141589493,
-      "iqr_us": 8.659167564474046,
+      "median_us": 153.26396201271564,
+      "iqr_us": 12.312520411796868,
       "n": 2000,
       "reason": null
     },
@@ -525,8 +570,8 @@
       "lib": "pydantic",
       "op": "encode",
       "status": "measured",
-      "median_us": 47.53563818521798,
-      "iqr_us": 0.6802578922361135,
+      "median_us": 51.31315719336271,
+      "iqr_us": 3.4875913988798857,
       "n": 5000,
       "reason": null
     },
@@ -535,8 +580,8 @@
       "lib": "pydantic",
       "op": "roundtrip",
       "status": "measured",
-      "median_us": 228.3674250356853,
-      "iqr_us": 3.5329910460859537,
+      "median_us": 240.95783196389675,
+      "iqr_us": 27.519756462424994,
       "n": 1000,
       "reason": null
     },
@@ -545,8 +590,8 @@
       "lib": "pydantic",
       "op": "decode+monotonic",
       "status": "measured",
-      "median_us": 153.9832439739257,
-      "iqr_us": 5.750177486333996,
+      "median_us": 163.8716555899009,
+      "iqr_us": 9.819497761782259,
       "n": 2000,
       "reason": null
     },
@@ -555,8 +600,8 @@
       "lib": "msgspec",
       "op": "decode",
       "status": "measured",
-      "median_us": 1598.139083944261,
-      "iqr_us": 38.408705149777234,
+      "median_us": 1807.0726294536144,
+      "iqr_us": 893.113809870556,
       "n": 200,
       "reason": null
     },
@@ -565,8 +610,8 @@
       "lib": "msgspec",
       "op": "encode",
       "status": "measured",
-      "median_us": 2751.8126904033124,
-      "iqr_us": 79.59131617099047,
+      "median_us": 2886.2860309891403,
+      "iqr_us": 117.87252966314554,
       "n": 100,
       "reason": null
     },
@@ -575,8 +620,8 @@
       "lib": "msgspec",
       "op": "roundtrip",
       "status": "measured",
-      "median_us": 4271.928360685706,
-      "iqr_us": 299.32686826214194,
+      "median_us": 4567.2055799514055,
+      "iqr_us": 1959.591421764344,
       "n": 50,
       "reason": null
     },
@@ -585,9 +630,9 @@
       "lib": "msgspec",
       "op": "matched-full",
       "status": "measured",
-      "median_us": 12047.140044160187,
-      "iqr_us": 539.4771986175328,
-      "n": 20,
+      "median_us": 1929.4772343710065,
+      "iqr_us": 127.94893002137542,
+      "n": 200,
       "reason": null
     },
     {
@@ -595,9 +640,9 @@
       "lib": "msgspec",
       "op": "matched-trim",
       "status": "measured",
-      "median_us": 11926.206049975008,
-      "iqr_us": 146.34733088314533,
-      "n": 20,
+      "median_us": 2030.1880594342947,
+      "iqr_us": 220.86248034611344,
+      "n": 200,
       "reason": null
     },
     {
@@ -605,9 +650,9 @@
       "lib": "msgspec",
       "op": "roundtrip(full)",
       "status": "measured",
-      "median_us": 14740.296453237534,
-      "iqr_us": 554.4690822716802,
-      "n": 20,
+      "median_us": 5061.2379796803,
+      "iqr_us": 425.01058895140886,
+      "n": 50,
       "reason": null
     },
     {
@@ -615,8 +660,8 @@
       "lib": "msgspec",
       "op": "decode+validate",
       "status": "measured",
-      "median_us": 1603.4815099556,
-      "iqr_us": 56.073995074257255,
+      "median_us": 1690.682735061273,
+      "iqr_us": 84.91599583067,
       "n": 200,
       "reason": null
     },
@@ -625,9 +670,9 @@
       "lib": "msgspec",
       "op": "decode+validate(values)",
       "status": "measured",
-      "median_us": 11917.198705486953,
-      "iqr_us": 231.70809727162123,
-      "n": 20,
+      "median_us": 2371.5154046658427,
+      "iqr_us": 623.0984546709806,
+      "n": 200,
       "reason": null
     },
     {
@@ -645,8 +690,8 @@
       "lib": "pydantic",
       "op": "decode",
       "status": "measured",
-      "median_us": 6689.770519733429,
-      "iqr_us": 88.61311944201589,
+      "median_us": 7099.480861797929,
+      "iqr_us": 464.429899584502,
       "n": 50,
       "reason": null
     },
@@ -655,8 +700,8 @@
       "lib": "pydantic",
       "op": "encode",
       "status": "measured",
-      "median_us": 4998.684958554804,
-      "iqr_us": 99.31710781529546,
+      "median_us": 5187.537497840822,
+      "iqr_us": 403.5259271040559,
       "n": 50,
       "reason": null
     },
@@ -665,8 +710,8 @@
       "lib": "pydantic",
       "op": "roundtrip",
       "status": "measured",
-      "median_us": 12096.859840676188,
-      "iqr_us": 328.267301665619,
+      "median_us": 12736.085255164653,
+      "iqr_us": 990.7571715302765,
       "n": 20,
       "reason": null
     },
@@ -675,8 +720,8 @@
       "lib": "pydantic",
       "op": "decode+monotonic",
       "status": "measured",
-      "median_us": 7441.33850093931,
-      "iqr_us": 513.3013590238988,
+      "median_us": 7587.486677803099,
+      "iqr_us": 979.2660712264478,
       "n": 50,
       "reason": null
     }
@@ -687,8 +732,8 @@
       "lib": "msgspec",
       "op": "decode",
       "status": "measured",
-      "median_us": 3.3498832606710494,
-      "iqr_us": 0.12027574586682022,
+      "median_us": 3.3199532702565193,
+      "iqr_us": 0.16598411835730076,
       "n": 100000,
       "reason": null
     },
@@ -707,8 +752,8 @@
       "lib": "msgspec",
       "op": "decode",
       "status": "measured",
-      "median_us": 3.2424613600596786,
-      "iqr_us": 0.06935976794920862,
+      "median_us": 3.215870892163366,
+      "iqr_us": 0.027222390053793788,
       "n": 100000,
       "reason": null
     },
@@ -727,8 +772,8 @@
       "lib": "msgspec",
       "op": "decode",
       "status": "measured",
-      "median_us": 3.2363368407823145,
-      "iqr_us": 0.1270842319354415,
+      "median_us": 3.4240687382407486,
+      "iqr_us": 0.14232527581043541,
       "n": 100000,
       "reason": null
     },
@@ -747,8 +792,8 @@
       "lib": "msgspec",
       "op": "decode",
       "status": "measured",
-      "median_us": 2.9001935105770826,
-      "iqr_us": 0.2400243899319321,
+      "median_us": 2.826312561519444,
+      "iqr_us": 0.08556892396882176,
       "n": 100000,
       "reason": null
     },
@@ -767,8 +812,8 @@
       "lib": "msgspec",
       "op": "decode",
       "status": "measured",
-      "median_us": 2.3193042911589146,
-      "iqr_us": 0.12481818557716906,
+      "median_us": 2.3376376507803798,
+      "iqr_us": 0.04219237947836518,
       "n": 100000,
       "reason": null
     },

@@ -33,9 +33,10 @@ import itertools
 import json
 import pathlib
 import platform
+import re
 import statistics
 import timeit
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import asdict, dataclass
 from importlib.metadata import version
 from typing import TYPE_CHECKING, Any, cast
@@ -63,8 +64,11 @@ _PINNED = (
 # What each (lib, op) actually does, defined once and referenced by rendering so
 # the annotation is never restated per cell. Keyed "<lib>:<op>" for JSON.
 _SEMANTICS: dict[str, str] = {
-    "msgspec:decode": "structural decode only; temporal values stay strings",
-    "msgspec:encode": "model to JSON bytes",
+    "msgspec:decode": (
+        "structural decode only: builds the typed model and leaves every temporal "
+        "value as its raw ISO 8601 string"
+    ),
+    "msgspec:encode": "serialize the model back to CoverageJSON bytes",
     "msgspec:roundtrip": (
         "structural decode then encode; no validation or datetime parsing (the "
         "realistic default cost of a faithful read + write)"
@@ -97,7 +101,7 @@ _SEMANTICS: dict[str, str] = {
         "model_validate_json: structural decode + validation + datetime parsing, "
         "fused and mandatory"
     ),
-    "pydantic:encode": "model_dump_json",
+    "pydantic:encode": "model_dump_json: serialize the model to JSON bytes",
     "pydantic:roundtrip": "model_validate_json then model_dump_json",
     "pydantic:decode+monotonic": (
         "model_validate_json + a manual monotonic-axis scan, so pydantic does the "
@@ -182,10 +186,18 @@ _PROBES: list[tuple[str, bytes, str]] = [
 ]
 
 
-# Marks for the conformance scorecard: green check when a library's behavior
-# matches the spec-expected behavior, red cross when it does not.
+# Visual marks. A green check / red cross for the conformance scorecard and the
+# spec-compliance column; a warning on covjson-pydantic's own time where it skips
+# a MUST check (so the number is not like-for-like); and a direction arrow after
+# each speedup. GitHub markdown offers no portable text color or cell shading, so
+# the arrow's shape (faster / slower / within a rounded 1.0x), not a color, is the
+# signal, which also keeps it legible for colorblind readers.
 _CONFORMANT = "✅"
 _NONCONFORMANT = "❌"
+_WARNING = "⚠️"
+_FASTER = "⬆️"
+_SLOWER = "⬇️"
+_EVEN = "🟰"
 
 
 # A decode-time conformance scorecard, from empirical probing (reproduced in the
@@ -212,6 +224,14 @@ _VALIDATION: list[tuple[str, str, str, bool, str, bool]] = [
     ),
     (
         "categorical code vs categories",
+        "error (MUST)",
+        "error",
+        True,
+        "not checked",
+        False,
+    ),
+    (
+        "tile set consistency (shape, url template)",
         "error (MUST)",
         "error",
         True,
@@ -271,32 +291,47 @@ class Row:
 
 
 def main() -> None:
-    """Run the benchmark and write ``results.json`` and ``results.md``."""
+    """Measure and write ``results.json``, then render ``results.md``.
+
+    ``--render-only`` skips measurement and re-renders ``results.md`` from the
+    committed ``results.json`` and template, so a prose edit costs a second, not a
+    full run.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--quick",
         action="store_true",
         help="fast smoke run (smaller synthetic doc, fewer iterations)",
     )
+    parser.add_argument(
+        "--render-only",
+        action="store_true",
+        help="re-render results.md from the existing results.json, without measuring",
+    )
     args = parser.parse_args()
+
+    if args.render_only:
+        payload: dict[str, Any] = json.loads((_OUT / "results.json").read_text())
+        (_OUT / "results.md").write_text(render(payload))
+        print(f"re-rendered {_OUT / 'results.md'} from {_OUT / 'results.json'}")
+
+        return
 
     cells = build_cells(quick=args.quick)
     rows = [row for cell in cells for row in measure_cell(cell, quick=args.quick)]
     probe_rows = measure_probes(quick=args.quick)
 
-    env = collect_env()
-    versions = {name: version(name) for name in _PINNED}
-
-    payload: dict[str, object] = {
-        "env": env,
-        "versions": versions,
+    payload = {
+        "env": collect_env(),
+        "versions": {name: version(name) for name in _PINNED},
         "semantics": _SEMANTICS,
+        "cells": [_cell_stats(cell) for cell in cells],
         "results": [asdict(row) for row in rows],
         "probes": [asdict(row) for row in probe_rows],
         "probe_notes": {name: note for name, _raw, note in _PROBES},
     }
     (_OUT / "results.json").write_text(json.dumps(payload, indent=2) + "\n")
-    (_OUT / "results.md").write_text(render_markdown(rows, probe_rows, env, versions))
+    (_OUT / "results.md").write_text(render(payload))
 
     measured_dt = sum(
         row.status == "measured" and row.op == "decode+validate(values)+datetime"
@@ -426,60 +461,122 @@ def collect_env() -> dict[str, str]:
     }
 
 
-def render_markdown(
-    rows: list[Row],
-    probe_rows: list[Row],
-    env: dict[str, str],
-    versions: dict[str, str],
-) -> str:
-    """Render the artifact table from ``rows`` (the single source of truth)."""
+_PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
+
+
+def render(payload: dict[str, Any]) -> str:
+    """Fill the ``results.template.md`` placeholders from a result ``payload``.
+
+    The template holds all prose; every ``{{name}}`` token becomes a generated
+    block built from the measured data. No interpretation is baked into the
+    generator, so prose can be re-rendered from a committed ``results.json``
+    without re-measuring (``run.py --render-only``).
+    """
+    rows = [Row(**row) for row in payload["results"]]
+    probe_rows = [Row(**row) for row in payload["probes"]]
     by_key = {(r.cell, r.lib, r.op): r for r in rows}
     cells = list(dict.fromkeys(r.cell for r in rows))
+    omits = {cell["name"]: cell["pydantic_omits"] for cell in payload["cells"]}
 
-    lines = [
-        "# covjson-msgspec vs covjson-pydantic: benchmark results",
-        "",
-        "Generated by `benchmarks/run.py`. Do not edit by hand; see "
-        "`benchmarks/README.md` for methodology and regeneration.",
-        "",
-        "## Environment",
-        "",
+    blocks = {
+        "environment": _environment_block(payload["env"]),
+        "versions": [f"- {name}: {ver}" for name, ver in payload["versions"].items()],
+        "document_set_table": _document_set_table(payload["cells"]),
+        "decode_ladder_table": _spectrum_table(by_key, cells, omits),
+        "encode_table": _pair_table(by_key, cells, "encode"),
+        "roundtrip_table": _roundtrip_table(by_key, cells, omits),
+        "validation_parity_table": _validation_table(),
+        "matched_a_table": _matched_a_table(by_key, cells, omits),
+        "matched_b_table": _matched_b_table(by_key, cells, omits),
+        "capability_probes_table": _probe_section(probe_rows),
+        "operations_glossary": _glossary(),
+    }
+    rendered = {name: "\n".join(lines) for name, lines in blocks.items()}
+
+    def _fill(match: re.Match[str]) -> str:
+        name = match.group(1)
+
+        if name not in rendered:
+            msg = f"template references unknown placeholder {{{{{name}}}}}"
+            raise KeyError(msg)
+
+        return rendered[name]
+
+    return _PLACEHOLDER.sub(_fill, (_OUT / "results.template.md").read_text())
+
+
+def _environment_block(env: dict[str, str]) -> list[str]:
+    """The platform and interpreter lines for the environment section."""
+    return [
         f"- platform: {env['platform']}",
         f"- python: {env['python']} ({env['implementation']}), {env['machine']}",
-        "",
-        "## Versions",
-        "",
-        *(f"- {name}: {ver}" for name, ver in versions.items()),
-        "",
-        "## Decode and the validation ladder (median us/op)",
-        "",
-        "pydantic decode fuses decode + validation + datetime parsing; the "
-        "msgspec columns walk from a structural decode up to the same fidelity. "
-        "`x` is the pydantic/msgspec speedup at that rung.",
-        "",
     ]
-    lines += _spectrum_table(by_key, cells)
-    lines += ["", "## Encode (median us/op)", ""]
-    lines += _pair_table(by_key, cells, "encode")
-    lines += ["", "## Round-trip (median us/op)", ""]
+
+
+def _document_set_table(cells: list[dict[str, Any]]) -> list[str]:
+    """Each cell's size, scan load, and covjson-pydantic's spec compliance."""
+    lines = [
+        "| cell | size (KB) | inline values | temporal coords "
+        "| covjson-pydantic spec compliance |",
+        "| :--- | ---: | ---: | ---: | :--- |",
+    ]
     lines += [
-        "Same asymmetry as decode: pydantic's round-trip validates and parses "
-        "datetimes on its decode half. `structural` does neither (the default "
-        "read + write cost); `full` adds validation and datetimes to match. `x` "
-        "is the pydantic/msgspec speedup.",
-        "",
+        f"| {cell['name']} | {cell['bytes'] / 1024:.1f} | {cell['inline_values']:,} "
+        f"| {cell['temporal_coords']} | {_compliance(cell['pydantic_omits'])} |"
+        for cell in cells
     ]
-    lines += _roundtrip_table(by_key, cells)
-    lines += ["", "## Validation parity (decode-time checks)", ""]
-    lines += _validation_table()
-    lines += ["", "## Matched-work comparison (median us/op)", ""]
-    lines += _matched_section(by_key, cells)
-    lines += ["", "## Capability probes (decode, median us/op)", ""]
-    lines += _probe_section(probe_rows)
-    lines += ["", "## What each operation does", ""]
-    lines += [f"- `{key}`: {desc}" for key, desc in _SEMANTICS.items()]
-    lines.append("")
-    return "\n".join(lines)
+
+    return lines
+
+
+def _compliance(omits: list[str]) -> str:
+    """A spec-compliance verdict for the document-set table.
+
+    covjson-pydantic performs no monotonic-order or tile-set validation, so on a
+    cell where either applies it accepts documents the spec says MUST be rejected,
+    a conformance failure called out with a red cross.
+    """
+    if not omits:
+        return f"{_CONFORMANT} compliant"
+
+    return f"{_NONCONFORMANT} non-compliant: skips {', '.join(omits)}"
+
+
+def _warn(
+    cell: str, omits: dict[str, list[str]], *, ignoring: tuple[str, ...] = ()
+) -> str:
+    """A warning suffix for covjson-pydantic's own cell where it skips a MUST check.
+
+    Placed on covjson-pydantic's column (not the row label) so the mark reads as
+    "this time is not like-for-like: pydantic skips validation covjson-msgspec
+    performs". ``ignoring`` drops checks a table already equalizes: the
+    matched-work tables neutralize monotonic ordering, leaving only a residual
+    tile-set omission.
+    """
+    flagged = [check for check in omits.get(cell, []) if check not in ignoring]
+
+    return f" {_WARNING}" if flagged else ""
+
+
+def _glossary() -> list[str]:
+    """The operations glossary from ``_SEMANTICS``, grouped by library."""
+    libraries = (("msgspec", "covjson-msgspec"), ("pydantic", "covjson-pydantic"))
+    lines: list[str] = []
+
+    for lib, label in libraries:
+        prefix = f"{lib}:"
+
+        if lines:
+            lines.append("")
+
+        lines += [f"**{label}**", ""]
+        lines += [
+            f"- `{key.removeprefix(prefix)}`: {desc}"
+            for key, desc in _SEMANTICS.items()
+            if key.startswith(prefix)
+        ]
+
+    return lines
 
 
 def _make_cell(name: str, raw: bytes, dispatch: dict[str, type[BaseModel]]) -> Cell:
@@ -520,6 +617,71 @@ def _t_values(model: object) -> tuple[str, ...]:
             values.extend(axes["t"].values)
 
     return tuple(values)
+
+
+def _cell_stats(cell: Cell) -> dict[str, Any]:
+    """Size and scan-load facts for one cell, for the document-set table.
+
+    ``inline_values`` counts every range value the value scan would touch: a
+    URL-referenced range (a plain string) or a tiled range keeps its values in
+    another document, so it contributes none. ``temporal_coords`` is the number
+    of time strings the datetime and lexical-form passes resolve.
+
+    Examples
+    --------
+    >>> cells = {c.name: c for c in build_cells(quick=True)}
+    >>> _cell_stats(cells["tiled-ndarray"])["inline_values"]
+    0
+    """
+    doc = cm.decode(cell.raw)
+    members = getattr(doc, "coverages", None) or [doc]
+    inline_values = sum(
+        len(range_.values)
+        for member in members
+        for range_ in getattr(member, "ranges", {}).values()
+        if getattr(range_, "values", None) is not None
+    )
+
+    return {
+        "name": cell.name,
+        "bytes": len(cell.raw),
+        "inline_values": inline_values,
+        "temporal_coords": len(cell.t_values),
+        "pydantic_omits": _pydantic_omits(doc, members),
+    }
+
+
+def _pydantic_omits(doc: object, members: Sequence[object]) -> list[str]:
+    """The MUST-level checks covjson-pydantic omits that apply to this document.
+
+    covjson-pydantic performs neither the monotonic-axis-order check (which
+    applies wherever a domain lists a primitive, non-composite axis) nor tile-set
+    consistency (it validates no ``TiledNdArray``). Naming them per cell lets the
+    timing tables flag, with a warning marker, where a validation-rung comparison
+    is not like-for-like: the extra work is spec conformance covjson-pydantic skips.
+
+    Examples
+    --------
+    >>> cells = {c.name: c for c in build_cells(quick=True)}
+    >>> _cell_stats(cells["tiled-ndarray"])["pydantic_omits"]
+    ['tile-set consistency']
+    >>> _cell_stats(cells["grid-large (synthetic)"])["pydantic_omits"]
+    []
+    """
+    omits: list[str] = []
+
+    if any(
+        getattr(axis, "values", None) is not None
+        and getattr(axis, "data_type", None) not in ("tuple", "polygon")
+        for member in members
+        for axis in getattr(getattr(member, "domain", None), "axes", {}).values()
+    ):
+        omits.append("monotonic axis order")
+
+    if any(getattr(member, "tile_sets", None) for member in (doc, *members)):
+        omits.append("tile-set consistency")
+
+    return omits
 
 
 def _synthetic_grid(*, quick: bool) -> bytes:
@@ -755,14 +917,16 @@ def _reason(exc: Exception) -> str:
 
 
 def _spectrum_table(
-    by_key: dict[tuple[str, str, str], Row], cells: list[str]
+    by_key: dict[tuple[str, str, str], Row],
+    cells: list[str],
+    omits: dict[str, list[str]],
 ) -> list[str]:
     """The decode/validation-ladder table, pydantic decode as the reference."""
     header = (
-        "| cell | pydantic decode | msgspec decode (x) | + validate | "
-        "+ validate(values) | + datetime (x) |"
+        "| cell | pydantic decode (us) | msgspec decode (us, x) | "
+        "+ validate (us, x) | + validate(values) (us, x) | + datetime (us, x) |"
     )
-    sep = "| --- | --- | --- | --- | --- | --- |"
+    sep = "| :--- | ---: | ---: | ---: | ---: | ---: |"
     rows = [header, sep]
 
     for cell in cells:
@@ -771,27 +935,27 @@ def _spectrum_table(
         validate = by_key[(cell, "msgspec", "decode+validate")]
         values = by_key[(cell, "msgspec", "decode+validate(values)")]
         datetime_row = by_key[(cell, "msgspec", "decode+validate(values)+datetime")]
+
+        # A cell with no temporal axis has no datetime rung; its full-fidelity
+        # endpoint is the validate(values) rung, so report the final speedup
+        # against that rung rather than leaving the last column without one.
+        final = (
+            f"{_cell(datetime_row)}<br>{_ratio(pyd, values)}"
+            if datetime_row.status == "skipped"
+            else _cell(datetime_row, pyd)
+        )
+        pyd_cell = f"{_cell(pyd)}{_warn(cell, omits)}"
         rows.append(
-            f"| {cell} | {_cell(pyd)} | {_cell(decode, pyd)} | {_cell(validate)} "
-            f"| {_cell(values)} | {_cell(datetime_row, pyd)} |"
+            f"| {cell} | {pyd_cell} | {_cell(decode, pyd)} | {_cell(validate, pyd)} "
+            f"| {_cell(values, pyd)} | {final} |"
         )
 
     return rows
 
 
 def _validation_table() -> list[str]:
-    """Render the decode-time conformance scorecard from ``_VALIDATION``."""
+    """The decode-time conformance scorecard table, rendered from ``_VALIDATION``."""
     lines = [
-        "A conformance scorecard for decode-time checks. The **expected** column "
-        "is the proportional response the spec calls for, by requirement level: a "
-        "`MUST` violation should error, a `SHOULD` violation should warn (the "
-        "document stays loadable), and a conformant input should be accepted. The "
-        "mark on each library shows whether its behavior is proportional. "
-        "covjson-msgspec matches on every row; covjson-pydantic misses two MUST "
-        "checks (monotonic, categorical), over-enforces a SHOULD (it raises on a "
-        "malformed temporal value the spec lets you load), and rejects one "
-        "conformant input (reduced-precision).",
-        "",
         "| check | expected | msgspec full | pydantic decode |",
         "| --- | --- | --- | --- |",
     ]
@@ -804,78 +968,68 @@ def _validation_table() -> list[str]:
     return lines
 
 
-def _matched_section(
-    by_key: dict[tuple[str, str, str], Row], cells: list[str]
+def _matched_a_table(
+    by_key: dict[tuple[str, str, str], Row],
+    cells: list[str],
+    omits: dict[str, list[str]],
 ) -> list[str]:
-    """Two framings that make both libraries do the same validation work.
-
-    Isolates the monotonic check (the one ours-only check removable from our side
-    and addable to pydantic's), answering whether covjson-msgspec only looked
-    slower at full fidelity because it did more.
-    """
+    """Framing A: covjson-msgspec trimmed to pydantic's check set."""
     lines = [
-        "Both framings make the two libraries do the same validation work, "
-        "isolating the monotonic check (the one ours-only check that is removable "
-        "from covjson-msgspec and addable to covjson-pydantic). This answers "
-        "whether covjson-msgspec only looked slower at full fidelity by doing "
-        "more.",
-        "",
-        "Framing A, trim our extra so covjson-msgspec does no more than pydantic:",
-        "",
-        "| cell | pydantic decode | msgspec matched-trim | speedup (x) |",
-        "| --- | --- | --- | --- |",
+        "| cell | pydantic decode (us) | msgspec matched-trim (us) | speedup |",
+        "| :--- | ---: | ---: | ---: |",
     ]
 
     for cell in cells:
         pyd = by_key[(cell, "pydantic", "decode")]
         trim = by_key[(cell, "msgspec", "matched-trim")]
-        lines.append(f"| {cell} | {_cell(pyd)} | {_cell(trim)} | {_ratio(pyd, trim)} |")
+        warn = _warn(cell, omits, ignoring=("monotonic axis order",))
+        lines.append(
+            f"| {cell} | {_cell(pyd)}{warn} | {_cell(trim)} | {_ratio(pyd, trim)} |"
+        )
 
-    lines += [
-        "",
-        "Framing B, add covjson-msgspec's monotonic check to pydantic:",
-        "",
-        "| cell | msgspec matched-full | pydantic decode+monotonic | speedup (x) |",
-        "| --- | --- | --- | --- |",
+    return lines
+
+
+def _matched_b_table(
+    by_key: dict[tuple[str, str, str], Row],
+    cells: list[str],
+    omits: dict[str, list[str]],
+) -> list[str]:
+    """Framing B: covjson-msgspec's full validation, vs pydantic decode + monotonic."""
+    lines = [
+        "| cell | msgspec matched-full (us) | pydantic decode+monotonic (us) "
+        "| speedup |",
+        "| :--- | ---: | ---: | ---: |",
     ]
 
     for cell in cells:
         full = by_key[(cell, "msgspec", "matched-full")]
         pyd_mono = by_key[(cell, "pydantic", "decode+monotonic")]
-        lines.append(
-            f"| {cell} | {_cell(full)} | {_cell(pyd_mono)} | {_ratio(pyd_mono, full)} |"
-        )
+        ratio = _ratio(pyd_mono, full)
+        warn = _warn(cell, omits, ignoring=("monotonic axis order",))
+        lines.append(f"| {cell} | {_cell(full)} | {_cell(pyd_mono)}{warn} | {ratio} |")
 
-    lines += [
-        "",
-        "The mid-size cells flip to faster once the monotonic scan is neutralized, "
-        "confirming it was the reason they looked slower. `tiled-ndarray` and "
-        "`grid-large` stay slower on both framings for the same underlying reason, "
-        "and it is not extra work: covjson-msgspec runs validation as a separate "
-        "pass over the decoded objects, so it pays a fixed per-call cost (visible "
-        "on the tiny `tiled-ndarray`) plus a pure-Python per-element cost (visible "
-        "on `grid-large`'s ~40k value-vs-dataType scan, the same check pydantic "
-        "runs fused into its Rust decode). Trimming the monotonic scan cannot "
-        "change those.",
-    ]
     return lines
 
 
 def _roundtrip_table(
-    by_key: dict[tuple[str, str, str], Row], cells: list[str]
+    by_key: dict[tuple[str, str, str], Row],
+    cells: list[str],
+    omits: dict[str, list[str]],
 ) -> list[str]:
     """Round-trip table with two msgspec anchors against pydantic's fused one."""
     rows = [
-        "| cell | pydantic | msgspec structural (x) | msgspec full (x) |",
-        "| --- | --- | --- | --- |",
+        "| cell | pydantic (us) | msgspec structural (us, x) | msgspec full (us, x) |",
+        "| :--- | ---: | ---: | ---: |",
     ]
 
     for cell in cells:
         pyd = by_key[(cell, "pydantic", "roundtrip")]
         structural = by_key[(cell, "msgspec", "roundtrip")]
         full = by_key[(cell, "msgspec", "roundtrip(full)")]
+        pyd_cell = f"{_cell(pyd)}{_warn(cell, omits)}"
         rows.append(
-            f"| {cell} | {_cell(pyd)} | {_cell(structural, pyd)} | {_cell(full, pyd)} |"
+            f"| {cell} | {pyd_cell} | {_cell(structural, pyd)} | {_cell(full, pyd)} |"
         )
 
     return rows
@@ -885,7 +1039,10 @@ def _pair_table(
     by_key: dict[tuple[str, str, str], Row], cells: list[str], op: str
 ) -> list[str]:
     """A head-to-head table for one symmetric op (msgspec vs pydantic)."""
-    rows = ["| cell | msgspec | pydantic | speedup (x) |", "| --- | --- | --- | --- |"]
+    rows = [
+        "| cell | msgspec (us) | pydantic (us) | speedup |",
+        "| :--- | ---: | ---: | ---: |",
+    ]
 
     for cell in cells:
         ms = by_key[(cell, "msgspec", op)]
@@ -907,11 +1064,6 @@ def _probe_section(probe_rows: list[Row]) -> list[str]:
     by_key = {(r.cell, r.lib): r for r in probe_rows}
     notes = {name: note for name, _raw, note in _PROBES}
     lines = [
-        "Documents that expose a one-sided capability gap. A time (us/op) means "
-        "the library decoded it; `raises ...` is the exact exception the library "
-        "throws instead, verbatim (type and message), so the gap is a concrete "
-        "failure rather than a paraphrase.",
-        "",
         "| probe | the gap | msgspec | pydantic |",
         "| --- | --- | --- | --- |",
     ]
@@ -966,17 +1118,34 @@ def _cell(row: Row, reference: Row | None = None) -> str:
     text = f"{row.median_us:.2f} (+-{row.iqr_us:.2f})"
 
     if reference is not None:
-        text += f" [{_ratio(reference, row)}]"
+        # A line break keeps the speedup off the median's line, so the column
+        # stays narrow and the two read as distinct facts (no bracket needed).
+        text += f"<br>{_ratio(reference, row)}"
 
     return text
 
 
 def _ratio(numerator: Row, denominator: Row) -> str:
-    """Speedup ``numerator / denominator`` (e.g. pydantic over msgspec)."""
+    """Speedup ``numerator / denominator`` (pydantic over msgspec).
+
+    Where covjson-msgspec is faster (above a rounded 1.0x) the ratio is italic, its
+    slant reading as forward motion; slower or within a rounded 1.0x it stays plain.
+    A direction arrow follows it. Both cues are portable markdown, since GitHub
+    offers no reliable text color or cell shading.
+    """
     if numerator.median_us is None or denominator.median_us is None:
         return "--"
 
-    return f"{numerator.median_us / denominator.median_us:.1f}x"
+    ratio = numerator.median_us / denominator.median_us
+    text = f"{ratio:.1f}x"
+
+    if text == "1.0x":
+        return f"{text} {_EVEN}"
+
+    if ratio > 1:
+        return f"*{text}* {_FASTER}"
+
+    return f"{text} {_SLOWER}"
 
 
 if __name__ == "__main__":
