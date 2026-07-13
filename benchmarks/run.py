@@ -38,6 +38,7 @@ import statistics
 import timeit
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime, timedelta
 from importlib.metadata import version
 from typing import TYPE_CHECKING, Any, cast
 
@@ -356,7 +357,8 @@ def build_cells(*, quick: bool) -> list[Cell]:
     >>> cells = build_cells(quick=True)
     >>> [c.name for c in cells]  # doctest: +NORMALIZE_WHITESPACE
     ['point-series (small)', 'grid (medium)', 'tiled-ndarray',
-     'coverage-collection', 'grid-large (synthetic)']
+     'coverage-collection', 'grid-large (synthetic)',
+     'point-series-large (synthetic)', 'vertical-profile (synthetic)']
     >>> any(c.t_values for c in cells)  # the datetime rung has something to run
     True
     """
@@ -381,9 +383,14 @@ def build_cells(*, quick: bool) -> list[Cell]:
         ),
     ]
     cells = [_make_cell(name, path.read_bytes(), dispatch) for name, path in specs]
-    cells.append(
-        _make_cell("grid-large (synthetic)", _synthetic_grid(quick=quick), dispatch)
-    )
+    synthetic = [
+        ("grid-large (synthetic)", _synthetic_grid),
+        ("point-series-large (synthetic)", _synthetic_point_series),
+        ("vertical-profile (synthetic)", _synthetic_vertical_profile),
+    ]
+    cells += [
+        _make_cell(name, build(quick=quick), dispatch) for name, build in synthetic
+    ]
     return cells
 
 
@@ -719,6 +726,99 @@ def _synthetic_grid(*, quick: bool) -> bytes:
                 np.arange(side**2, dtype=float).reshape(side, side), ("y", "x")
             )
         },
+    )
+    return cm.encode(cov)
+
+
+def _synthetic_point_series(*, quick: bool) -> bytes:
+    """Encode a PointSeries with a large temporal axis (the missing "big time" cell).
+
+    One location, N standard-calendar Gregorian instants, so ``validate`` and the
+    ``to_datetime`` rung each resolve N temporal strings: the cost temporal work
+    pays, made large enough to rise above the benchmark's run-to-run noise (see
+    #97, and the wins in #90 / #94 it makes visible). The instants are
+    timezone-aware so covjson-pydantic parses them and both libraries are
+    measured. ``ranges`` is empty, so no value scan competes with the temporal
+    resolution for the timed work.
+
+    Examples
+    --------
+    >>> raw = _synthetic_point_series(quick=True)
+    >>> doc = cm.decode(raw)
+    >>> type(doc).__name__, len(doc.domain.axes["t"].values)
+    ('Coverage', 20)
+    """
+    from covjson_msgspec import Axis, Coverage, Domain
+    from covjson_msgspec.referencing import (
+        GeographicCRS,
+        ReferenceSystemConnection,
+        TemporalRS,
+    )
+
+    steps = 20 if quick else 200
+    base = datetime(2020, 1, 1, tzinfo=UTC)
+    times = [
+        (base + timedelta(hours=i)).strftime("%Y-%m-%dT%H:%M:%SZ") for i in range(steps)
+    ]
+    cov = Coverage(
+        domain=Domain.point_series(
+            x=Axis.listed((1.0,)),
+            y=Axis.listed((2.0,)),
+            t=Axis.listed(times),
+            referencing=[
+                ReferenceSystemConnection(
+                    coordinates=("x", "y"), system=GeographicCRS()
+                ),
+                ReferenceSystemConnection(
+                    coordinates=("t",), system=TemporalRS("Gregorian")
+                ),
+            ],
+        ),
+        ranges={},
+    )
+    return cm.encode(cov)
+
+
+def _synthetic_vertical_profile(*, quick: bool) -> bytes:
+    """Encode a VerticalProfile with a large listed numeric axis.
+
+    One location, N explicit monotonic ``z`` values under a vertical CRS, so
+    ``validate(check_values=True)`` runs the numeric monotonic axis-order walk
+    over N values with no temporal resolution to mask it. A *listed* axis (not
+    `~covjson_msgspec.axis.Axis.regular`, which is monotonic by construction and
+    skipped) is what makes the walk fire. This is the instrument #74 uses to
+    decide whether that walk warrants a native fast path: the ``matched-full``
+    minus ``matched-trim`` gap on this cell is the walk's cost, since
+    ``matched-trim`` disables it. ``ranges`` is empty, so no value scan competes.
+
+    Examples
+    --------
+    >>> raw = _synthetic_vertical_profile(quick=True)
+    >>> doc = cm.decode(raw)
+    >>> type(doc).__name__, len(doc.domain.axes["z"].values)
+    ('Coverage', 20)
+    """
+    from covjson_msgspec import Axis, Coverage, Domain
+    from covjson_msgspec.referencing import (
+        GeographicCRS,
+        ReferenceSystemConnection,
+        VerticalCRS,
+    )
+
+    levels = 20 if quick else 200
+    cov = Coverage(
+        domain=Domain.vertical_profile(
+            x=Axis.listed((1.0,)),
+            y=Axis.listed((2.0,)),
+            z=Axis.listed(tuple(float(i) for i in range(levels))),
+            referencing=[
+                ReferenceSystemConnection(
+                    coordinates=("x", "y"), system=GeographicCRS()
+                ),
+                ReferenceSystemConnection(coordinates=("z",), system=VerticalCRS()),
+            ],
+        ),
+        ranges={},
     )
     return cm.encode(cov)
 

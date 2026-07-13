@@ -43,16 +43,44 @@ since a document only one side accepts is not a fair timing cell.
 | `tiled-ndarray` | `spec-tiled-ndarray.json` |
 | `coverage-collection` | `doc-example-coverage-collection.json` |
 | `grid-large (synthetic)` | generated at runtime |
+| `point-series-large (synthetic)` | generated at runtime |
+| `vertical-profile (synthetic)` | generated at runtime |
 
 The corpus cells come from `tests/corpus/covjson-pydantic/` (covjson-pydantic's
 own vendored test data), used in preference to the `playground/` documents on
 purpose: the playground documents carry timezone-naive temporal values, which
 covjson-pydantic's `AwareDatetime` rejects, so they cannot be timed head-to-head.
 
-The large cell is generated because the largest corpus document is only about
-5 KB. It is built from the public builders and encoded to canonical CoverageJSON
-that both libraries decode, so the large-array comparison is exercised without
-shipping a large fixture.
+The synthetic cells are generated because the largest corpus document is only
+about 5 KB, and each isolates a different large-N cost. All three are built from
+the public builders and encoded to canonical CoverageJSON that both libraries
+decode, so the effect is exercised without shipping a large fixture:
+
+- `grid-large` is a large range array: it exercises the O(n) value scan.
+- `point-series-large` is a large temporal axis (N Gregorian instants, empty
+  ranges): the `validate(values)` and `+datetime` rungs resolve N temporal
+  strings, so the temporal-resolution wins (#90, #94) rise above run-to-run
+  noise instead of hiding under a 0-4-value corpus axis.
+
+  One caveat when reading this cell against covjson-pydantic: the full ladder
+  (`decode + validate(values) + to_datetime + encode`) parses every temporal
+  value **twice**, because `validate(check_values=True)` resolves the axis for
+  its lexical-form and monotonic checks, and `to_datetime` then resolves the
+  same strings again. covjson-pydantic parses once, fused into decode (in Rust).
+  So the maximal rung double-counts the temporal parse and overstates the gap: a
+  consumer that resolves once (decode + parse every datetime a single time) pays
+  closer to `decode` + one resolve pass, not the summed rung. The redundant
+  second parse is the dedup opportunity tracked in #62; the residual, after
+  dedup, is the pure-Python-vs-Rust parse cost inherent to the pure-Python core
+  (temporal values are kept as raw strings and parsed on demand, never eagerly
+  at decode).
+- `vertical-profile` is a large *listed* numeric axis (N `z` values, empty
+  ranges): it runs the numeric monotonic axis-order walk with no temporal
+  resolution masking it. The `matched-full` minus `matched-trim` gap on this
+  cell is the walk's own cost (matched-trim disables the walk), which is the
+  measurement #74 uses to decide whether that walk needs a native fast path. A
+  *listed* axis is required: a regular (start/stop/num) axis is monotonic by
+  construction and skipped.
 
 ## Capability probes
 
