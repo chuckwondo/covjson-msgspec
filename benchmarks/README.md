@@ -95,12 +95,13 @@ covjson-msgspec and addable to covjson-pydantic, the monotonic axis scan:
 
 `results.md` reads the outcome; the one subtlety worth recording here is the
 `coverage-collection` Framing B row. It is like-for-like (both run the monotonic
-check) yet leaves covjson-msgspec slightly behind, and the gap is not a skipped
-check: covjson-msgspec's monotonic pass resolves temporal values from their
-strings per member domain (roughly 35us across the two members), while
-covjson-pydantic compares `datetime`s it already parsed during its fused decode
-(roughly 9us). It is a separate-pass cost, and a candidate for the same kind of
-native fast path the value scan now has.
+check), and covjson-msgspec now finishes slightly ahead, but it still carries a
+cost covjson-pydantic does not: covjson-msgspec's monotonic pass resolves
+temporal values from their strings per member domain (roughly 35us across the
+two members), while covjson-pydantic compares `datetime`s it already parsed
+during its fused decode (roughly 9us). That separate-pass cost no longer puts
+the cell behind (the JSON-Pointer deferral closed the gap), but the repeated
+temporal resolution remains a candidate for folding into a single scan.
 
 ## Methodology
 

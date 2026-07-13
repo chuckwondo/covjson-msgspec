@@ -216,6 +216,23 @@ def test_range_without_parameter_is_an_error() -> None:
     assert any(i.code == "coverage.range-without-parameter" for i in errors)
 
 
+def test_pointer_escapes_special_characters_in_a_key() -> None:
+    # A range key containing "/" or "~" must be escaped in the issue's JSON
+    # Pointer (RFC 6901: "~" -> "~0", "/" -> "~1"), so it is not misread as extra
+    # path segments. Exercises the escaping end to end, which no corpus document
+    # does; the unit behavior is pinned by the `_escape` / `_ptr` doctests.
+    cov = Coverage(
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={"a/b~c": NdArray(data_type="float", values=(1.0,))},
+        parameters={},
+    )
+    (issue,) = [
+        i for i in validate(cov) if i.code == "coverage.range-without-parameter"
+    ]
+
+    assert issue.at == "/ranges/a~1b~0c"
+
+
 def test_parameter_group_unknown_member() -> None:
     temp = Parameter.continuous(
         ObservedProperty(label=i18n("Air temperature")), Unit(symbol="K")
