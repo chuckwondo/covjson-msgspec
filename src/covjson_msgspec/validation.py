@@ -41,7 +41,7 @@ from __future__ import annotations
 import enum
 import math
 import re
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from functools import cache
 from itertools import chain, pairwise
 from typing import Any, Literal, assert_never, cast
@@ -53,7 +53,6 @@ from msgspec import UNSET
 from covjson_msgspec._bridging import (
     coordinate_systems,
     is_standard_calendar,
-    temporal_coordinates,
 )
 from covjson_msgspec.axis import AxisValue
 from covjson_msgspec.coverage import (
@@ -80,7 +79,7 @@ from covjson_msgspec.referencing import (
     TemporalRS,
     VerticalCRS,
 )
-from covjson_msgspec.temporal import Malformed, Moment, resolve
+from covjson_msgspec.temporal import Malformed, Moment, TemporalResult, resolve
 
 
 class Severity(enum.StrEnum):
@@ -1495,10 +1494,16 @@ def _validate_domain(
         yield from _domain_issues(domain, domain_type, rule, path)
 
     # Axis values live under `axes`, so these value-scanning checks come before
-    # the referencing checks to keep issues in document order.
+    # the referencing checks to keep issues in document order. Resolve each
+    # standard-calendar temporal axis once here and share the result with both
+    # value-scans, so a temporal string is parsed once per domain, not twice.
     if check_values:
-        yield from _temporal_form_issues(domain, path)
-        yield from _axis_monotonic_issues(domain, path, axis_order_checker)
+        systems = coordinate_systems(domain)
+        resolved = _resolved_temporal_axes(domain, systems)
+        yield from _temporal_form_issues(path, resolved)
+        yield from _axis_monotonic_issues(
+            domain, path, axis_order_checker, systems, resolved
+        )
 
     # Spec 6.1: a domain MUST carry `referencing` unless it is a member of a
     # collection that supplies it. `_validate_collection` resolves each member
@@ -1519,27 +1524,82 @@ def _validate_domain(
     )
 
 
-def _temporal_form_issues(
-    domain: Domain, path: tuple[str | int, ...]
-) -> Iterator[Issue]:
-    """Yield a warning for each time-axis value outside the recommended forms.
+def _resolved_temporal_axes(
+    domain: Domain, systems: Mapping[str, ReferenceSystem]
+) -> dict[str, tuple[TemporalResult | None, ...]]:
+    """Resolve each standard-calendar temporal axis's values once.
 
-    A coordinate governed by a standard-calendar `TemporalRS` (as found by
-    `temporal_coordinates`) SHOULD carry values in one of the recommended Gregorian
-    lexical forms (`~covjson_msgspec.temporal.resolve`).
-    Each string value that resolves to `~covjson_msgspec.temporal.Malformed` is
-    reported (a warning, per ADR-0002, since Spec 5.2 makes this a SHOULD); a valid
-    but unrepresentable value (an expanded year, a leap second) is a legal form and
-    is left alone. Non-string values, and coordinates with no matching axis, are
-    skipped. This is a value-scanning check, gated behind
-    ``validate(check_values=True)``.
+    For every coordinate governed by a standard-calendar
+    `~covjson_msgspec.referencing.TemporalRS` (found in ``systems``) that names an
+    axis in ``domain``, each of the axis's ``coordinate_values`` is classified by
+    `~covjson_msgspec.temporal.resolve`, keeping ``None`` for a non-string value so
+    the result stays index-aligned with the axis. Computed once per domain and
+    shared by both temporal value-scans (`_temporal_form_issues` and the default
+    monotonic check), so a temporal string is parsed once, not twice.
 
     Parameters
     ----------
     domain
-        The domain whose temporal axes are scanned.
+        The domain whose temporal axes are resolved.
+    systems
+        The coordinate-to-system index, from
+        `~covjson_msgspec._bridging.coordinate_systems`.
+
+    Returns
+    -------
+    dict
+        Each standard-calendar temporal coordinate mapped to its resolved values
+        (a `~covjson_msgspec.temporal.TemporalResult` per string, ``None`` per
+        non-string), index-aligned with the axis.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain
+    >>> from covjson_msgspec.referencing import ReferenceSystemConnection, TemporalRS
+    >>> dom = Domain(
+    ...     axes={"t": Axis.listed(("2020", "nope"))},
+    ...     referencing=[
+    ...         ReferenceSystemConnection(
+    ...             coordinates=("t",), system=TemporalRS(calendar="Gregorian")
+    ...         )
+    ...     ],
+    ... )
+    >>> resolved = _resolved_temporal_axes(dom, coordinate_systems(dom))
+    >>> [type(result).__name__ for result in resolved["t"]]
+    ['Moment', 'Malformed']
+    """
+    return {
+        coord: tuple(
+            resolve(value) if isinstance(value, str) else None
+            for value in domain.axes[coord].coordinate_values
+        )
+        for coord, system in systems.items()
+        if coord in domain.axes and _ordering_kind(system) == "temporal"
+    }
+
+
+def _temporal_form_issues(
+    path: tuple[str | int, ...],
+    resolved: Mapping[str, tuple[TemporalResult | None, ...]],
+) -> Iterator[Issue]:
+    """Yield a warning for each time-axis value outside the recommended forms.
+
+    ``resolved`` (from `_resolved_temporal_axes`) maps each standard-calendar
+    temporal coordinate to its values already classified by
+    `~covjson_msgspec.temporal.resolve`, index-aligned with ``None`` for a
+    non-string value. Each value that resolved to
+    `~covjson_msgspec.temporal.Malformed` should have used one of the recommended
+    Gregorian lexical forms, so it is reported (a warning, per ADR-0002, since
+    Spec 5.2 makes this a SHOULD); a valid but unrepresentable value (an expanded
+    year, a leap second) is a legal form and is left alone. This is a
+    value-scanning check, gated behind ``validate(check_values=True)``.
+
+    Parameters
+    ----------
     path
-        The reference-token path to ``domain``, built via `_ptr` for each issue.
+        The reference-token path to the domain, built via `_ptr` for each issue.
+    resolved
+        The per-coordinate resolved temporal values, from `_resolved_temporal_axes`.
 
     Yields
     ------
@@ -1559,41 +1619,41 @@ def _temporal_form_issues(
     ...         )
     ...     ],
     ... )
-    >>> [str(issue) for issue in _temporal_form_issues(dom, ())]
+    >>> resolved = _resolved_temporal_axes(dom, coordinate_systems(dom))
+    >>> [str(issue) for issue in _temporal_form_issues((), resolved)]
     ["value 'nope' does not use a recommended Gregorian temporal form"]
     """
-    for coord in sorted(temporal_coordinates(domain)):
-        axis = domain.axes.get(coord)
-
-        if axis is None:
-            continue
-
-        for i, value in enumerate(axis.coordinate_values):
-            if isinstance(value, str) and isinstance(resolve(value), Malformed):
-                yield TemporalLexicalForm(
-                    value=value, at=_ptr(path, "axes", coord, "values", i)
-                )
+    return (
+        TemporalLexicalForm(
+            value=result.value, at=_ptr(path, "axes", coord, "values", i)
+        )
+        for coord in sorted(resolved)
+        for i, result in enumerate(resolved[coord])
+        if isinstance(result, Malformed)
+    )
 
 
 def _axis_monotonic_issues(
     domain: Domain,
     path: tuple[str | int, ...],
-    axis_order_checker: AxisOrderChecker | None = None,
+    axis_order_checker: AxisOrderChecker | None,
+    systems: Mapping[str, ReferenceSystem],
+    resolved: Mapping[str, tuple[TemporalResult | None, ...]],
 ) -> Iterator[Issue]:
     """Yield an error for each primitive axis whose ``values`` are not monotonic.
 
-    For every primitive (non-composite) value-listing axis, ``axis_order_checker``
-    is asked where the axis's ``values`` first break their required ordering, given
-    the reference system governing the axis
-    (`~covjson_msgspec._bridging.coordinate_systems`). A returned index becomes a
-    `DomainAxisNotMonotonic` error pointing at that value; ``None`` means nothing to
-    report. Regular (``start``/``stop``/``num``) axes are monotonic by construction
-    and skipped without materializing. This is a value-scanning check, gated behind
-    ``validate(check_values=True)``.
+    For every primitive (non-composite) value-listing axis, the axis-ordering
+    policy is asked where the axis's ``values`` first break their required
+    ordering, given the reference system governing the axis (``systems``). A
+    returned index becomes a `DomainAxisNotMonotonic` error pointing at that value;
+    ``None`` means nothing to report. Regular (``start``/``stop``/``num``) axes are
+    monotonic by construction and skipped without materializing. This is a
+    value-scanning check, gated behind ``validate(check_values=True)``.
 
-    ``axis_order_checker`` defaults to `require_monotonic` (the spec's MUST, read
-    non-strictly, over the ordered reference systems); a caller passes another
-    `AxisOrderChecker` to change the policy.
+    A custom ``axis_order_checker`` is called as ``(values, system)``; ``None``
+    uses the default policy (`_default_break`, equivalent to `require_monotonic`),
+    which reads each temporal axis's already-resolved values from ``resolved``
+    rather than re-parsing them.
 
     Parameters
     ----------
@@ -1602,7 +1662,12 @@ def _axis_monotonic_issues(
     path
         The reference-token path to ``domain``, built via `_ptr` for each issue.
     axis_order_checker
-        The axis-ordering policy; ``None`` uses `require_monotonic`.
+        The axis-ordering policy; ``None`` uses the default (`require_monotonic`).
+    systems
+        The coordinate-to-system index, from
+        `~covjson_msgspec._bridging.coordinate_systems`.
+    resolved
+        The per-coordinate resolved temporal values, from `_resolved_temporal_axes`.
 
     Yields
     ------
@@ -1622,29 +1687,81 @@ def _axis_monotonic_issues(
     ...         ReferenceSystemConnection(coordinates=("x",), system=GeographicCRS())
     ...     ],
     ... )
-    >>> [issue.at for issue in _axis_monotonic_issues(dom, ())]
+    >>> systems = coordinate_systems(dom)
+    >>> resolved = _resolved_temporal_axes(dom, systems)
+    >>> issues = _axis_monotonic_issues(dom, (), None, systems, resolved)
+    >>> [issue.at for issue in issues]
     ['/axes/x/values/2']
     """
-    checker = (
-        axis_order_checker if axis_order_checker is not None else require_monotonic()
+    # Primitive value-listing axes only: a regular (start/stop/num) axis has no
+    # ``values`` and is monotonic by construction, and a composite (tuple/polygon)
+    # axis is outside the primitive-axis MUST, so both are filtered out here.
+    scannable = [
+        (name, values, systems.get(name), resolved.get(name))
+        for name, axis in domain.axes.items()
+        if (values := axis.values) is not None
+        and axis.data_type not in ("tuple", "polygon")
+    ]
+
+    # Apply the ordering policy to each: the first index where the values break
+    # their order, or ``None`` for an ordered axis.
+    breaks = (
+        (name, _axis_break(axis_order_checker, values, system, results))
+        for name, values, system, results in scannable
     )
-    systems = coordinate_systems(domain)
 
-    for name, axis in domain.axes.items():
-        values = axis.values
+    # One error per axis that actually breaks, pointing at the breaking value.
+    return (
+        DomainAxisNotMonotonic(
+            at=_ptr(path, "axes", name, "values", break_index), axis=name
+        )
+        for name, break_index in breaks
+        if break_index is not None
+    )
 
-        # A regular (start/stop/num) axis is monotonic by construction, and a
-        # composite (tuple/polygon) axis is outside the primitive-axis MUST, so
-        # neither is materialized or scanned.
-        if values is None or axis.data_type in ("tuple", "polygon"):
-            continue
 
-        break_index = checker(values, systems.get(name))
+def _axis_break(
+    axis_order_checker: AxisOrderChecker | None,
+    values: Sequence[AxisValue],
+    system: ReferenceSystem | None,
+    results: tuple[TemporalResult | None, ...] | None,
+) -> int | None:
+    """The first index where an axis's values break their ordering, or ``None``.
 
-        if break_index is not None:
-            yield DomainAxisNotMonotonic(
-                at=_ptr(path, "axes", name, "values", break_index), axis=name
-            )
+    Applies the active ordering policy to one axis: a custom ``axis_order_checker``
+    is asked directly (``(values, system)``); ``None`` uses the default policy
+    (`_default_break`), which reuses the axis's pre-resolved temporal ``results``
+    instead of re-parsing them.
+
+    Parameters
+    ----------
+    axis_order_checker
+        The axis-ordering policy, or ``None`` for the default.
+    values
+        The primitive axis's coordinate values.
+    system
+        The reference system governing the axis, or ``None``.
+    results
+        The axis's pre-resolved temporal values, or ``None``. Used only by the
+        default policy, and only on a temporal axis.
+
+    Returns
+    -------
+    int or None
+        The first breaking index, or ``None`` when the axis is ordered.
+
+    Examples
+    --------
+    >>> from covjson_msgspec.referencing import GeographicCRS
+    >>> _axis_break(None, (0.0, 2.0, 1.0), GeographicCRS(), None)
+    2
+    >>> _axis_break(None, (0.0, 1.0, 2.0), GeographicCRS(), None) is None
+    True
+    """
+    if axis_order_checker is not None:
+        return axis_order_checker(values, system)
+
+    return _default_break(values, system, results, strict=False)
 
 
 def require_monotonic(*, strict: bool = False) -> AxisOrderChecker:
@@ -1698,34 +1815,114 @@ def require_monotonic(*, strict: bool = False) -> AxisOrderChecker:
     def check(
         values: Sequence[AxisValue], system: ReferenceSystem | None
     ) -> int | None:
-        kind = _ordering_kind(system)
-
-        if kind is None:
-            return None
-
-        if kind == "numeric":
-            # Compare the numeric values directly. A non-numeric value on a
-            # numeric axis is skipped rather than crash the comparison, and a NaN
-            # float is skipped too: NaN is unordered and not equal to itself, so
-            # leaving it in would corrupt the monotonic walk. `math.isnan` is
-            # guarded to floats so a large int never overflows converting to one.
-            keyed: list[tuple[int, Any]] = [
-                (i, value)
-                for i, value in enumerate(values)
-                if isinstance(value, int)
-                or (isinstance(value, float) and not math.isnan(value))
-            ]
-        else:
-            temporal = _temporal_keys(values)
-
-            if temporal is None:  # resolved instants mix tz-awareness; skip
-                return None
-
-            keyed = temporal
-
-        return _first_monotonic_break(keyed, strict=strict)
+        return _default_break(values, system, None, strict=strict)
 
     return check
+
+
+def _default_break(
+    values: Sequence[AxisValue],
+    system: ReferenceSystem | None,
+    results: tuple[TemporalResult | None, ...] | None,
+    *,
+    strict: bool,
+) -> int | None:
+    """Return the first index breaking the default monotonic-ordering policy.
+
+    The single home for the spec's monotonic MUST, shared by the public
+    `require_monotonic` (which passes ``results=None``, resolving temporal values
+    inline) and `_axis_monotonic_issues` (which passes the axis's already-resolved
+    values so a temporal string is parsed once per domain). `_ordering_kind`
+    classifies the system: a numeric axis is keyed by value (`_numeric_keys`), a
+    temporal axis by resolved instant (`_temporal_keys_from_resolved`, resolving
+    the values inline when ``results`` is ``None``); an unordered system yields
+    ``None``.
+
+    Parameters
+    ----------
+    values
+        The axis's coordinate values.
+    system
+        The reference system governing the axis, or ``None``.
+    results
+        The axis's pre-resolved temporal values (index-aligned), or ``None`` to
+        resolve inline. Ignored for a numeric axis.
+    strict
+        Whether equal-adjacent keys break the ordering.
+
+    Returns
+    -------
+    int or None
+        The first index that breaks the ordering, or ``None`` when the axis is
+        ordered (or its system defines no ordering).
+
+    Examples
+    --------
+    >>> from covjson_msgspec.referencing import GeographicCRS
+    >>> _default_break((0.0, 2.0, 1.0), GeographicCRS(), None, strict=False)
+    2
+    >>> _default_break((0.0, 1.0, 2.0), GeographicCRS(), None, strict=False) is None
+    True
+    """
+    kind = _ordering_kind(system)
+
+    if kind is None:
+        return None
+
+    if kind == "numeric":
+        keyed: list[tuple[int, Any]] = _numeric_keys(values)
+    else:
+        temporal = _temporal_keys_from_resolved(
+            results
+            if results is not None
+            else tuple(
+                resolve(value) if isinstance(value, str) else None for value in values
+            )
+        )
+
+        if temporal is None:  # resolved instants mix tz-awareness; skip
+            return None
+
+        keyed = temporal
+
+    return _first_monotonic_break(keyed, strict=strict)
+
+
+def _numeric_keys(values: Sequence[AxisValue]) -> list[tuple[int, Any]]:
+    """The ``(index, value)`` keys for a numeric axis's orderable values.
+
+    Compares the numeric values directly. A non-numeric value on a numeric axis is
+    skipped rather than crash the comparison, and a NaN float is skipped too: NaN
+    is unordered and not equal to itself, so leaving it in would corrupt the
+    monotonic walk. `math.isnan` is guarded to floats so a large int never
+    overflows converting to one.
+
+    Parameters
+    ----------
+    values
+        A primitive numeric axis's coordinate values.
+
+    Returns
+    -------
+    list of (int, value)
+        The orderable values keyed by original position.
+
+    Examples
+    --------
+    >>> _numeric_keys((0.0, 2.0, 1.0))
+    [(0, 0.0), (1, 2.0), (2, 1.0)]
+
+    A NaN and a non-numeric value are dropped (their indices do not appear):
+
+    >>> _numeric_keys((0.0, float("nan"), "x", 2))
+    [(0, 0.0), (3, 2)]
+    """
+    return [
+        (i, value)
+        for i, value in enumerate(values)
+        if isinstance(value, int)
+        or (isinstance(value, float) and not math.isnan(value))
+    ]
 
 
 def _ordering_kind(
@@ -1781,16 +1978,18 @@ def _ordering_kind(
             assert_never(system)
 
 
-def _temporal_keys(values: Sequence[AxisValue]) -> list[tuple[int, Any]] | None:
-    """The ``(index, instant)`` pairs for a time axis's resolvable moments, or None.
+def _temporal_keys_from_resolved(
+    results: tuple[TemporalResult | None, ...],
+) -> list[tuple[int, Any]] | None:
+    """The ``(index, instant)`` pairs for a time axis's resolved moments, or None.
 
-    Each value resolving to a `~covjson_msgspec.temporal.Moment` contributes its
+    Each `~covjson_msgspec.temporal.Moment` in ``results`` contributes its
     `~datetime.datetime`, keyed by original position. A
     `~covjson_msgspec.temporal.Malformed` value (owned by the
-    ``temporal.lexical-form`` check) and an
-    `~covjson_msgspec.temporal.Unrepresentable` one (a legal form with no
-    ``datetime``) are skipped, so a reversal hinging on an unrepresentable value
-    between two moments is not caught here.
+    ``temporal.lexical-form`` check), an `~covjson_msgspec.temporal.Unrepresentable`
+    one (a legal form with no ``datetime``), and a ``None`` (a non-string value)
+    are skipped, so a reversal hinging on such a value between two moments is not
+    caught here.
 
     `~covjson_msgspec.temporal.Moment.when` is timezone-aware only at second
     precision, so a naive and an aware instant are not comparable; when the
@@ -1799,8 +1998,9 @@ def _temporal_keys(values: Sequence[AxisValue]) -> list[tuple[int, Any]] | None:
 
     Parameters
     ----------
-    values
-        A primitive time axis's coordinate values.
+    results
+        A primitive time axis's values, already classified by
+        `~covjson_msgspec.temporal.resolve` (index-aligned, ``None`` per non-string).
 
     Returns
     -------
@@ -1810,25 +2010,28 @@ def _temporal_keys(values: Sequence[AxisValue]) -> list[tuple[int, Any]] | None:
 
     Examples
     --------
-    >>> keys = _temporal_keys(("2020-01-01T00:00:00Z", "2020-01-02T00:00:00Z"))
-    >>> [i for i, _ in keys]
+    >>> from covjson_msgspec.temporal import resolve
+    >>> aware = ("2020-01-01T00:00:00Z", "2020-01-02T00:00:00Z")
+    >>> [i for i, _ in _temporal_keys_from_resolved(tuple(map(resolve, aware)))]
     [0, 1]
 
     A malformed value is dropped (its index does not appear):
 
-    >>> [i for i, _ in _temporal_keys(("2020-01-01T00:00:00Z", "nope"))]
+    >>> forms = ("2020-01-01T00:00:00Z", "nope")
+    >>> [i for i, _ in _temporal_keys_from_resolved(tuple(map(resolve, forms)))]
     [0]
 
     Mixing an aware instant (second precision) with a naive one (day precision)
     yields ``None``:
 
-    >>> _temporal_keys(("2020-01-01T00:00:00Z", "2020-01-02")) is None
+    >>> mixed = ("2020-01-01T00:00:00Z", "2020-01-02")
+    >>> _temporal_keys_from_resolved(tuple(map(resolve, mixed))) is None
     True
     """
     moments = [
-        (i, resolved.when)
-        for i, value in enumerate(values)
-        if isinstance(value, str) and isinstance(resolved := resolve(value), Moment)
+        (i, result.when)
+        for i, result in enumerate(results)
+        if isinstance(result, Moment)
     ]
 
     if len({when.tzinfo is None for _, when in moments}) > 1:
