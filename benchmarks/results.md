@@ -125,21 +125,21 @@ Reading the table:
 
 | cell | pydantic decode (us) | msgspec decode (us, x) | + validate (us, x) | + validate(values) (us, x) | + datetime (us, x) |
 | :--- | ---: | ---: | ---: | ---: | ---: |
-| point-series (small) | 50.72 (+-2.10) ⚠️ | 3.64 (+-0.42)<br>*13.9x* ⬆️ | 19.78 (+-2.33)<br>*2.6x* ⬆️ | 29.06 (+-2.25)<br>*1.7x* ⬆️ | 35.51 (+-2.93)<br>*1.4x* ⬆️ |
-| grid (medium) | 53.24 (+-1.49) ⚠️ | 6.04 (+-0.11)<br>*8.8x* ⬆️ | 21.12 (+-0.52)<br>*2.5x* ⬆️ | 39.50 (+-1.21)<br>*1.3x* ⬆️ | 42.36 (+-0.67)<br>*1.3x* ⬆️ |
-| tiled-ndarray | 9.87 (+-0.23) ⚠️ | 2.37 (+-0.03)<br>*4.2x* ⬆️ | 19.37 (+-0.49)<br>0.5x ⬇️ | 18.99 (+-0.49)<br>0.5x ⬇️ | n/a (no-temporal-axis)<br>0.5x ⬇️ |
-| coverage-collection | 157.19 (+-18.78) ⚠️ | 12.31 (+-0.14)<br>*12.8x* ⬆️ | 56.03 (+-0.50)<br>*2.8x* ⬆️ | 119.13 (+-2.28)<br>*1.3x* ⬆️ | 124.65 (+-3.79)<br>*1.3x* ⬆️ |
-| grid-large (synthetic) | 6638.67 (+-67.25) | 1489.55 (+-27.67)<br>*4.5x* ⬆️ | 1534.63 (+-19.98)<br>*4.3x* ⬆️ | 1875.78 (+-26.63)<br>*3.5x* ⬆️ | n/a (no-temporal-axis)<br>*3.5x* ⬆️ |
+| point-series (small) | 50.17 (+-2.22) ⚠️ | 3.64 (+-0.25)<br>*13.8x* ⬆️ | 18.92 (+-1.97)<br>*2.7x* ⬆️ | 28.92 (+-1.80)<br>*1.7x* ⬆️ | 31.70 (+-2.39)<br>*1.6x* ⬆️ |
+| grid (medium) | 52.23 (+-1.99) ⚠️ | 6.23 (+-0.53)<br>*8.4x* ⬆️ | 20.67 (+-0.36)<br>*2.5x* ⬆️ | 36.09 (+-1.46)<br>*1.4x* ⬆️ | 37.89 (+-1.13)<br>*1.4x* ⬆️ |
+| tiled-ndarray | 9.50 (+-0.13) ⚠️ | 2.33 (+-0.06)<br>*4.1x* ⬆️ | 18.60 (+-0.58)<br>0.5x ⬇️ | 18.69 (+-0.38)<br>0.5x ⬇️ | n/a (no-temporal-axis)<br>0.5x ⬇️ |
+| coverage-collection | 140.04 (+-1.96) ⚠️ | 12.26 (+-0.78)<br>*11.4x* ⬆️ | 56.07 (+-1.10)<br>*2.5x* ⬆️ | 111.95 (+-4.28)<br>*1.3x* ⬆️ | 116.30 (+-2.49)<br>*1.2x* ⬆️ |
+| grid-large (synthetic) | 6634.15 (+-99.82) | 1507.96 (+-23.16)<br>*4.4x* ⬆️ | 1519.61 (+-104.86)<br>*4.4x* ⬆️ | 1873.85 (+-82.72)<br>*3.5x* ⬆️ | n/a (no-temporal-axis)<br>*3.5x* ⬆️ |
 
 ## Encode (median us/op)
 
 | cell | msgspec (us) | pydantic (us) | speedup |
 | :--- | ---: | ---: | ---: |
-| point-series (small) | 1.10 (+-0.02) | 17.15 (+-1.76) | *15.6x* ⬆️ |
-| grid (medium) | 2.31 (+-0.14) | 44.90 (+-2.37) | *19.4x* ⬆️ |
-| tiled-ndarray | 0.75 (+-0.04) | 4.31 (+-0.04) | *5.8x* ⬆️ |
-| coverage-collection | 3.80 (+-0.06) | 47.66 (+-1.05) | *12.5x* ⬆️ |
-| grid-large (synthetic) | 2635.16 (+-51.57) | 4921.74 (+-94.21) | *1.9x* ⬆️ |
+| point-series (small) | 1.10 (+-0.08) | 18.39 (+-0.75) | *16.7x* ⬆️ |
+| grid (medium) | 2.28 (+-0.07) | 48.38 (+-3.00) | *21.3x* ⬆️ |
+| tiled-ndarray | 0.73 (+-0.05) | 4.87 (+-0.08) | *6.7x* ⬆️ |
+| coverage-collection | 3.78 (+-0.08) | 52.94 (+-3.30) | *14.0x* ⬆️ |
+| grid-large (synthetic) | 2615.03 (+-27.47) | 4886.06 (+-212.20) | *1.9x* ⬆️ |
 
 ## Round-trip (median us/op)
 
@@ -149,11 +149,11 @@ cost); `full` adds validation and datetimes to match.
 
 | cell | pydantic (us) | msgspec structural (us, x) | msgspec full (us, x) |
 | :--- | ---: | ---: | ---: |
-| point-series (small) | 82.94 (+-5.58) ⚠️ | 4.59 (+-0.06)<br>*18.1x* ⬆️ | 37.39 (+-1.37)<br>*2.2x* ⬆️ |
-| grid (medium) | 127.01 (+-7.48) ⚠️ | 8.58 (+-0.23)<br>*14.8x* ⬆️ | 46.64 (+-1.90)<br>*2.7x* ⬆️ |
-| tiled-ndarray | 14.87 (+-0.31) ⚠️ | 3.12 (+-0.17)<br>*4.8x* ⬆️ | 20.13 (+-0.59)<br>0.7x ⬇️ |
-| coverage-collection | 216.44 (+-3.48) ⚠️ | 16.40 (+-0.33)<br>*13.2x* ⬆️ | 131.74 (+-1.87)<br>*1.6x* ⬆️ |
-| grid-large (synthetic) | 12509.86 (+-445.06) | 4161.32 (+-64.28)<br>*3.0x* ⬆️ | 4557.59 (+-145.87)<br>*2.7x* ⬆️ |
+| point-series (small) | 84.80 (+-5.82) ⚠️ | 4.60 (+-0.17)<br>*18.4x* ⬆️ | 34.16 (+-1.43)<br>*2.5x* ⬆️ |
+| grid (medium) | 130.01 (+-9.07) ⚠️ | 8.41 (+-0.45)<br>*15.5x* ⬆️ | 42.20 (+-2.09)<br>*3.1x* ⬆️ |
+| tiled-ndarray | 15.78 (+-0.65) ⚠️ | 3.02 (+-0.08)<br>*5.2x* ⬆️ | 20.26 (+-0.96)<br>0.8x ⬇️ |
+| coverage-collection | 252.48 (+-14.57) ⚠️ | 16.23 (+-0.19)<br>*15.6x* ⬆️ | 122.65 (+-0.86)<br>*2.1x* ⬆️ |
+| grid-large (synthetic) | 11742.83 (+-288.09) | 4135.10 (+-17.01)<br>*2.8x* ⬆️ | 4609.14 (+-244.24)<br>*2.5x* ⬆️ |
 
 ## Validation parity (decode-time checks)
 
@@ -210,21 +210,21 @@ Framing A, trim our extra so covjson-msgspec does no more than covjson-pydantic:
 
 | cell | pydantic decode (us) | msgspec matched-trim (us) | speedup |
 | :--- | ---: | ---: | ---: |
-| point-series (small) | 50.72 (+-2.10) | 30.37 (+-2.51) | *1.7x* ⬆️ |
-| grid (medium) | 53.24 (+-1.49) | 35.41 (+-0.98) | *1.5x* ⬆️ |
-| tiled-ndarray | 9.87 (+-0.23) ⚠️ | 18.97 (+-0.32) | 0.5x ⬇️ |
-| coverage-collection | 157.19 (+-18.78) | 100.98 (+-7.85) | *1.6x* ⬆️ |
-| grid-large (synthetic) | 6638.67 (+-67.25) | 1861.27 (+-22.89) | *3.6x* ⬆️ |
+| point-series (small) | 50.17 (+-2.22) | 28.61 (+-1.20) | *1.8x* ⬆️ |
+| grid (medium) | 52.23 (+-1.99) | 32.88 (+-2.02) | *1.6x* ⬆️ |
+| tiled-ndarray | 9.50 (+-0.13) ⚠️ | 19.75 (+-0.57) | 0.5x ⬇️ |
+| coverage-collection | 140.04 (+-1.96) | 93.18 (+-2.93) | *1.5x* ⬆️ |
+| grid-large (synthetic) | 6634.15 (+-99.82) | 1867.47 (+-68.74) | *3.6x* ⬆️ |
 
 Framing B, add covjson-msgspec's monotonic check to covjson-pydantic:
 
 | cell | msgspec matched-full (us) | pydantic decode+monotonic (us) | speedup |
 | :--- | ---: | ---: | ---: |
-| point-series (small) | 35.30 (+-2.77) | 58.32 (+-2.46) | *1.7x* ⬆️ |
-| grid (medium) | 42.19 (+-0.83) | 76.03 (+-7.52) | *1.8x* ⬆️ |
-| tiled-ndarray | 20.15 (+-1.85) | 16.81 (+-1.08) ⚠️ | 0.8x ⬇️ |
-| coverage-collection | 135.66 (+-7.35) | 147.97 (+-2.41) | *1.1x* ⬆️ |
-| grid-large (synthetic) | 1932.30 (+-36.19) | 6818.07 (+-1314.00) | *3.5x* ⬆️ |
+| point-series (small) | 34.88 (+-2.60) | 62.07 (+-2.68) | *1.8x* ⬆️ |
+| grid (medium) | 38.20 (+-2.22) | 66.73 (+-0.65) | *1.7x* ⬆️ |
+| tiled-ndarray | 18.70 (+-0.88) | 17.00 (+-0.28) ⚠️ | 0.9x ⬇️ |
+| coverage-collection | 115.62 (+-0.91) | 150.80 (+-4.52) | *1.3x* ⬆️ |
+| grid-large (synthetic) | 2052.23 (+-178.07) | 6768.31 (+-256.56) | *3.3x* ⬆️ |
 
 ## Capability probes (decode, median us/op)
 
@@ -235,11 +235,11 @@ paraphrase.
 
 | probe | the gap | msgspec | pydantic |
 | --- | --- | --- | --- |
-| naive datetime | a full-form t value with no timezone | 3.28 (+-0.07) | raises ValidationError: Input should have timezone info |
-| date-only t | a reduced-precision date (spec form YYYY-MM-DD) | 3.25 (+-0.06) | raises ValidationError: Input should have timezone info |
-| year-month t | a reduced-precision month (spec form YYYY-MM) | 3.23 (+-0.15) | raises ValidationError: Input should be a valid datetime or date, input is too short |
-| extra custom axis | a domain axis beyond the fixed x/y/z/t/composite slots | 2.85 (+-0.18) | raises ValidationError: Extra inputs are not permitted |
-| mixed-type axis | one axis mixing numeric and string values | 2.34 (+-0.03) | raises ValidationError: Input should be a valid number, unable to parse string as a number |
+| naive datetime | a full-form t value with no timezone | 3.21 (+-0.02) | raises ValidationError: Input should have timezone info |
+| date-only t | a reduced-precision date (spec form YYYY-MM-DD) | 3.25 (+-0.04) | raises ValidationError: Input should have timezone info |
+| year-month t | a reduced-precision month (spec form YYYY-MM) | 3.38 (+-0.15) | raises ValidationError: Input should be a valid datetime or date, input is too short |
+| extra custom axis | a domain axis beyond the fixed x/y/z/t/composite slots | 2.72 (+-0.05) | raises ValidationError: Extra inputs are not permitted |
+| mixed-type axis | one axis mixing numeric and string values | 2.40 (+-0.21) | raises ValidationError: Input should be a valid number, unable to parse string as a number |
 
 Reverse direction: no probe was found that covjson-pydantic accepts and covjson-msgspec rejects. covjson-pydantic's advantage is static type precision and discoverability (see issue #22), not document acceptance.
 
