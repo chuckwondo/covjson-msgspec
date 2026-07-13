@@ -158,12 +158,14 @@ validation rungs, it is faster because it validates less. Equalize the work and
 covjson-msgspec's slower cells close up or move ahead, leaving only the tile-set
 ⚠️, where covjson-msgspec runs a MUST check covjson-pydantic performs not at all.
 
-Even a like-for-like row (no ⚠️) can differ for a reason that is not a skipped
-check: covjson-msgspec's monotonic scan resolves temporal values from their
-strings, per member domain, so on a temporal collection it can cost more than
-covjson-pydantic scanning `datetime`s it already parsed during its fused decode.
-That is a separate-pass cost, not dropped validation; `benchmarks/README.md` works
-the `coverage-collection` result through.
+Even a like-for-like row (no ⚠️) carries a cost worth naming: covjson-msgspec's
+monotonic scan resolves temporal values from their strings, per member domain, a
+separate pass covjson-pydantic avoids by comparing `datetime`s it already parsed
+during its fused decode. That extra pass is a real cost, not dropped validation,
+and on the temporal `coverage-collection` it once left covjson-msgspec behind;
+covjson-msgspec now finishes ahead there, and the repeated resolution remains a
+candidate for folding into a single scan. `benchmarks/README.md` works the
+`coverage-collection` result through.
 
 Framing A, trim our extra so covjson-msgspec does no more than covjson-pydantic:
 

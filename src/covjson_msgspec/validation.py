@@ -839,71 +839,107 @@ def _issues(
     match obj:
         case Domain():
             yield from _validate_domain(
-                obj, obj.domain_type, "", check_values, axis_order_checker
+                obj, obj.domain_type, (), check_values, axis_order_checker
             )
         case Coverage():
-            yield from _validate_coverage(obj, "", check_values, axis_order_checker)
+            yield from _validate_coverage(obj, (), check_values, axis_order_checker)
         case CoverageCollection():
-            yield from _validate_collection(obj, "", check_values, axis_order_checker)
+            yield from _validate_collection(obj, (), check_values, axis_order_checker)
         case NdArray():
-            yield from _validate_ndarray(obj, "")
+            yield from _validate_ndarray(obj, ())
 
             if check_values:
-                yield from _check_value_data_types(obj, "")
+                yield from _check_value_data_types(obj, ())
         case TiledNdArray():
-            yield from _validate_tiled_ndarray(obj, "")
+            yield from _validate_tiled_ndarray(obj, ())
         case _:
             # Exhaustiveness: a new CoverageJSON member would fail type checking
             # here until it is handled above.
             assert_never(obj)
 
 
-def _ptr(prefix: str, *parts: str | int) -> str:
-    """Join ``prefix`` and ``parts`` into a JSON Pointer for an issue's ``at``.
+def _ptr(path: tuple[str | int, ...], *parts: str | int) -> str:
+    """Render a component ``path`` (and any extra ``parts``) as a JSON Pointer.
 
-    Each part is appended as a ``/``-separated reference token. Per RFC 6901, a
-    literal ``~`` and ``/`` inside a string token are escaped to ``~0`` and
-    ``~1`` so they are not mistaken for the path separator; integer parts (array
-    indices) are stringified as-is.
+    A JSON Pointer (RFC 6901) is a run of ``/``-prefixed reference tokens, so the
+    empty tuple is the whole-document pointer ``""`` and every token contributes
+    its own leading ``/``. ``path`` carries the raw tokens threaded down the
+    validation walk; ``parts`` are any extra tokens appended at the emitting
+    site. Each token is escaped once here (`_escape`), so the pointer format
+    lives in a single place and callers thread raw tokens only, materializing a
+    string exactly when an issue is emitted.
 
     Parameters
     ----------
-    prefix
-        The pointer built so far (e.g. ``"#"`` or a parent path).
+    path
+        The reference tokens built so far (object keys as ``str``, array indices
+        as ``int``); ``()`` is the document root.
     *parts
-        Reference tokens to append: object keys (``str``) or array indices
-        (``int``).
+        Extra reference tokens to append at the point of emission.
 
     Returns
     -------
     str
-        The extended JSON Pointer.
+        The JSON Pointer.
 
     Examples
     --------
-    >>> _ptr("#", "ranges", "temperature", "values", 0)
-    '#/ranges/temperature/values/0'
+    >>> _ptr((), "ranges", "temperature", "values", 0)
+    '/ranges/temperature/values/0'
 
-    A ``/`` in a key is escaped so it is not read as a separator:
+    The empty tuple is the whole-document pointer, and a ``/`` in a key is
+    escaped so it is not read as a separator:
 
-    >>> _ptr("#", "axes", "x/y")
-    '#/axes/x~1y'
+    >>> _ptr(())
+    ''
+    >>> _ptr((), "axes", "x/y")
+    '/axes/x~1y'
     """
-    # Build a JSON Pointer, escaping "~" and "/" in string tokens (RFC 6901).
-    escaped = (
-        (
-            part.replace("~", "~0").replace("/", "~1")
-            if isinstance(part, str)
-            else str(part)
-        )
-        for part in parts
-    )
+    return "".join(f"/{_escape(token)}" for token in (*path, *parts))
 
-    return "/".join((prefix, *escaped))
+
+def _escape(token: str | int) -> str:
+    """Escape one JSON Pointer reference token (RFC 6901).
+
+    A literal ``~`` and ``/`` inside a string token are escaped to ``~0`` and
+    ``~1`` so they are not mistaken for the path separator; an integer token (an
+    array index) is stringified as-is. The two replacements are skipped when
+    neither special character is present, which is the common case (axis names,
+    field names), so a conformant document that emits few issues pays almost
+    nothing here.
+
+    Parameters
+    ----------
+    token
+        One reference token: an object key (``str``) or an array index (``int``).
+
+    Returns
+    -------
+    str
+        The escaped token.
+
+    Examples
+    --------
+    >>> _escape("description")
+    'description'
+    >>> _escape("x/y")
+    'x~1y'
+    >>> _escape("a~b")
+    'a~0b'
+    >>> _escape(0)
+    '0'
+    """
+    if isinstance(token, int):
+        return str(token)
+
+    if "~" not in token and "/" not in token:
+        return token
+
+    return token.replace("~", "~0").replace("/", "~1")
 
 
 def _missing_axis_issues(
-    domain: Domain, domain_type: str, rule: DomainTypeRule, path: str
+    domain: Domain, domain_type: str, rule: DomainTypeRule, path: tuple[str | int, ...]
 ) -> Iterator[Issue]:
     """Yield a ``domain.missing-axis`` issue for each absent required axis.
 
@@ -916,7 +952,7 @@ def _missing_axis_issues(
     rule
         The axis constraints for ``domain_type`` from `DOMAIN_TYPE_RULES`.
     path
-        The JSON Pointer to ``domain``, extended via `_ptr` for each issue.
+        The reference-token path to ``domain``, built via `_ptr` for each issue.
 
     Yields
     ------
@@ -928,7 +964,7 @@ def _missing_axis_issues(
     >>> from covjson_msgspec import Axis, Domain
     >>> rule = DOMAIN_TYPE_RULES["Grid"]
     >>> dom = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
-    >>> [issue.at for issue in _missing_axis_issues(dom, "Grid", rule, "")]
+    >>> [issue.at for issue in _missing_axis_issues(dom, "Grid", rule, ())]
     ['/axes/y']
     """
     return (
@@ -941,7 +977,7 @@ def _missing_axis_issues(
 
 
 def _non_single_axis_issues(
-    domain: Domain, domain_type: str, rule: DomainTypeRule, path: str
+    domain: Domain, domain_type: str, rule: DomainTypeRule, path: tuple[str | int, ...]
 ) -> Iterator[Issue]:
     """Yield a ``domain.axis-not-single`` issue for each over-valued single axis.
 
@@ -958,7 +994,7 @@ def _non_single_axis_issues(
     rule
         The axis constraints for ``domain_type`` from `DOMAIN_TYPE_RULES`.
     path
-        The JSON Pointer to ``domain``, extended via `_ptr` for each issue.
+        The reference-token path to ``domain``, built via `_ptr` for each issue.
 
     Yields
     ------
@@ -974,7 +1010,7 @@ def _non_single_axis_issues(
     ...     axes={"x": Axis.listed((1.0, 2.0)), "y": Axis.listed((3.0,))},
     ...     domain_type="Point",
     ... )
-    >>> [issue.at for issue in _non_single_axis_issues(dom, "Point", rule, "")]
+    >>> [issue.at for issue in _non_single_axis_issues(dom, "Point", rule, ())]
     ['/axes/x']
     """
     return (
@@ -987,7 +1023,7 @@ def _non_single_axis_issues(
 
 
 def _composite_data_type_issue(
-    domain: Domain, domain_type: str, rule: DomainTypeRule, path: str
+    domain: Domain, domain_type: str, rule: DomainTypeRule, path: tuple[str | int, ...]
 ) -> Issue | None:
     """Return the ``domain.composite-data-type`` issue, or ``None`` if conformant.
 
@@ -1005,7 +1041,7 @@ def _composite_data_type_issue(
     rule
         The axis constraints for ``domain_type`` from `DOMAIN_TYPE_RULES`.
     path
-        The JSON Pointer to ``domain``, extended via `_ptr` for the issue.
+        The reference-token path to ``domain``, built via `_ptr` for the issue.
 
     Returns
     -------
@@ -1020,7 +1056,7 @@ def _composite_data_type_issue(
     ...     values=((0.0, 1.0),), data_type="polygon", coordinates=("x", "y")
     ... )
     >>> dom = Domain(axes={"composite": composite}, domain_type="Trajectory")
-    >>> issue = _composite_data_type_issue(dom, "Trajectory", rule, "")
+    >>> issue = _composite_data_type_issue(dom, "Trajectory", rule, ())
     >>> issue.code == "domain.composite-data-type"
     True
     """
@@ -1041,7 +1077,7 @@ def _composite_data_type_issue(
 
 
 def _unexpected_axis_issues(
-    domain: Domain, domain_type: str, rule: DomainTypeRule, path: str
+    domain: Domain, domain_type: str, rule: DomainTypeRule, path: tuple[str | int, ...]
 ) -> Iterator[Issue]:
     """Yield a ``domain.extra-axis-not-single`` issue per surplus multi axis.
 
@@ -1057,7 +1093,7 @@ def _unexpected_axis_issues(
     rule
         The axis constraints for ``domain_type`` from `DOMAIN_TYPE_RULES`.
     path
-        The JSON Pointer to ``domain``, extended via `_ptr` for each issue.
+        The reference-token path to ``domain``, built via `_ptr` for each issue.
 
     Yields
     ------
@@ -1076,7 +1112,7 @@ def _unexpected_axis_issues(
     ...     },
     ...     domain_type="Grid",
     ... )
-    >>> [issue.at for issue in _unexpected_axis_issues(dom, "Grid", rule, "")]
+    >>> [issue.at for issue in _unexpected_axis_issues(dom, "Grid", rule, ())]
     ['/axes/bogus']
     """
     allowed = set(rule.required_axes) | set(rule.optional_axes)
@@ -1103,7 +1139,7 @@ def _unexpected_axis_issues(
 
 
 def _domain_issues(
-    domain: Domain, domain_type: str, rule: DomainTypeRule, path: str
+    domain: Domain, domain_type: str, rule: DomainTypeRule, path: tuple[str | int, ...]
 ) -> Iterator[Issue]:
     """Yield every axis-rule violation for a domain of a known type.
 
@@ -1122,7 +1158,7 @@ def _domain_issues(
     rule
         The axis constraints for ``domain_type`` from `DOMAIN_TYPE_RULES`.
     path
-        The JSON Pointer to ``domain``, extended via `_ptr` for each issue.
+        The reference-token path to ``domain``, built via `_ptr` for each issue.
 
     Yields
     ------
@@ -1134,7 +1170,7 @@ def _domain_issues(
     >>> from covjson_msgspec import Axis, Domain
     >>> rule = DOMAIN_TYPE_RULES["Grid"]
     >>> dom = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
-    >>> [issue.code for issue in _domain_issues(dom, "Grid", rule, "")] == [
+    >>> [issue.code for issue in _domain_issues(dom, "Grid", rule, ())] == [
     ...     "domain.missing-axis"
     ... ]
     True
@@ -1198,7 +1234,9 @@ def _is_valid_language_tag(tag: str) -> bool:
     return bool(_BCP47_CHARSET_RE.fullmatch(tag)) and langcodes.tag_is_valid(tag)
 
 
-def _language_tag_issues(tags: I18n | None, path: str) -> Iterator[Issue]:
+def _language_tag_issues(
+    tags: I18n | None, path: tuple[str | int, ...]
+) -> Iterator[Issue]:
     """Yield an i18n object's ``i18n.empty`` or ``i18n.invalid-language-tag`` issues.
 
     Spec 2: an i18n object MUST have at least one entry, and every key MUST be
@@ -1215,7 +1253,7 @@ def _language_tag_issues(tags: I18n | None, path: str) -> Iterator[Issue]:
         every call site, is what lets a caller pass an optional ``label`` /
         ``description`` straight through without a guarding ternary.
     path
-        The JSON Pointer to the i18n object, extended via `_ptr` per key.
+        The reference-token path to the i18n object, built via `_ptr` per key.
 
     Yields
     ------
@@ -1227,27 +1265,27 @@ def _language_tag_issues(tags: I18n | None, path: str) -> Iterator[Issue]:
     --------
     ``"und"`` and well-formed, registered tags pass; ``None`` yields nothing:
 
-    >>> list(_language_tag_issues({"und": "x", "en-US": "y"}, "#/label"))
+    >>> list(_language_tag_issues({"und": "x", "en-US": "y"}, ("label",)))
     []
-    >>> list(_language_tag_issues(None, "#/label"))
+    >>> list(_language_tag_issues(None, ("label",)))
     []
 
     A present-but-empty map is reported once, at the map's own path:
 
-    >>> issue = next(_language_tag_issues({}, "#/label"))
+    >>> issue = next(_language_tag_issues({}, ("label",)))
     >>> issue.code, issue.at
-    ('i18n.empty', '#/label')
+    ('i18n.empty', '/label')
 
     A malformed separator and an unregistered subtag are both reported:
 
-    >>> [i.at for i in _language_tag_issues({"en_US": "x", "jp": "y"}, "#/label")]
-    ['#/label/en_US', '#/label/jp']
+    >>> [i.at for i in _language_tag_issues({"en_US": "x", "jp": "y"}, ("label",))]
+    ['/label/en_US', '/label/jp']
     """
     if tags is None:
         return
 
     if not tags:
-        yield I18nEmpty(at=path)
+        yield I18nEmpty(at=_ptr(path))
         return
 
     yield from (
@@ -1258,7 +1296,7 @@ def _language_tag_issues(tags: I18n | None, path: str) -> Iterator[Issue]:
 
 
 def _label_description_i18n_issues(
-    label: I18n | None, description: I18n | None, path: str
+    label: I18n | None, description: I18n | None, path: tuple[str | int, ...]
 ) -> Iterator[Issue]:
     """Yield the language-tag issues for a ``label``/``description`` pair.
 
@@ -1274,7 +1312,7 @@ def _label_description_i18n_issues(
     description
         The ``description`` i18n map, or ``None`` when absent.
     path
-        The JSON Pointer to the enclosing object, extended via `_ptr`.
+        The reference-token path to the enclosing object, built via `_ptr`.
 
     Yields
     ------
@@ -1284,16 +1322,18 @@ def _label_description_i18n_issues(
     Examples
     --------
     >>> issues = _label_description_i18n_issues(
-    ...     {"en_US": "x"}, {"jp": "y"}, "#/parameters/t"
+    ...     {"en_US": "x"}, {"jp": "y"}, ("parameters", "t")
     ... )
     >>> [i.at for i in issues]
-    ['#/parameters/t/label/en_US', '#/parameters/t/description/jp']
+    ['/parameters/t/label/en_US', '/parameters/t/description/jp']
     """
-    yield from _language_tag_issues(label, _ptr(path, "label"))
-    yield from _language_tag_issues(description, _ptr(path, "description"))
+    yield from _language_tag_issues(label, (*path, "label"))
+    yield from _language_tag_issues(description, (*path, "description"))
 
 
-def _concept_i18n_issues(concept: Concept, path: str) -> Iterator[Issue]:
+def _concept_i18n_issues(
+    concept: Concept, path: tuple[str | int, ...]
+) -> Iterator[Issue]:
     """Yield a `Concept`'s language-tag issues (its ``label``/``description``).
 
     Parameters
@@ -1302,7 +1342,7 @@ def _concept_i18n_issues(concept: Concept, path: str) -> Iterator[Issue]:
         The concept to check (an `IdentifierRS`'s ``target_concept`` or one of
         its ``identifiers`` values).
     path
-        The JSON Pointer to ``concept``, extended via `_ptr` for each issue.
+        The reference-token path to ``concept``, built via `_ptr` for each issue.
 
     Yields
     ------
@@ -1312,14 +1352,14 @@ def _concept_i18n_issues(concept: Concept, path: str) -> Iterator[Issue]:
     Examples
     --------
     >>> bad = Concept(label={"en_US": "Water"})
-    >>> [i.at for i in _concept_i18n_issues(bad, "#/targetConcept")]
-    ['#/targetConcept/label/en_US']
+    >>> [i.at for i in _concept_i18n_issues(bad, ("targetConcept",))]
+    ['/targetConcept/label/en_US']
     """
     yield from _label_description_i18n_issues(concept.label, concept.description, path)
 
 
 def _reference_system_i18n_issues(
-    system: ReferenceSystem, path: str
+    system: ReferenceSystem, path: tuple[str | int, ...]
 ) -> Iterator[Issue]:
     """Yield a `ReferenceSystem`'s language-tag issues, dispatching on its kind.
 
@@ -1333,7 +1373,7 @@ def _reference_system_i18n_issues(
     system
         The reference system to check (a `ReferenceSystemConnection.system`).
     path
-        The JSON Pointer to ``system``, extended via `_ptr` for each issue.
+        The reference-token path to ``system``, built via `_ptr` for each issue.
 
     Yields
     ------
@@ -1343,30 +1383,28 @@ def _reference_system_i18n_issues(
     Examples
     --------
     >>> crs = GeographicCRS(description={"en_US": "WGS 84"})
-    >>> [i.at for i in _reference_system_i18n_issues(crs, "#/referencing/0/system")]
-    ['#/referencing/0/system/description/en_US']
+    >>> [i.at for i in _reference_system_i18n_issues(crs, ("referencing", 0, "system"))]
+    ['/referencing/0/system/description/en_US']
 
     A `TemporalRS` has no i18n fields, so it yields nothing:
 
-    >>> list(_reference_system_i18n_issues(TemporalRS(calendar="Gregorian"), "#"))
+    >>> list(_reference_system_i18n_issues(TemporalRS(calendar="Gregorian"), ()))
     []
     """
     match system:
         case GeographicCRS() | ProjectedCRS() | VerticalCRS():
-            yield from _language_tag_issues(
-                system.description, _ptr(path, "description")
-            )
+            yield from _language_tag_issues(system.description, (*path, "description"))
         case TemporalRS():
             pass
         case IdentifierRS():
             yield from _concept_i18n_issues(
-                system.target_concept, _ptr(path, "targetConcept")
+                system.target_concept, (*path, "targetConcept")
             )
             yield from _label_description_i18n_issues(
                 system.label, system.description, path
             )
             yield from chain.from_iterable(
-                _concept_i18n_issues(concept, _ptr(path, "identifiers", key))
+                _concept_i18n_issues(concept, (*path, "identifiers", key))
                 for key, concept in (system.identifiers or {}).items()
             )
         case _:
@@ -1376,7 +1414,7 @@ def _reference_system_i18n_issues(
 def _validate_domain(
     domain: Domain,
     domain_type: str | None,
-    path: str,
+    path: tuple[str | int, ...],
     check_values: bool = False,
     axis_order_checker: AxisOrderChecker | None = None,
 ) -> Iterator[Issue]:
@@ -1402,7 +1440,7 @@ def _validate_domain(
         The effective domain type (from the domain itself, or a coverage's own
         ``domainType``); ``None`` or unrecognized means no axis rules to apply.
     path
-        The JSON Pointer to ``domain``, extended via `_ptr` for each issue.
+        The reference-token path to ``domain``, built via `_ptr` for each issue.
     check_values
         Whether to run the O(number of values) axis value-scans (temporal
         lexical-form and axis monotonicity).
@@ -1421,7 +1459,7 @@ def _validate_domain(
     --------
     >>> from covjson_msgspec import Axis, Domain
     >>> dom = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
-    >>> [issue.code for issue in _validate_domain(dom, "Grid", "")] == [
+    >>> [issue.code for issue in _validate_domain(dom, "Grid", ())] == [
     ...     "domain.missing-axis",
     ...     "domain.missing-referencing",
     ... ]
@@ -1431,7 +1469,7 @@ def _validate_domain(
     warning first (Spec 6.1), then the referencing error:
 
     >>> bare = Domain(axes={"x": Axis.listed((1.0,))})
-    >>> [issue.code for issue in _validate_domain(bare, None, "")] == [
+    >>> [issue.code for issue in _validate_domain(bare, None, ())] == [
     ...     "domain.missing-domain-type",
     ...     "domain.missing-referencing",
     ... ]
@@ -1475,13 +1513,15 @@ def _validate_domain(
     # keys must be valid BCP 47 tags.
     yield from chain.from_iterable(
         _reference_system_i18n_issues(
-            connection.system, _ptr(path, "referencing", i, "system")
+            connection.system, (*path, "referencing", i, "system")
         )
         for i, connection in enumerate(domain.referencing)
     )
 
 
-def _temporal_form_issues(domain: Domain, path: str) -> Iterator[Issue]:
+def _temporal_form_issues(
+    domain: Domain, path: tuple[str | int, ...]
+) -> Iterator[Issue]:
     """Yield a warning for each time-axis value outside the recommended forms.
 
     A coordinate governed by a standard-calendar `TemporalRS` (as found by
@@ -1499,7 +1539,7 @@ def _temporal_form_issues(domain: Domain, path: str) -> Iterator[Issue]:
     domain
         The domain whose temporal axes are scanned.
     path
-        The JSON Pointer to ``domain``, extended via `_ptr` for each issue.
+        The reference-token path to ``domain``, built via `_ptr` for each issue.
 
     Yields
     ------
@@ -1519,7 +1559,7 @@ def _temporal_form_issues(domain: Domain, path: str) -> Iterator[Issue]:
     ...         )
     ...     ],
     ... )
-    >>> [str(issue) for issue in _temporal_form_issues(dom, "")]
+    >>> [str(issue) for issue in _temporal_form_issues(dom, ())]
     ["value 'nope' does not use a recommended Gregorian temporal form"]
     """
     for coord in sorted(temporal_coordinates(domain)):
@@ -1536,7 +1576,9 @@ def _temporal_form_issues(domain: Domain, path: str) -> Iterator[Issue]:
 
 
 def _axis_monotonic_issues(
-    domain: Domain, path: str, axis_order_checker: AxisOrderChecker | None = None
+    domain: Domain,
+    path: tuple[str | int, ...],
+    axis_order_checker: AxisOrderChecker | None = None,
 ) -> Iterator[Issue]:
     """Yield an error for each primitive axis whose ``values`` are not monotonic.
 
@@ -1558,7 +1600,7 @@ def _axis_monotonic_issues(
     domain
         The domain whose primitive axes are scanned.
     path
-        The JSON Pointer to ``domain``, extended via `_ptr` for each issue.
+        The reference-token path to ``domain``, built via `_ptr` for each issue.
     axis_order_checker
         The axis-ordering policy; ``None`` uses `require_monotonic`.
 
@@ -1580,7 +1622,7 @@ def _axis_monotonic_issues(
     ...         ReferenceSystemConnection(coordinates=("x",), system=GeographicCRS())
     ...     ],
     ... )
-    >>> [issue.at for issue in _axis_monotonic_issues(dom, "")]
+    >>> [issue.at for issue in _axis_monotonic_issues(dom, ())]
     ['/axes/x/values/2']
     """
     checker = (
@@ -1853,7 +1895,7 @@ def _first_monotonic_break(
     return None
 
 
-def _validate_ndarray(arr: NdArray, path: str) -> Iterator[Issue]:
+def _validate_ndarray(arr: NdArray, path: tuple[str | int, ...]) -> Iterator[Issue]:
     """Yield an `NdArray`'s internal shape-consistency issues.
 
     Two self-contained checks (no domain needed): ``shape`` and ``axisNames``
@@ -1869,7 +1911,7 @@ def _validate_ndarray(arr: NdArray, path: str) -> Iterator[Issue]:
     arr
         The inline array to check.
     path
-        The JSON Pointer to ``arr``, extended via `_ptr` for each issue.
+        The reference-token path to ``arr``, built via `_ptr` for each issue.
 
     Yields
     ------
@@ -1884,7 +1926,7 @@ def _validate_ndarray(arr: NdArray, path: str) -> Iterator[Issue]:
     >>> arr = NdArray(
     ...     data_type="float", values=(1.0, 2.0), shape=(3,), axis_names=("x",)
     ... )
-    >>> [issue.code for issue in _validate_ndarray(arr, "#/ranges/v")] == [
+    >>> [issue.code for issue in _validate_ndarray(arr, ("ranges", "v"))] == [
     ...     "ndarray.value-count"
     ... ]
     True
@@ -1894,7 +1936,7 @@ def _validate_ndarray(arr: NdArray, path: str) -> Iterator[Issue]:
     >>> consistent = NdArray(
     ...     data_type="float", values=(1.0,), shape=(1,), axis_names=("x",)
     ... )
-    >>> list(_validate_ndarray(consistent, "#/ranges/v"))
+    >>> list(_validate_ndarray(consistent, ("ranges", "v")))
     []
     """
     if len(arr.axis_names) != len(arr.shape):
@@ -1913,7 +1955,12 @@ def _validate_ndarray(arr: NdArray, path: str) -> Iterator[Issue]:
 
 
 def _tile_set_issues(
-    arr: TiledNdArray, ts: int, tile_set: TileSet, path: str, *, rank_ok: bool
+    arr: TiledNdArray,
+    ts: int,
+    tile_set: TileSet,
+    path: tuple[str | int, ...],
+    *,
+    rank_ok: bool,
 ) -> Iterator[Issue]:
     """Yield one tile set's issues: out-of-range tile sizes and template variables.
 
@@ -1934,7 +1981,7 @@ def _tile_set_issues(
     tile_set
         The tile set to check.
     path
-        The JSON Pointer to ``arr``, extended via `_ptr` for each issue.
+        The reference-token path to ``arr``, built via `_ptr` for each issue.
     rank_ok
         Whether ``axisNames`` rank-matches ``shape``; the unknown-variable check
         is skipped when it does not (the axis/tile alignment is then unreliable,
@@ -1955,7 +2002,7 @@ def _tile_set_issues(
     ...     tile_sets=(TileSet(tile_shape=(5, None), url_template="{t}.cov"),),
     ... )
     >>> tile_set = arr.tile_sets[0]
-    >>> [i.code for i in _tile_set_issues(arr, 0, tile_set, "#", rank_ok=True)] == [
+    >>> [i.code for i in _tile_set_issues(arr, 0, tile_set, (), rank_ok=True)] == [
     ...     "tiled-ndarray.tile-shape-too-large"
     ... ]
     True
@@ -2013,7 +2060,9 @@ def _tile_set_issues(
         )
 
 
-def _validate_tiled_ndarray(arr: TiledNdArray, path: str) -> Iterator[Issue]:
+def _validate_tiled_ndarray(
+    arr: TiledNdArray, path: tuple[str | int, ...]
+) -> Iterator[Issue]:
     """Yield a `TiledNdArray`'s tile-set issues against the spec.
 
     Several rules from the TiledNdArray spec, all error-severity (``tileShape``
@@ -2041,7 +2090,7 @@ def _validate_tiled_ndarray(arr: TiledNdArray, path: str) -> Iterator[Issue]:
     arr
         The tiled array to check.
     path
-        The JSON Pointer to ``arr``, extended via `_ptr` for each issue.
+        The reference-token path to ``arr``, built via `_ptr` for each issue.
 
     Yields
     ------
@@ -2060,11 +2109,11 @@ def _validate_tiled_ndarray(arr: TiledNdArray, path: str) -> Iterator[Issue]:
     ...     shape=(4, 2),
     ...     tile_sets=(TileSet(tile_shape=(5, None), url_template="{t}.covjson"),),
     ... )
-    >>> (issue,) = _validate_tiled_ndarray(arr, "#")
+    >>> (issue,) = _validate_tiled_ndarray(arr, ())
     >>> issue.code == "tiled-ndarray.tile-shape-too-large"
     True
     >>> issue.at
-    '#/tileSets/0/tileShape/0'
+    '/tileSets/0/tileShape/0'
 
     A subdivided axis whose ordinal the template omits is flagged:
 
@@ -2074,11 +2123,11 @@ def _validate_tiled_ndarray(arr: TiledNdArray, path: str) -> Iterator[Issue]:
     ...     shape=(4, 2),
     ...     tile_sets=(TileSet(tile_shape=(1, None), url_template="tile.covjson"),),
     ... )
-    >>> (issue,) = _validate_tiled_ndarray(arr, "#")
+    >>> (issue,) = _validate_tiled_ndarray(arr, ())
     >>> issue.code == "tiled-ndarray.url-template-missing-variable"
     True
     >>> issue.at
-    '#/tileSets/0/urlTemplate'
+    '/tileSets/0/urlTemplate'
 
     A template variable that names no subdivided axis is flagged too:
 
@@ -2088,11 +2137,11 @@ def _validate_tiled_ndarray(arr: TiledNdArray, path: str) -> Iterator[Issue]:
     ...     shape=(4, 2),
     ...     tile_sets=(TileSet(tile_shape=(1, None), url_template="{t}-{z}.cov"),),
     ... )
-    >>> (issue,) = _validate_tiled_ndarray(arr, "#")
+    >>> (issue,) = _validate_tiled_ndarray(arr, ())
     >>> issue.code == "tiled-ndarray.url-template-unknown-variable"
     True
     >>> issue.at
-    '#/tileSets/0/urlTemplate'
+    '/tileSets/0/urlTemplate'
     """
     rank_ok = len(arr.axis_names) == len(arr.shape)
 
@@ -2113,7 +2162,7 @@ def _validate_tiled_ndarray(arr: TiledNdArray, path: str) -> Iterator[Issue]:
 
 
 def _range_axis_issue(
-    arr: NdArray, domain: Domain, index: int, name: str, path: str
+    arr: NdArray, domain: Domain, index: int, name: str, path: tuple[str | int, ...]
 ) -> Issue | None:
     """Return the at-most-one issue for one of a range's axes, else ``None``.
 
@@ -2133,7 +2182,7 @@ def _range_axis_issue(
     name
         The axis name at ``index``.
     path
-        The JSON Pointer to ``arr``, extended via `_ptr` for the issue.
+        The reference-token path to ``arr``, built via `_ptr` for the issue.
 
     Returns
     -------
@@ -2145,7 +2194,7 @@ def _range_axis_issue(
     >>> from covjson_msgspec import Axis, Domain, NdArray
     >>> dom = Domain.grid(x=Axis.regular(0.0, 10.0, 3), y=Axis.regular(0.0, 10.0, 2))
     >>> arr = NdArray(data_type="float", values=(1.0,), shape=(9,), axis_names=("x",))
-    >>> issue = _range_axis_issue(arr, dom, 0, "x", "#/ranges/v")
+    >>> issue = _range_axis_issue(arr, dom, 0, "x", ("ranges", "v"))
     >>> issue.code == "coverage.range-shape-mismatch"
     True
     """
@@ -2169,7 +2218,7 @@ def _range_axis_issue(
 
 
 def _check_range_against_domain(
-    arr: NdArray, domain: Domain, path: str
+    arr: NdArray, domain: Domain, path: tuple[str | int, ...]
 ) -> Iterator[Issue]:
     """Yield where a range's axes fail to line up with the domain's.
 
@@ -2184,7 +2233,7 @@ def _check_range_against_domain(
     domain
         The coverage's (inline) domain.
     path
-        The JSON Pointer to ``arr``, extended via `_ptr` for each issue.
+        The reference-token path to ``arr``, built via `_ptr` for each issue.
 
     Yields
     ------
@@ -2198,7 +2247,7 @@ def _check_range_against_domain(
     >>> arr = NdArray(
     ...     data_type="float", values=(1.0, 2.0), shape=(2,), axis_names=("q",)
     ... )
-    >>> [i.code for i in _check_range_against_domain(arr, dom, "#/ranges/v")] == [
+    >>> [i.code for i in _check_range_against_domain(arr, dom, ("ranges", "v"))] == [
     ...     "coverage.range-axis-not-in-domain"
     ... ]
     True
@@ -2211,7 +2260,7 @@ def _check_range_against_domain(
 
 
 def _check_categorical_codes(
-    arr: NdArray, param: Parameter | None, path: str
+    arr: NdArray, param: Parameter | None, path: tuple[str | int, ...]
 ) -> Iterator[Issue]:
     """Yield a categorical range's values that are not defined codes.
 
@@ -2229,7 +2278,7 @@ def _check_categorical_codes(
     param
         The parameter the range belongs to, or ``None`` when unknown (skips).
     path
-        The JSON Pointer to ``arr``, extended via `_ptr` for each issue.
+        The reference-token path to ``arr``, built via `_ptr` for each issue.
 
     Yields
     ------
@@ -2309,7 +2358,9 @@ _NARROW_VALUE_TYPE: dict[str, Any] = {
 }
 
 
-def _check_value_data_types(arr: NdArray, path: str) -> Iterator[Issue]:
+def _check_value_data_types(
+    arr: NdArray, path: tuple[str | int, ...]
+) -> Iterator[Issue]:
     """Yield each value that does not match the declared ``dataType``.
 
     The spec requires an `NdArray`'s ``values`` to match its ``dataType``, but
@@ -2332,7 +2383,7 @@ def _check_value_data_types(arr: NdArray, path: str) -> Iterator[Issue]:
     arr
         The inline range whose values are scanned.
     path
-        The JSON Pointer to ``arr``, extended via `_ptr` for each issue.
+        The reference-token path to ``arr``, built via `_ptr` for each issue.
 
     Yields
     ------
@@ -2345,16 +2396,16 @@ def _check_value_data_types(arr: NdArray, path: str) -> Iterator[Issue]:
     the JSON Pointer:
 
     >>> arr = NdArray(data_type="integer", values=(1, 1.5, None))
-    >>> (issue,) = _check_value_data_types(arr, "#/ranges/v")
+    >>> (issue,) = _check_value_data_types(arr, ("ranges", "v"))
     >>> issue.code == "range.value-type-mismatch"
     True
     >>> issue.at
-    '#/ranges/v/values/1'
+    '/ranges/v/values/1'
 
     A ``"float"`` range accepts integer-written values (no issues):
 
     >>> floats = NdArray(data_type="float", values=(5, 5.0))
-    >>> list(_check_value_data_types(floats, "#"))
+    >>> list(_check_value_data_types(floats, ()))
     []
     """
     data_type = arr.data_type
@@ -2377,7 +2428,9 @@ def _check_value_data_types(arr: NdArray, path: str) -> Iterator[Issue]:
     return iter(())
 
 
-def _unit_i18n_issues(unit: Unit | None, path: str) -> Iterator[Issue]:
+def _unit_i18n_issues(
+    unit: Unit | None, path: tuple[str | int, ...]
+) -> Iterator[Issue]:
     """Yield a `Unit`'s language-tag issues (its ``label``, if present).
 
     Parameters
@@ -2385,7 +2438,7 @@ def _unit_i18n_issues(unit: Unit | None, path: str) -> Iterator[Issue]:
     unit
         The unit to check, or ``None`` when absent (yields nothing).
     path
-        The JSON Pointer to ``unit``, extended via `_ptr` for each issue.
+        The reference-token path to ``unit``, built via `_ptr` for each issue.
 
     Yields
     ------
@@ -2394,19 +2447,21 @@ def _unit_i18n_issues(unit: Unit | None, path: str) -> Iterator[Issue]:
 
     Examples
     --------
-    >>> list(_unit_i18n_issues(Unit(symbol="K"), "#/unit"))
+    >>> list(_unit_i18n_issues(Unit(symbol="K"), ("unit",)))
     []
     >>> bad = Unit(label={"en_US": "kelvin"})
-    >>> [i.at for i in _unit_i18n_issues(bad, "#/unit")]
-    ['#/unit/label/en_US']
+    >>> [i.at for i in _unit_i18n_issues(bad, ("unit",))]
+    ['/unit/label/en_US']
     """
     if unit is None:
         return
 
-    yield from _language_tag_issues(unit.label, _ptr(path, "label"))
+    yield from _language_tag_issues(unit.label, (*path, "label"))
 
 
-def _category_i18n_issues(category: Category, path: str) -> Iterator[Issue]:
+def _category_i18n_issues(
+    category: Category, path: tuple[str | int, ...]
+) -> Iterator[Issue]:
     """Yield a `Category`'s language-tag issues (``label``/``description``).
 
     Parameters
@@ -2414,7 +2469,7 @@ def _category_i18n_issues(category: Category, path: str) -> Iterator[Issue]:
     category
         The category to check.
     path
-        The JSON Pointer to ``category``, extended via `_ptr` for each issue.
+        The reference-token path to ``category``, built via `_ptr` for each issue.
 
     Yields
     ------
@@ -2424,8 +2479,8 @@ def _category_i18n_issues(category: Category, path: str) -> Iterator[Issue]:
     Examples
     --------
     >>> bad = Category(id="1", label={"en_US": "Water"})
-    >>> [i.at for i in _category_i18n_issues(bad, "#/categories/0")]
-    ['#/categories/0/label/en_US']
+    >>> [i.at for i in _category_i18n_issues(bad, ("categories", 0))]
+    ['/categories/0/label/en_US']
     """
     yield from _label_description_i18n_issues(
         category.label, category.description, path
@@ -2433,7 +2488,7 @@ def _category_i18n_issues(category: Category, path: str) -> Iterator[Issue]:
 
 
 def _observed_property_i18n_issues(
-    op: ObservedProperty | None, path: str
+    op: ObservedProperty | None, path: tuple[str | int, ...]
 ) -> Iterator[Issue]:
     """Yield an `ObservedProperty`'s language-tag issues, including its categories.
 
@@ -2443,7 +2498,7 @@ def _observed_property_i18n_issues(
         The observed property to check, or ``None`` when absent (yields
         nothing).
     path
-        The JSON Pointer to ``op``, extended via `_ptr` for each issue.
+        The reference-token path to ``op``, built via `_ptr` for each issue.
 
     Yields
     ------
@@ -2457,21 +2512,23 @@ def _observed_property_i18n_issues(
     ...     label={"en": "Land cover"},
     ...     categories=(Category(id="1", label={"en_US": "Water"}),),
     ... )
-    >>> issues = _observed_property_i18n_issues(land_cover, "#/observedProperty")
+    >>> issues = _observed_property_i18n_issues(land_cover, ("observedProperty",))
     >>> [i.at for i in issues]
-    ['#/observedProperty/categories/0/label/en_US']
+    ['/observedProperty/categories/0/label/en_US']
     """
     if op is None:
         return
 
     yield from _label_description_i18n_issues(op.label, op.description, path)
     yield from chain.from_iterable(
-        _category_i18n_issues(category, _ptr(path, "categories", i))
+        _category_i18n_issues(category, (*path, "categories", i))
         for i, category in enumerate(op.categories or ())
     )
 
 
-def _parameter_i18n_issues(param: Parameter, path: str) -> Iterator[Issue]:
+def _parameter_i18n_issues(
+    param: Parameter, path: tuple[str | int, ...]
+) -> Iterator[Issue]:
     """Yield a `Parameter`'s language-tag issues, including nested members.
 
     Checks the parameter's ``observedProperty`` (`_observed_property_i18n_issues`,
@@ -2483,7 +2540,7 @@ def _parameter_i18n_issues(param: Parameter, path: str) -> Iterator[Issue]:
     param
         The parameter to check.
     path
-        The JSON Pointer to ``param``, extended via `_ptr` for each issue.
+        The reference-token path to ``param``, built via `_ptr` for each issue.
 
     Yields
     ------
@@ -2497,17 +2554,19 @@ def _parameter_i18n_issues(param: Parameter, path: str) -> Iterator[Issue]:
     ...     ObservedProperty(label=i18n("Air temperature")),
     ...     Unit(label={"en_US": "kelvin"}),
     ... )
-    >>> [i.at for i in _parameter_i18n_issues(temp, "#/parameters/t")]
-    ['#/parameters/t/unit/label/en_US']
+    >>> [i.at for i in _parameter_i18n_issues(temp, ("parameters", "t"))]
+    ['/parameters/t/unit/label/en_US']
     """
     yield from _observed_property_i18n_issues(
-        param.observed_property, _ptr(path, "observedProperty")
+        param.observed_property, (*path, "observedProperty")
     )
     yield from _label_description_i18n_issues(param.label, param.description, path)
-    yield from _unit_i18n_issues(param.unit, _ptr(path, "unit"))
+    yield from _unit_i18n_issues(param.unit, (*path, "unit"))
 
 
-def _parameter_group_i18n_issues(group: ParameterGroup, path: str) -> Iterator[Issue]:
+def _parameter_group_i18n_issues(
+    group: ParameterGroup, path: tuple[str | int, ...]
+) -> Iterator[Issue]:
     """Yield a `ParameterGroup`'s language-tag issues, including nested members.
 
     Checks the group's own ``label``/``description`` and, when present, its
@@ -2518,7 +2577,7 @@ def _parameter_group_i18n_issues(group: ParameterGroup, path: str) -> Iterator[I
     group
         The parameter group to check.
     path
-        The JSON Pointer to ``group``, extended via `_ptr` for each issue.
+        The reference-token path to ``group``, built via `_ptr` for each issue.
 
     Yields
     ------
@@ -2528,17 +2587,17 @@ def _parameter_group_i18n_issues(group: ParameterGroup, path: str) -> Iterator[I
     Examples
     --------
     >>> bad = ParameterGroup(members=("u", "v"), label={"en_US": "Wind"})
-    >>> [i.at for i in _parameter_group_i18n_issues(bad, "#/parameterGroups/0")]
-    ['#/parameterGroups/0/label/en_US']
+    >>> [i.at for i in _parameter_group_i18n_issues(bad, ("parameterGroups", 0))]
+    ['/parameterGroups/0/label/en_US']
     """
     yield from _label_description_i18n_issues(group.label, group.description, path)
     yield from _observed_property_i18n_issues(
-        group.observed_property, _ptr(path, "observedProperty")
+        group.observed_property, (*path, "observedProperty")
     )
 
 
 def _validate_parameter_groups(
-    coverage: Coverage, parameters: dict[str, Parameter], path: str
+    coverage: Coverage, parameters: dict[str, Parameter], path: tuple[str | int, ...]
 ) -> Iterator[Issue]:
     """Yield each parameter group's references to unknown members.
 
@@ -2554,7 +2613,7 @@ def _validate_parameter_groups(
     parameters
         The coverage's parameters (the set of valid member keys).
     path
-        The JSON Pointer to ``coverage``, extended via `_ptr` per group.
+        The reference-token path to ``coverage``, built via `_ptr` per group.
 
     Yields
     ------
@@ -2575,7 +2634,7 @@ def _validate_ranges(
     coverage: Coverage,
     domain: Domain | str,
     parameters: dict[str, Parameter] | None,
-    path: str,
+    path: tuple[str | int, ...],
     check_values: bool,
 ) -> Iterator[Issue]:
     """Yield each of a coverage's range issues.
@@ -2600,7 +2659,7 @@ def _validate_ranges(
     parameters
         The coverage's parameters, or ``None`` when undescribed.
     path
-        The JSON Pointer to ``coverage``, extended via `_ptr` per range.
+        The reference-token path to ``coverage``, built via `_ptr` per range.
     check_values
         Whether to run the value-scanning checks (value ``dataType`` match and
         categorical codes).
@@ -2611,10 +2670,10 @@ def _validate_ranges(
         Each range's issues, in range then check order.
     """
     for key, range_ in coverage.ranges.items():
-        range_path = _ptr(path, "ranges", key)
+        range_path = (*path, "ranges", key)
 
         if parameters is not None and key not in parameters:
-            yield CoverageRangeWithoutParameter(key=key, at=range_path)
+            yield CoverageRangeWithoutParameter(key=key, at=_ptr(range_path))
 
         if isinstance(range_, NdArray):
             yield from _validate_ndarray(range_, range_path)
@@ -2635,7 +2694,7 @@ def _validate_ranges(
 
 def _validate_coverage(
     coverage: Coverage,
-    path: str,
+    path: tuple[str | int, ...],
     check_values: bool,
     axis_order_checker: AxisOrderChecker | None = None,
 ) -> Iterator[Issue]:
@@ -2657,7 +2716,7 @@ def _validate_coverage(
     coverage
         The coverage to validate.
     path
-        The JSON Pointer to ``coverage``, extended via `_ptr` for each issue.
+        The reference-token path to ``coverage``, built via `_ptr` for each issue.
     check_values
         Whether to run the value-scanning checks (categorical codes).
     axis_order_checker
@@ -2677,7 +2736,7 @@ def _validate_coverage(
         _validate_domain(
             domain,
             coverage.effective_domain_type,
-            _ptr(path, "domain"),
+            (*path, "domain"),
             check_values,
             axis_order_checker,
         )
@@ -2697,11 +2756,11 @@ def _validate_coverage(
     )
 
     parameter_i18n_issues = chain.from_iterable(
-        _parameter_i18n_issues(param, _ptr(path, "parameters", key))
+        _parameter_i18n_issues(param, (*path, "parameters", key))
         for key, param in (parameters or {}).items()
     )
     parameter_group_i18n_issues = chain.from_iterable(
-        _parameter_group_i18n_issues(group, _ptr(path, "parameterGroups", i))
+        _parameter_group_i18n_issues(group, (*path, "parameterGroups", i))
         for i, group in enumerate(coverage.parameter_groups or ())
     )
 
@@ -2721,7 +2780,7 @@ def _validate_coverage(
 
 def _validate_collection(
     collection: CoverageCollection,
-    path: str,
+    path: tuple[str | int, ...],
     check_values: bool,
     axis_order_checker: AxisOrderChecker | None = None,
 ) -> Iterator[Issue]:
@@ -2740,7 +2799,7 @@ def _validate_collection(
     collection
         The collection to validate.
     path
-        The JSON Pointer to ``collection``, extended via `_ptr` per member.
+        The reference-token path to ``collection``, built via `_ptr` per member.
     check_values
         Whether to run the value-scanning checks (passed through to each member).
     axis_order_checker
@@ -2755,10 +2814,10 @@ def _validate_collection(
     return chain.from_iterable(
         chain(
             _member_domain_type_issues(
-                raw, collection.domain_type or None, _ptr(path, "coverages", i)
+                raw, collection.domain_type or None, (*path, "coverages", i)
             ),
             _validate_coverage(
-                resolved, _ptr(path, "coverages", i), check_values, axis_order_checker
+                resolved, (*path, "coverages", i), check_values, axis_order_checker
             ),
         )
         for i, (raw, resolved) in enumerate(
@@ -2768,7 +2827,7 @@ def _validate_collection(
 
 
 def _member_domain_type_issues(
-    coverage: Coverage, collection_domain_type: str | None, path: str
+    coverage: Coverage, collection_domain_type: str | None, path: tuple[str | int, ...]
 ) -> Iterator[Issue]:
     """Yield a member coverage's ``domainType`` placement issue against its collection.
 
@@ -2793,7 +2852,7 @@ def _member_domain_type_issues(
     collection_domain_type
         The collection's own ``domain_type``, or ``None`` when it sets none.
     path
-        The JSON Pointer to the member coverage, extended via `_ptr`.
+        The reference-token path to the member coverage, built via `_ptr`.
 
     Yields
     ------
@@ -2810,17 +2869,17 @@ def _member_domain_type_issues(
 
     A value differing from the collection's is an error:
 
-    >>> [str(i) for i in _member_domain_type_issues(member, "Point", "/coverages/0")]
+    >>> [str(i) for i in _member_domain_type_issues(member, "Point", ("coverages", 0))]
     ["coverage domainType 'Grid' conflicts with its collection's 'Point'"]
 
     An equal coverage-level value is the SHOULD-omit warning:
 
-    >>> [i.code for i in _member_domain_type_issues(member, "Grid", "/coverages/0")]
+    >>> [i.code for i in _member_domain_type_issues(member, "Grid", ("coverages", 0))]
     ['coverage.domain-type-not-omitted']
 
     A collection that sets no ``domainType`` yields nothing:
 
-    >>> list(_member_domain_type_issues(member, None, "/coverages/0"))
+    >>> list(_member_domain_type_issues(member, None, ("coverages", 0)))
     []
 
     A type declared on the member's inline domain is compared too, so a
@@ -2834,7 +2893,7 @@ def _member_domain_type_issues(
     ... )
     >>> [
     ...     (i.code, i.at)
-    ...     for i in _member_domain_type_issues(inline, "Point", "/coverages/0")
+    ...     for i in _member_domain_type_issues(inline, "Point", ("coverages", 0))
     ... ]
     [('coverage.domain-type-conflict', '/coverages/0/domain/domainType')]
 
@@ -2849,7 +2908,7 @@ def _member_domain_type_issues(
     ... )
     >>> [
     ...     (i.code, i.domain_type, i.at)
-    ...     for i in _member_domain_type_issues(mixed, "Point", "/coverages/0")
+    ...     for i in _member_domain_type_issues(mixed, "Point", ("coverages", 0))
     ... ]
     [('coverage.domain-type-conflict', 'Grid', '/coverages/0/domainType')]
     """
