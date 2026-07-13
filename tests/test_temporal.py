@@ -62,10 +62,29 @@ _UTC_PLUS_2 = timezone(timedelta(hours=2))
         ("2020-01-01T00:00:00", Malformed("2020-01-01T00:00:00")),
         ("not-a-date", Malformed("not-a-date")),
         ("", Malformed("")),
+        # Guard-boundary cases for the "T" fast path: a "T" that is not a
+        # datetime, or a lowercase "t", falls to Malformed rather than to a wrong
+        # form; a signed non-expanded value and length junk stay malformed via
+        # the chain. (The non-ASCII digit case is test_non_ascii_digits_malformed.)
+        ("2020T", Malformed("2020T")),
+        ("2020-01-01t00:00:00Z", Malformed("2020-01-01t00:00:00Z")),
+        ("+2020", Malformed("+2020")),
+        ("20201", Malformed("20201")),
     ],
 )
 def test_resolve(value: str, expected: TemporalResult) -> None:
     assert resolve(value) == expected
+
+
+def test_non_ascii_digits_malformed() -> None:
+    """The ``[0-9]`` digit class rejects non-ASCII digits (``\\d`` would accept).
+
+    The value is built with ``chr`` so the source stays ASCII; it is the
+    fullwidth spelling of ``"2020"`` (``U+FF10`` is fullwidth zero).
+    """
+    fullwidth_year = "".join(chr(0xFF10 + int(digit)) for digit in "2020")
+
+    assert resolve(fullwidth_year) == Malformed(fullwidth_year)
 
 
 @pytest.mark.parametrize(
@@ -102,3 +121,27 @@ def test_aware_iff_second_precision(value: str, aware: bool) -> None:
     assert isinstance(result, Moment)
     assert (result.when.tzinfo is not None) is aware
     assert (result.precision is Precision.SECOND) is aware
+
+
+def test_datetime_uses_only_its_pattern(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A datetime string is settled by ``_DATETIME`` alone.
+
+    The ``"T"`` fast path routes straight to the datetime pattern, so the four
+    reduced-form patterns must not run. Replacing each with one that raises on
+    ``fullmatch`` proves the guard never falls through to the chain: if it did,
+    resolving a datetime would raise instead of returning its `Moment`.
+    """
+    for name in ("_YEAR", "_EXPANDED_YEAR", "_YEAR_MONTH", "_DATE"):
+        monkeypatch.setattr(f"covjson_msgspec.temporal.{name}", _RaisingPattern())
+
+    assert resolve("2020-01-01T00:00:00Z") == Moment(
+        datetime(2020, 1, 1, tzinfo=UTC), Precision.SECOND
+    )
+
+
+class _RaisingPattern:
+    """A stand-in whose ``fullmatch`` raises, to prove a pattern is never run."""
+
+    def fullmatch(self, string: str) -> object:
+        msg = f"a reduced-form pattern must not run for {string!r}"
+        raise AssertionError(msg)

@@ -107,16 +107,18 @@ TemporalResult = Moment | Unrepresentable | Malformed
 
 # One anchored pattern per form family (the ``±XYYYY`` expanded year requires a
 # sign then five or more digits; the datetime form requires a trailing ``Z`` or
-# ``±hh:mm`` offset). ``re.ASCII`` keeps ``\d`` to ASCII 0-9, since ISO 8601 uses
-# ASCII digits only (otherwise ``\d`` and ``int`` would accept non-ASCII digits,
-# e.g., Arabic-Indic). Compiled once at import.
-_YEAR = re.compile(r"\d{4}", re.ASCII)
-_EXPANDED_YEAR = re.compile(r"[+-]\d{5,}", re.ASCII)
-_YEAR_MONTH = re.compile(r"(?P<year>\d{4})-(?P<month>\d{2})", re.ASCII)
-_DATE = re.compile(r"\d{4}-\d{2}-\d{2}", re.ASCII)
+# ``±hh:mm`` offset). Digits use ``[0-9]`` to stay ASCII only, as ISO 8601
+# requires (bare ``\d`` would also match non-ASCII digits, e.g., Arabic-Indic).
+# ``[0-9]`` is preferred over the equivalent ``\d`` + ``re.ASCII`` for speed: it
+# is measurably faster, a range op rather than a Unicode-category lookup.
+# Compiled once at import.
+_YEAR = re.compile(r"[0-9]{4}")
+_EXPANDED_YEAR = re.compile(r"[+-][0-9]{5,}")
+_YEAR_MONTH = re.compile(r"(?P<year>[0-9]{4})-(?P<month>[0-9]{2})")
+_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 _DATETIME = re.compile(
-    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:(?P<sec>\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})",
-    re.ASCII,
+    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:(?P<sec>[0-9]{2})"
+    r"(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})"
 )
 
 
@@ -183,40 +185,43 @@ def resolve(value: str) -> TemporalResult:
     >>> describe("2020"), describe("+102020"), describe("nope")
     ('moment (year)', 'unrepresentable', 'malformed')
     """
-    if _YEAR.fullmatch(value) or _EXPANDED_YEAR.fullmatch(value):
-        year = int(value)
+    # Fast path: only the datetime form carries a ``T`` (uppercase, as
+    # ``_DATETIME`` requires), and no other form's pattern matches a
+    # ``T``-bearing string, so one regex settles it, rather than the ordered
+    # chain below trying it last (5th) after four failing ``fullmatch`` calls.
+    if "T" in value:
+        if (m := _DATETIME.fullmatch(value)) is not None:
+            # A leap second is a valid form ``datetime`` rejects; seconds above
+            # 60 fail ``fromisoformat`` and fall through to `Malformed`.
+            return (
+                Unrepresentable(value)
+                if m["sec"] == "60"
+                else _from_isoformat(value, Precision.SECOND)
+            )
 
+        return Malformed(value)
+
+    # The reduced forms, tried cheapest-first. A ``T``-less string can never
+    # match ``_DATETIME``, so that arm is not retried here.
+    if _YEAR.fullmatch(value) or _EXPANDED_YEAR.fullmatch(value):
         return (
             Moment(datetime(year, 1, 1), Precision.YEAR)
-            if 1 <= year <= 9999
+            if 1 <= (year := int(value)) <= 9999
             else Unrepresentable(value)
         )
 
     if (m := _YEAR_MONTH.fullmatch(value)) is not None:
-        month = int(m["month"])
-
-        if not 1 <= month <= 12:
+        if not 1 <= (month := int(m["month"])) <= 12:
             return Malformed(value)
-
-        year = int(m["year"])
 
         return (
             Unrepresentable(value)
-            if year == 0
+            if (year := int(m["year"])) == 0
             else Moment(datetime(year, month, 1), Precision.MONTH)
         )
 
     if _DATE.fullmatch(value) is not None:
         return _from_isoformat(value, Precision.DAY)
-
-    if (m := _DATETIME.fullmatch(value)) is not None:
-        # A leap second is a valid form ``datetime`` rejects; seconds above 60
-        # fail ``fromisoformat`` below and fall through to `Malformed`.
-        return (
-            Unrepresentable(value)
-            if m["sec"] == "60"
-            else _from_isoformat(value, Precision.SECOND)
-        )
 
     return Malformed(value)
 
