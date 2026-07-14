@@ -97,7 +97,7 @@ drift risk on a three-line, well-commented one-liner for no behavioral gain.
   bug. `validate(check_values=True)` remains the strict verdict for callers who
   want one.
 - One pre-existing correctness bug in the xarray bridge stays open, out of this
-  decision's scope and filed separately: `_parse_times` guards the
+  decision's scope and filed separately as #109: `_parse_times` guards the
   `datetime64[ns]` conversion with `suppress(ValueError, OverflowError)`,
   intending to fall through to cftime when a value does not fit. But numpy
   int64-overflow-*wraps* an out-of-range value instead of raising, so a
