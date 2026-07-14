@@ -22,7 +22,10 @@ class CovJSONStruct(
       unhashable; ``frozen`` still guarantees their attributes cannot be
       rebound. NOTE: msgspec does **not** inherit ``frozen`` (a non-frozen
       struct cannot inherit a frozen one), so every concrete subclass must
-      restate ``frozen=True``.
+      restate ``frozen=True``. A frozen-forcing metaclass was considered to
+      drop that repetition and rejected (it breaks ``msgspec.defstruct`` and
+      adds runtime magic); ``tests/test_base.py`` enforces the invariant
+      instead. See ADR-0012.
     * ``omit_defaults=True``: fields left at their default are dropped on
       encode, keeping output minimal and spec-clean. (Inherited by subclasses.)
     * ``rename="camel"``: snake_case Python attributes map to CoverageJSON's
