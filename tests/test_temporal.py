@@ -1,5 +1,6 @@
 """Tests for bridge-independent temporal string conversion (temporal.py)."""
 
+import random
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
@@ -11,6 +12,7 @@ from covjson_msgspec.temporal import (
     Precision,
     TemporalResult,
     Unrepresentable,
+    _resolve_datetime_form,  # noqa: PLC2701  # pyright: ignore[reportPrivateUsage]
     resolve,
 )
 
@@ -70,6 +72,19 @@ _UTC_PLUS_2 = timezone(timedelta(hours=2))
         ("2020-01-01t00:00:00Z", Malformed("2020-01-01t00:00:00Z")),
         ("+2020", Malformed("+2020")),
         ("20201", Malformed("20201")),
+        # msgspec's native decoder accepts these, but the spec offset form (the
+        # colon is required) does not, so the fast-path guard keeps them
+        # Malformed: a lowercase "z", and a colon-less "+0500".
+        ("2020-01-01T00:00:00z", Malformed("2020-01-01T00:00:00z")),
+        ("2020-01-01T00:00:00+0500", Malformed("2020-01-01T00:00:00+0500")),
+        # A fractional second with a colon offset is a conformant Moment.
+        (
+            "2020-01-01T00:00:00.5+02:00",
+            Moment(
+                datetime(2020, 1, 1, 0, 0, 0, 500000, tzinfo=_UTC_PLUS_2),
+                Precision.SECOND,
+            ),
+        ),
     ],
 )
 def test_resolve(value: str, expected: TemporalResult) -> None:
@@ -123,20 +138,104 @@ def test_aware_iff_second_precision(value: str, aware: bool) -> None:
     assert (result.precision is Precision.SECOND) is aware
 
 
-def test_datetime_uses_only_its_pattern(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A datetime string is settled by ``_DATETIME`` alone.
+def test_datetime_resolves_without_any_pattern(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A valid datetime is settled by ``msgspec.convert`` alone; no pattern runs.
 
-    The ``"T"`` fast path routes straight to the datetime pattern, so the four
-    reduced-form patterns must not run. Replacing each with one that raises on
-    ``fullmatch`` proves the guard never falls through to the chain: if it did,
-    resolving a datetime would raise instead of returning its `Moment`.
+    The ``"T"`` fast path parses through msgspec's native decoder, so none of the
+    five compiled patterns (``_DATETIME`` included) is touched for a conformant
+    value. Replacing each with one that raises on ``fullmatch`` proves it: if the
+    fast path fell through to the regex chain, resolving a datetime would raise
+    instead of returning its `Moment`.
     """
-    for name in ("_YEAR", "_EXPANDED_YEAR", "_YEAR_MONTH", "_DATE"):
+    for name in ("_YEAR", "_EXPANDED_YEAR", "_YEAR_MONTH", "_DATE", "_DATETIME"):
         monkeypatch.setattr(f"covjson_msgspec.temporal.{name}", _RaisingPattern())
 
     assert resolve("2020-01-01T00:00:00Z") == Moment(
         datetime(2020, 1, 1, tzinfo=UTC), Precision.SECOND
     )
+
+
+def test_fast_path_matches_regex_oracle() -> None:
+    """The msgspec fast path agrees with the regex form-classifier on every input.
+
+    A seeded differential fuzz over datetime-form strings: `resolve`'s fast path
+    (``msgspec.convert`` plus `_has_spec_timezone`) must return exactly what the
+    regex oracle `_resolve_datetime_form` does. Since `resolve` falls back to that
+    oracle whenever ``convert`` rejects, the discriminating power is entirely on
+    the inputs ``convert`` accepts, so the corpus is built to exercise that branch
+    (`_datetime_fuzz_value`); the `Moment` floor asserts it has not gone vacuous.
+    """
+    rng = random.Random(20260713)
+    corpus = [_datetime_fuzz_value(rng) for _ in range(20000)]
+    moments = sum(isinstance(resolve(value), Moment) for value in corpus)
+
+    assert moments > len(corpus) // 4, "corpus went vacuous; check the generator"
+
+    for value in corpus:
+        assert resolve(value) == _resolve_datetime_form(value), value
+
+
+def test_subsecond_fractional_rounds_to_moment() -> None:
+    """A sub-microsecond fractional second (>= 7 digits) resolves to a rounded Moment.
+
+    msgspec's decoder rounds to the microsecond where the old ``fromisoformat``
+    path truncated (``...00.1234567Z`` yields ``...123457``, not ``...123456``);
+    both discard precision a `datetime` cannot hold. This pins the accepted
+    rounding so the difference stays intentional rather than a silent drift.
+    """
+    result = resolve("2020-01-01T00:00:00.1234567Z")
+
+    assert result == Moment(
+        datetime(2020, 1, 1, 0, 0, 0, 123457, tzinfo=UTC), Precision.SECOND
+    )
+
+
+def _datetime_fuzz_value(rng: random.Random) -> str:
+    """Build a datetime-form fuzz string, weighted toward the accept branch.
+
+    Every value carries a ``T``, since the invariant under test is exactly
+    `resolve`'s ``"T"``-branch: a valid ``YYYY-MM-DDThh:mm:ss`` skeleton (with
+    optional fractional up to six digits, the precision both parsers keep exactly)
+    plus a time zone designator drawn from the full axis where msgspec and the
+    spec form diverge: the conformant ``Z`` / ``±hh:mm``, msgspec's lenient
+    lowercase ``z`` / colon-less ``±hhmm`` / hour-only ``±hh``, and the naive
+    no-designator case. A minority are ``T``-bearing junk, so the regex fallback
+    is exercised too.
+
+    Examples
+    --------
+    >>> value = _datetime_fuzz_value(random.Random(0))
+    >>> "T" in value
+    True
+    """
+    digits = "0123456789"
+
+    if rng.random() < 0.1:
+        chars = [rng.choice(digits + ":+-.Z") for _ in range(rng.randint(0, 23))]
+        chars.insert(rng.randint(0, len(chars)), "T")
+        return "".join(chars)
+
+    stamp = (
+        f"{rng.randint(1, 9999):04d}-{rng.randint(1, 12):02d}-{rng.randint(1, 28):02d}"
+        f"T{rng.randint(0, 23):02d}:{rng.randint(0, 59):02d}:{rng.randint(0, 59):02d}"
+    )
+
+    if rng.random() < 0.5:
+        stamp += "." + "".join(rng.choice(digits) for _ in range(rng.randint(1, 6)))
+
+    hh, mm = rng.randint(0, 23), rng.randint(0, 59)
+    designator = rng.choice(
+        [
+            "Z",
+            "z",
+            "",
+            f"+{hh:02d}:{mm:02d}",
+            f"-{hh:02d}:{mm:02d}",
+            f"+{hh:02d}{mm:02d}",
+            f"+{hh:02d}",
+        ]
+    )
+    return stamp + designator
 
 
 class _RaisingPattern:
