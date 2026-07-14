@@ -127,8 +127,13 @@ that default without an interface change.
   *semantic consistency*, one classifier of record, not merely dedup; that is
   the reason to close it, over and above the near-term win that `validate()`
   already surfaces malformed times the bridges otherwise swallow silently.
+- That follow-up is resolved in [ADR-0015]: the bridges deliberately do *not*
+  route through `resolve`, because the three paths have different codomains (no
+  single classifier to unify) and the consistency above already lives in
+  `validate(check_values=True)`.
 
 [ADR-0002]: 0002-opt-in-tiered-validation.md
+[ADR-0015]: 0015-bridge-temporal-classification.md
 [ADR-0006]: 0006-validation-findings-sum-type.md
 [ADR-0007]: 0007-functional-core-errors-as-values.md
 [KNMI/covjson-pydantic#34]: https://github.com/KNMI/covjson-pydantic/issues/34
