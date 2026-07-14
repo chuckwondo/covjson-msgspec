@@ -2,6 +2,7 @@
 
 import asyncio
 import itertools
+from typing import Literal
 
 import msgspec
 import numpy as np
@@ -66,6 +67,56 @@ def test_ndarray_zero_dimensional_defaults() -> None:
     )
     assert arr.shape == ()
     assert arr.axis_names == ()
+
+
+@pytest.mark.parametrize(
+    ("data_type", "dtype", "values", "expected"),
+    [
+        # A "float" range promotes integer-written values (5 -> 5.0).
+        ("float", float, (5, 6.5, None), (5.0, 6.5, None)),
+        # A large-but-representable int converts: the overflow guard must not
+        # over-trigger (only a truly out-of-range int, 10**309+, raises).
+        ("float", float, (10**300,), (1e300,)),
+        ("integer", int, (1, 2, None), (1, 2, None)),
+        ("string", str, ("a", "b", None), ("a", "b", None)),
+    ],
+)
+def test_values_as_projects_to_precise_type(
+    data_type: Literal["float", "integer", "string"],
+    dtype: type[float] | type[int] | type[str],
+    values: tuple[float | int | str | None, ...],
+    expected: tuple[float | int | str | None, ...],
+) -> None:
+    result = NdArray(data_type=data_type, values=values).values_as(dtype)
+    assert result == expected
+    # `== expected` alone cannot catch a missing int->float promotion, since
+    # ``5 == 5.0``; assert the projected element type exactly.
+    assert all(type(value) is dtype for value in result if value is not None)
+
+
+@pytest.mark.parametrize(
+    ("data_type", "dtype", "values"),
+    [
+        ("integer", int, (1, 1.5)),  # a fractional float is not an int
+        ("integer", int, (1, 1.0)),  # even a whole-valued float is not an int
+        ("string", float, ("a",)),  # a string is not a float
+        # An int too large for a float is out of range, not a valid float value;
+        # the C convert leaks an OverflowError/SystemError that this method
+        # normalizes into the documented ValidationError (see values_as).
+        ("float", float, (10**400,)),
+    ],
+)
+def test_values_as_raises_msgspec_error_on_mismatch(
+    data_type: Literal["float", "integer", "string"],
+    dtype: type[float] | type[int] | type[str],
+    values: tuple[float | int | str | None, ...],
+) -> None:
+    # The error contract is msgspec.ValidationError (the same error a bare decode
+    # raises), deliberately not the library's CovJSONValidationError, which
+    # validate(mode="raise") uses. The two doors, one for consuming and one for
+    # reporting, keep distinct error types.
+    with pytest.raises(msgspec.ValidationError):
+        NdArray(data_type=data_type, values=values).values_as(dtype)
 
 
 def test_tiled_ndarray_roundtrips() -> None:

@@ -8,7 +8,9 @@ retrieves those tiles and stitches them back into a single inline `NdArray`.
 ``NdArray.values`` is a flat tuple of ``float | int | str | None`` (``None``
 marks missing data). The exact element type within that union depends on the
 ``dataType`` field; use `~covjson_msgspec.validation.validate` with
-``check_values=True`` to verify element-vs-``dataType`` consistency after decoding.
+``check_values=True`` to *report* element-vs-``dataType`` inconsistencies after
+decoding, or `NdArray.values_as` to *project* the values to a precise element
+type fail-fast (the consumer counterpart).
 
 With the ``numpy`` extra installed, `NdArray.to_numpy` and `NdArray.from_numpy`
 convert to and from NumPy arrays, mapping CoverageJSON's ``null`` to NaN (float),
@@ -26,7 +28,7 @@ import itertools
 import math
 import re
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, Final, Literal
+from typing import TYPE_CHECKING, Any, Final, Literal, TypeVar, cast
 
 import msgspec
 
@@ -55,6 +57,10 @@ _NUMPY_HINT = "NumPy is required for this conversion; install covjson-msgspec[nu
 
 # Element type for NdArray values (matches the three ``dataType``s).
 _Scalar = float | int | str
+
+# The element type a caller projects to via ``NdArray.values_as``; bounded to
+# ``_Scalar`` so only ``float`` / ``int`` / ``str`` are admissible targets.
+_ScalarT = TypeVar("_ScalarT", bound=_Scalar)
 
 
 class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
@@ -126,6 +132,94 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
     values: tuple[_Scalar | None, ...]
     shape: tuple[int, ...] = ()
     axis_names: tuple[str, ...] = ()
+
+    def values_as(self, dtype: type[_ScalarT]) -> tuple[_ScalarT | None, ...]:
+        """Project ``values`` to a precise element type, raising on a mismatch.
+
+        The faithful ``values`` union is ``float | int | str | None``; a caller
+        who knows the ``dataType`` gets the precisely-typed tuple by passing the
+        Python type: ``values_as(float)`` returns ``tuple[float | None, ...]``,
+        ``values_as(int)`` returns ``tuple[int | None, ...]``, and so on. This is
+        the opt-in typed projection over the faithful core, and the pure-Python
+        counterpart to `to_numpy` (no ``numpy`` needed).
+
+        Matching the spec's ``dataType`` semantics, a stored ``int`` promotes to
+        ``float`` (``5`` becomes ``5.0``) but a ``float`` is *not* an ``int``
+        (``5.0`` is rejected); ``None`` (missing data) always passes through.
+
+        A nonconforming value raises `msgspec.ValidationError` (the same error a
+        bare decode raises for a bad value, so catch that rather than
+        `~covjson_msgspec.validation.CovJSONValidationError`). This is a
+        fail-fast edge effect, distinct from
+        `~covjson_msgspec.validation.validate` (``check_values=True``), which
+        instead *reports* every mismatch as a ``range.value-type-mismatch``
+        issue; the two compose (inspect with ``validate``, consume with
+        ``values_as``). To project without knowing the ``dataType`` ahead of
+        time, ``match`` on `data_type` and call this per arm.
+
+        Parameters
+        ----------
+        dtype
+            The target element type: ``float``, ``int``, or ``str``.
+
+        Returns
+        -------
+        tuple
+            The values as ``tuple[dtype | None, ...]``, with ``None`` preserved.
+
+        Raises
+        ------
+        msgspec.ValidationError
+            If any non-null value is not a valid instance of ``dtype`` (including
+            an ``int`` too large to represent as the target ``float``).
+
+        Examples
+        --------
+        A ``"float"`` range projects to ``float``, promoting integer-written
+        values and preserving ``None``:
+
+        >>> arr = NdArray(
+        ...     data_type="float", values=(5, 6.5, None), shape=(3,), axis_names=("x",)
+        ... )
+        >>> arr.values_as(float)
+        (5.0, 6.5, None)
+
+        An ``"integer"`` range projects to ``int``, and a ``"string"`` range to
+        ``str``:
+
+        >>> NdArray(data_type="integer", values=(1, 2, None)).values_as(int)
+        (1, 2, None)
+        >>> NdArray(data_type="string", values=("a", "b")).values_as(str)
+        ('a', 'b')
+
+        A value that does not match the requested type is rejected fail-fast (a
+        whole-valued ``float`` is not an ``int``):
+
+        >>> NdArray(data_type="integer", values=(1, 1.5)).values_as(int)
+        Traceback (most recent call last):
+            ...
+        msgspec.ValidationError: ...
+        """
+        # `element: Any` launders `dtype` past mypy, which otherwise rejects a
+        # TypeVar-typed variable in a `tuple[...]` subscript (valid-type); the
+        # convert is native and its result is cast back to the precise return.
+        element: Any = dtype
+
+        try:
+            return cast(
+                "tuple[_ScalarT | None, ...]",
+                msgspec.convert(self.values, tuple[element | None, ...], strict=True),
+            )
+        except (OverflowError, SystemError) as exc:
+            # A stored ``int`` too large for the target ``float`` cannot be a
+            # valid value of ``dtype``, so it belongs to this method's documented
+            # ValidationError contract. msgspec's C ``convert`` surfaces the overflow
+            # inconsistently (an ``OverflowError``, or a ``SystemError`` from a
+            # leaked C exception: https://github.com/msgspec/msgspec/issues/1122),
+            # so both are normalized here; a fixed msgspec that raises
+            # ``ValidationError`` directly would pass straight through untouched.
+            msg = f"value out of range for {dtype.__name__}"
+            raise msgspec.ValidationError(msg) from exc
 
     def to_numpy(
         self,

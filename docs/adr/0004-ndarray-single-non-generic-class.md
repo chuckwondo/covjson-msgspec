@@ -76,12 +76,16 @@ then removed. Rejected because:
   `typing-extensions` dependency and the `sys.version_info` import dance.
   Dropping the generic removes the dependency entirely.
 
-**Typed-value accessors (demand-gated, not implemented).** If precise element
-typing proves wanted in the future, the intended restoration is small accessors
-(`float_values()`, `int_values()`, `string_values()`) that trust `dataType` by
-default (O(1), no element scan) with an opt-in `strict=True` that validates
-and coerces (O(n), reusing the `validate(check_values=True)` logic). This is
-out of scope until there is a demonstrated need.
+**Typed-value accessors (demand-gated).** This ADR sketched precise-element
+typing as a future restoration via three accessors (`float_values()`,
+`int_values()`, `string_values()`) trusting `dataType` by default. #89 realized
+it instead as a single generic `NdArray.values_as(dtype)` that always does the
+honest O(n) strict `msgspec.convert` (producing real coerced values, e.g. an
+`int` promoted to `float`) and raises on a nonconforming value: one method, no
+overloads, precise static return via a `TypeVar`. Whole-struct narrowing
+(element-typed `NdArrayFloat` / `NdArrayInt` / `NdArrayStr` projection types) was
+weighed there and deferred: it would reopen the multi-type shape this ADR rejects
+without the decode-time payoff that justifies it for covjson-pydantic.
 
 ## Consequences
 
@@ -89,6 +93,10 @@ out of scope until there is a demonstrated need.
   who needs a specific element type narrows at the read site, keyed on
   `data_type` (a `cast`, an `isinstance` guard, or `validate(check_values=True)`
   for the full cross-cutting check).
+- Range values gained an opt-in typed projection, `NdArray.values_as(dtype)`
+  (#89): the typed-projection tenet applied to range values, closing part of the
+  static-element-type-precision gap versus covjson-pydantic while keeping the
+  single non-generic class.
 - Bare decode deterministically enforces the `float | int | str` union (nested
   arrays and booleans are rejected). This was true with the TypeVar bound too,
   but is now enforced directly by the field annotation (no cache, no ordering
