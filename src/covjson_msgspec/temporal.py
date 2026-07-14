@@ -186,20 +186,27 @@ def resolve(value: str) -> TemporalResult:
     ('moment (year)', 'unrepresentable', 'malformed')
     """
     # Fast path: only the datetime form carries a ``T`` (uppercase, as
-    # ``_DATETIME`` requires), and no other form's pattern matches a
-    # ``T``-bearing string, so one regex settles it, rather than the ordered
-    # chain below trying it last (5th) after four failing ``fullmatch`` calls.
+    # ``_DATETIME`` requires), so ``msgspec.convert`` (the native C RFC 3339
+    # decoder msgspec already ships) settles it in one call, several times
+    # faster than the pure-Python regex + ``fromisoformat``. It is more lenient
+    # than the spec form: the rare inputs it rejects (a leap second, year 0000,
+    # a malformed ``T``-string) fall back to `_resolve_datetime_form`, and the
+    # ones it wrongly accepts (a naive time, a lowercase ``z``, a colon-less
+    # ``+0500`` offset) are rejected by `_has_spec_timezone`. One benign
+    # difference from the old ``fromisoformat`` path: a sub-microsecond fractional
+    # second (seven or more digits) rounds here rather than truncating, precision
+    # a ``datetime`` cannot hold either way.
     if "T" in value:
-        if (m := _DATETIME.fullmatch(value)) is not None:
-            # A leap second is a valid form ``datetime`` rejects; seconds above
-            # 60 fail ``fromisoformat`` and fall through to `Malformed`.
-            return (
-                Unrepresentable(value)
-                if m["sec"] == "60"
-                else _from_isoformat(value, Precision.SECOND)
-            )
+        try:
+            parsed = msgspec.convert(value, datetime)
+        except msgspec.ValidationError:
+            return _resolve_datetime_form(value)
 
-        return Malformed(value)
+        return (
+            Moment(parsed, Precision.SECOND)
+            if _has_spec_timezone(value)
+            else Malformed(value)
+        )
 
     # The reduced forms, tried cheapest-first. A ``T``-less string can never
     # match ``_DATETIME``, so that arm is not retried here.
@@ -298,3 +305,63 @@ def _from_isoformat(value: str, precision: Precision) -> TemporalResult:
         return Malformed(value)
 
     return Unrepresentable(value) if is_year_zero else Moment(parsed, precision)
+
+
+def _resolve_datetime_form(value: str) -> TemporalResult:
+    """Classify a datetime-form string with the ``_DATETIME`` regex.
+
+    The pure-Python classifier for the ``YYYY-MM-DDThh:mm:ss`` form, kept as the
+    fallback for the rare inputs `resolve`'s fast path routes here: those
+    ``msgspec.convert`` rejects. A leap second is a valid form a ``datetime``
+    cannot hold, so it is `Unrepresentable`; anything the pattern does not match,
+    or that ``fromisoformat`` then rejects (an out-of-range month, say), is
+    `Malformed`. Named for its mechanism, not its strictness: the fast path
+    enforces the identical spec form, so this is not the "strict" one.
+
+    Examples
+    --------
+    >>> _resolve_datetime_form("2016-12-31T23:59:60Z")
+    Unrepresentable(value='2016-12-31T23:59:60Z')
+    >>> _resolve_datetime_form("2020-13-01T00:00:00Z")
+    Malformed(value='2020-13-01T00:00:00Z')
+    """
+    if (m := _DATETIME.fullmatch(value)) is not None:
+        # A leap second is a valid form ``datetime`` rejects; seconds above 60
+        # fail ``fromisoformat`` and fall through to `Malformed`.
+        return (
+            Unrepresentable(value)
+            if m["sec"] == "60"
+            else _from_isoformat(value, Precision.SECOND)
+        )
+
+    return Malformed(value)
+
+
+def _has_spec_timezone(value: str) -> bool:
+    """Whether ``value`` ends with a spec-conformant time zone designator.
+
+    Spec 5.2 writes the datetime form ending in ``Z`` or a ``±hh:mm`` offset (the
+    colon is part of the form). This mirrors the trailing
+    ``(?:Z|[+-][0-9]{2}:[0-9]{2})`` of the `_DATETIME` pattern (one rule with two
+    homes, kept in agreement by `resolve`'s fuzz differential test), as a cheap
+    check for the fast path, which must reject what ``msgspec.convert`` accepts
+    but the spec does not: a naive time (no designator), a lowercase ``z``, and a
+    colon-less offset such as ``+0500``. It runs only after ``convert`` has
+    parsed a valid datetime, so the offset alternative just confirms the colon
+    form: a ``±`` six from the end and a ``:`` three from the end (``+0500`` has
+    neither, its ``+`` sitting five from the end).
+
+    Examples
+    --------
+    >>> _has_spec_timezone("2020-01-01T00:00:00Z")
+    True
+    >>> _has_spec_timezone("2020-01-01T00:00:00+05:00")
+    True
+    >>> _has_spec_timezone("2020-01-01T00:00:00+0500")  # colon-less offset
+    False
+    >>> _has_spec_timezone("2020-01-01T00:00:00")  # naive
+    False
+    """
+    return value.endswith("Z") or (
+        len(value) >= 6 and value[-6] in "+-" and value[-3] == ":"
+    )

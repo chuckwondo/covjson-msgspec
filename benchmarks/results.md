@@ -127,25 +127,25 @@ Reading the table:
 
 | cell | pydantic decode (us) | msgspec decode (us, x) | + validate (us, x) | + validate(values) (us, x) | + datetime (us, x) |
 | :--- | ---: | ---: | ---: | ---: | ---: |
-| point-series (small) | 50.50 (+-1.00) ⚠️ | 3.54 (+-0.16)<br>*14.3x* ⬆️ | 17.65 (+-2.04)<br>*2.9x* ⬆️ | 30.77 (+-3.03)<br>*1.6x* ⬆️ | 35.98 (+-0.91)<br>*1.4x* ⬆️ |
-| grid (medium) | 54.69 (+-2.15) ⚠️ | 6.16 (+-0.83)<br>*8.9x* ⬆️ | 22.50 (+-0.81)<br>*2.4x* ⬆️ | 43.79 (+-2.84)<br>*1.2x* ⬆️ | 41.64 (+-1.72)<br>*1.3x* ⬆️ |
-| tiled-ndarray | 9.77 (+-0.23) ⚠️ | 2.35 (+-0.07)<br>*4.1x* ⬆️ | 19.59 (+-0.46)<br>0.5x ⬇️ | 19.76 (+-0.50)<br>0.5x ⬇️ | n/a (no-temporal-axis)<br>0.5x ⬇️ |
-| coverage-collection | 143.22 (+-10.80) ⚠️ | 13.26 (+-0.65)<br>*10.8x* ⬆️ | 64.09 (+-5.66)<br>*2.2x* ⬆️ | 123.37 (+-4.86)<br>*1.2x* ⬆️ | 128.20 (+-4.47)<br>*1.1x* ⬆️ |
-| grid-large (synthetic) | 6741.59 (+-85.45) | 1523.21 (+-84.91)<br>*4.4x* ⬆️ | 1579.27 (+-30.73)<br>*4.3x* ⬆️ | 2056.68 (+-55.60)<br>*3.3x* ⬆️ | n/a (no-temporal-axis)<br>*3.3x* ⬆️ |
-| point-series-large (synthetic) | 77.40 (+-4.06) ⚠️ | 16.32 (+-1.11)<br>*4.7x* ⬆️ | 26.82 (+-1.22)<br>*2.9x* ⬆️ | 418.28 (+-11.88)<br>0.2x ⬇️ | 723.91 (+-46.41)<br>0.1x ⬇️ |
-| vertical-profile (synthetic) | 138.92 (+-3.86) ⚠️ | 11.14 (+-0.22)<br>*12.5x* ⬆️ | 22.88 (+-2.21)<br>*6.1x* ⬆️ | 101.22 (+-8.78)<br>*1.4x* ⬆️ | n/a (no-temporal-axis)<br>*1.4x* ⬆️ |
+| point-series (small) | 54.33 (+-6.09) ⚠️ | 3.71 (+-0.27)<br>*14.7x* ⬆️ | 20.60 (+-7.52)<br>*2.6x* ⬆️ | 32.36 (+-3.82)<br>*1.7x* ⬆️ | 34.64 (+-5.21)<br>*1.6x* ⬆️ |
+| grid (medium) | 71.93 (+-40.77) ⚠️ | 6.62 (+-0.81)<br>*10.9x* ⬆️ | 23.38 (+-0.61)<br>*3.1x* ⬆️ | 40.47 (+-22.34)<br>*1.8x* ⬆️ | 52.55 (+-8.70)<br>*1.4x* ⬆️ |
+| tiled-ndarray | 11.18 (+-0.60) ⚠️ | 2.51 (+-0.54)<br>*4.5x* ⬆️ | 20.26 (+-1.51)<br>0.6x ⬇️ | 23.17 (+-3.00)<br>0.5x ⬇️ | n/a (no-temporal-axis)<br>0.5x ⬇️ |
+| coverage-collection | 147.35 (+-23.63) ⚠️ | 14.16 (+-1.97)<br>*10.4x* ⬆️ | 68.35 (+-4.72)<br>*2.2x* ⬆️ | 132.02 (+-21.93)<br>*1.1x* ⬆️ | 128.35 (+-20.51)<br>*1.1x* ⬆️ |
+| grid-large (synthetic) | 7116.58 (+-498.20) | 1485.05 (+-140.14)<br>*4.8x* ⬆️ | 1731.45 (+-106.86)<br>*4.1x* ⬆️ | 1994.29 (+-150.71)<br>*3.6x* ⬆️ | n/a (no-temporal-axis)<br>*3.6x* ⬆️ |
+| point-series-large (synthetic) | 79.08 (+-4.23) ⚠️ | 15.48 (+-1.02)<br>*5.1x* ⬆️ | 28.94 (+-2.50)<br>*2.7x* ⬆️ | 324.35 (+-36.20)<br>0.2x ⬇️ | 512.53 (+-49.69)<br>0.2x ⬇️ |
+| vertical-profile (synthetic) | 156.15 (+-15.62) ⚠️ | 11.45 (+-0.60)<br>*13.6x* ⬆️ | 24.38 (+-2.86)<br>*6.4x* ⬆️ | 105.42 (+-8.37)<br>*1.5x* ⬆️ | n/a (no-temporal-axis)<br>*1.5x* ⬆️ |
 
 ## Encode (median us/op)
 
 | cell | msgspec (us) | pydantic (us) | speedup |
 | :--- | ---: | ---: | ---: |
-| point-series (small) | 1.13 (+-0.04) | 18.19 (+-4.58) | *16.0x* ⬆️ |
-| grid (medium) | 2.35 (+-0.04) | 45.70 (+-1.31) | *19.5x* ⬆️ |
-| tiled-ndarray | 0.78 (+-0.02) | 4.44 (+-0.15) | *5.7x* ⬆️ |
-| coverage-collection | 4.23 (+-0.27) | 48.32 (+-1.92) | *11.4x* ⬆️ |
-| grid-large (synthetic) | 2675.55 (+-141.61) | 5001.31 (+-252.78) | *1.9x* ⬆️ |
-| point-series-large (synthetic) | 6.10 (+-0.21) | 132.50 (+-7.43) | *21.7x* ⬆️ |
-| vertical-profile (synthetic) | 16.81 (+-0.19) | 36.26 (+-1.61) | *2.2x* ⬆️ |
+| point-series (small) | 1.15 (+-0.04) | 17.12 (+-0.66) | *14.9x* ⬆️ |
+| grid (medium) | 2.49 (+-0.15) | 55.90 (+-11.48) | *22.5x* ⬆️ |
+| tiled-ndarray | 0.91 (+-0.20) | 4.95 (+-0.56) | *5.5x* ⬆️ |
+| coverage-collection | 4.03 (+-0.29) | 46.90 (+-1.12) | *11.6x* ⬆️ |
+| grid-large (synthetic) | 2735.70 (+-218.48) | 5018.32 (+-218.70) | *1.8x* ⬆️ |
+| point-series-large (synthetic) | 6.13 (+-0.48) | 132.40 (+-11.34) | *21.6x* ⬆️ |
+| vertical-profile (synthetic) | 16.36 (+-2.43) | 36.71 (+-3.26) | *2.2x* ⬆️ |
 
 ## Round-trip (median us/op)
 
@@ -155,13 +155,13 @@ cost); `full` adds validation and datetimes to match.
 
 | cell | pydantic (us) | msgspec structural (us, x) | msgspec full (us, x) |
 | :--- | ---: | ---: | ---: |
-| point-series (small) | 83.67 (+-6.68) ⚠️ | 4.73 (+-0.13)<br>*17.7x* ⬆️ | 38.05 (+-0.81)<br>*2.2x* ⬆️ |
-| grid (medium) | 125.89 (+-11.12) ⚠️ | 8.61 (+-0.55)<br>*14.6x* ⬆️ | 46.34 (+-0.96)<br>*2.7x* ⬆️ |
-| tiled-ndarray | 15.34 (+-0.40) ⚠️ | 3.19 (+-0.23)<br>*4.8x* ⬆️ | 20.51 (+-0.23)<br>0.7x ⬇️ |
-| coverage-collection | 225.45 (+-9.64) ⚠️ | 16.77 (+-0.23)<br>*13.4x* ⬆️ | 136.43 (+-8.89)<br>*1.7x* ⬆️ |
-| grid-large (synthetic) | 12005.82 (+-160.65) | 4180.99 (+-46.57)<br>*2.9x* ⬆️ | 4594.25 (+-227.91)<br>*2.6x* ⬆️ |
-| point-series-large (synthetic) | 222.45 (+-8.13) ⚠️ | 21.48 (+-1.30)<br>*10.4x* ⬆️ | 720.51 (+-46.95)<br>0.3x ⬇️ |
-| vertical-profile (synthetic) | 189.95 (+-22.52) ⚠️ | 27.29 (+-2.27)<br>*7.0x* ⬆️ | 115.60 (+-4.66)<br>*1.6x* ⬆️ |
+| point-series (small) | 83.53 (+-5.07) ⚠️ | 5.09 (+-0.79)<br>*16.4x* ⬆️ | 36.14 (+-1.89)<br>*2.3x* ⬆️ |
+| grid (medium) | 139.91 (+-11.22) ⚠️ | 8.58 (+-0.36)<br>*16.3x* ⬆️ | 42.38 (+-1.81)<br>*3.3x* ⬆️ |
+| tiled-ndarray | 16.55 (+-1.26) ⚠️ | 3.86 (+-0.47)<br>*4.3x* ⬆️ | 31.46 (+-15.08)<br>0.5x ⬇️ |
+| coverage-collection | 243.76 (+-55.09) ⚠️ | 17.97 (+-2.14)<br>*13.6x* ⬆️ | 149.59 (+-8.95)<br>*1.6x* ⬆️ |
+| grid-large (synthetic) | 11981.82 (+-1128.76) | 4492.25 (+-558.97)<br>*2.7x* ⬆️ | 5081.51 (+-594.30)<br>*2.4x* ⬆️ |
+| point-series-large (synthetic) | 237.00 (+-20.18) ⚠️ | 22.34 (+-21.85)<br>*10.6x* ⬆️ | 585.10 (+-128.13)<br>0.4x ⬇️ |
+| vertical-profile (synthetic) | 214.42 (+-27.55) ⚠️ | 26.81 (+-1.03)<br>*8.0x* ⬆️ | 117.65 (+-7.65)<br>*1.8x* ⬆️ |
 
 ## Validation parity (decode-time checks)
 
@@ -218,25 +218,25 @@ Framing A, trim our extra so covjson-msgspec does no more than covjson-pydantic:
 
 | cell | pydantic decode (us) | msgspec matched-trim (us) | speedup |
 | :--- | ---: | ---: | ---: |
-| point-series (small) | 50.50 (+-1.00) | 33.74 (+-1.32) | *1.5x* ⬆️ |
-| grid (medium) | 54.69 (+-2.15) | 38.85 (+-1.17) | *1.4x* ⬆️ |
-| tiled-ndarray | 9.77 (+-0.23) ⚠️ | 19.50 (+-0.40) | 0.5x ⬇️ |
-| coverage-collection | 143.22 (+-10.80) | 112.45 (+-4.70) | *1.3x* ⬆️ |
-| grid-large (synthetic) | 6741.59 (+-85.45) | 1918.71 (+-156.73) | *3.5x* ⬆️ |
-| point-series-large (synthetic) | 77.40 (+-4.06) | 645.48 (+-39.38) | 0.1x ⬇️ |
-| vertical-profile (synthetic) | 138.92 (+-3.86) | 31.06 (+-1.95) | *4.5x* ⬆️ |
+| point-series (small) | 54.33 (+-6.09) | 32.12 (+-2.03) | *1.7x* ⬆️ |
+| grid (medium) | 71.93 (+-40.77) | 36.79 (+-2.63) | *2.0x* ⬆️ |
+| tiled-ndarray | 11.18 (+-0.60) ⚠️ | 20.69 (+-2.65) | 0.5x ⬇️ |
+| coverage-collection | 147.35 (+-23.63) | 124.50 (+-4.16) | *1.2x* ⬆️ |
+| grid-large (synthetic) | 7116.58 (+-498.20) | 1884.29 (+-74.66) | *3.8x* ⬆️ |
+| point-series-large (synthetic) | 79.08 (+-4.23) | 475.76 (+-41.49) | 0.2x ⬇️ |
+| vertical-profile (synthetic) | 156.15 (+-15.62) | 30.81 (+-2.88) | *5.1x* ⬆️ |
 
 Framing B, add covjson-msgspec's monotonic check to covjson-pydantic:
 
 | cell | msgspec matched-full (us) | pydantic decode+monotonic (us) | speedup |
 | :--- | ---: | ---: | ---: |
-| point-series (small) | 39.74 (+-5.08) | 61.74 (+-4.21) | *1.6x* ⬆️ |
-| grid (medium) | 42.55 (+-1.10) | 75.03 (+-3.25) | *1.8x* ⬆️ |
-| tiled-ndarray | 19.37 (+-0.53) | 16.91 (+-0.45) ⚠️ | 0.9x ⬇️ |
-| coverage-collection | 130.01 (+-3.10) | 153.74 (+-3.93) | *1.2x* ⬆️ |
-| grid-large (synthetic) | 1946.90 (+-53.99) | 6835.67 (+-142.96) | *3.5x* ⬆️ |
-| point-series-large (synthetic) | 721.45 (+-35.75) | 209.46 (+-7.75) | 0.3x ⬇️ |
-| vertical-profile (synthetic) | 121.84 (+-30.34) | 172.78 (+-8.96) | *1.4x* ⬆️ |
+| point-series (small) | 34.85 (+-6.01) | 60.79 (+-2.13) | *1.7x* ⬆️ |
+| grid (medium) | 40.57 (+-1.78) | 85.79 (+-19.70) | *2.1x* ⬆️ |
+| tiled-ndarray | 22.14 (+-3.02) | 18.07 (+-2.09) ⚠️ | 0.8x ⬇️ |
+| coverage-collection | 141.05 (+-10.48) | 168.51 (+-31.35) | *1.2x* ⬆️ |
+| grid-large (synthetic) | 2075.04 (+-394.19) | 7080.58 (+-204.80) | *3.4x* ⬆️ |
+| point-series-large (synthetic) | 523.93 (+-34.30) | 212.09 (+-8.99) | 0.4x ⬇️ |
+| vertical-profile (synthetic) | 98.07 (+-9.06) | 188.39 (+-28.80) | *1.9x* ⬆️ |
 
 ## Capability probes (decode, median us/op)
 
@@ -247,11 +247,11 @@ paraphrase.
 
 | probe | the gap | msgspec | pydantic |
 | --- | --- | --- | --- |
-| naive datetime | a full-form t value with no timezone | 3.28 (+-0.10) | raises ValidationError: Input should have timezone info |
-| date-only t | a reduced-precision date (spec form YYYY-MM-DD) | 3.30 (+-0.13) | raises ValidationError: Input should have timezone info |
-| year-month t | a reduced-precision month (spec form YYYY-MM) | 3.29 (+-0.20) | raises ValidationError: Input should be a valid datetime or date, input is too short |
-| extra custom axis | a domain axis beyond the fixed x/y/z/t/composite slots | 2.77 (+-0.10) | raises ValidationError: Extra inputs are not permitted |
-| mixed-type axis | one axis mixing numeric and string values | 2.38 (+-0.06) | raises ValidationError: Input should be a valid number, unable to parse string as a number |
+| naive datetime | a full-form t value with no timezone | 3.79 (+-0.46) | raises ValidationError: Input should have timezone info |
+| date-only t | a reduced-precision date (spec form YYYY-MM-DD) | 3.46 (+-0.13) | raises ValidationError: Input should have timezone info |
+| year-month t | a reduced-precision month (spec form YYYY-MM) | 3.34 (+-0.22) | raises ValidationError: Input should be a valid datetime or date, input is too short |
+| extra custom axis | a domain axis beyond the fixed x/y/z/t/composite slots | 2.83 (+-0.09) | raises ValidationError: Extra inputs are not permitted |
+| mixed-type axis | one axis mixing numeric and string values | 2.38 (+-0.18) | raises ValidationError: Input should be a valid number, unable to parse string as a number |
 
 Reverse direction: no probe was found that covjson-pydantic accepts and covjson-msgspec rejects. covjson-pydantic's advantage is static type precision and discoverability (see issue #22), not document acceptance.
 
