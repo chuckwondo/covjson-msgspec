@@ -71,6 +71,10 @@ CLAUDE.md.
   mkdocstrings, chosen for static (griffe) API extraction that renders the
   `TYPE_CHECKING`-only bridge signatures faithfully; the engine is a reversible
   swap over a portable Markdown + `objects.inv` substrate
+- [ADR-0015](0015-bridge-temporal-classification.md): the export bridges
+  classify temporal values by calendar + container range, not via `resolve`;
+  the three paths have different codomains, so there is no single classifier to
+  unify (resolves the ADR-0008 follow-up as "will not route")
 
 Some decisions are recorded in ADRs that land with their implementation rather
 than here; see the issue tracker for the in-flight set.

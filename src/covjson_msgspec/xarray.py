@@ -794,6 +794,11 @@ def _parse_times(column: list[Any], calendar: str) -> npt.NDArray[Any]:
     """
     import numpy as np
 
+    # This bridge classifies by calendar + container range (standard calendar in
+    # numpy's datetime64[ns] window, else cftime), not via temporal.resolve().
+    # The two are different functions with different codomains: resolve has no
+    # cftime arm and cannot see the calendar, so it is deliberately not the
+    # decider here. See ADR-0015.
     normalized = calendar.rsplit("/", 1)[-1].lower()
     # ISO 8601 may carry a trailing "Z"; numpy treats naive times as UTC.
     cleaned = [

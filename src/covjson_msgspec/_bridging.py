@@ -416,6 +416,10 @@ def maybe_datetime(values: list[Any], is_temporal: bool) -> Any:
 
     import pandas as pd
 
+    # This bridge classifies by container range (pandas' datetime64[ns] window),
+    # not via temporal.resolve(): the two are different functions with different
+    # codomains, so resolve is deliberately not the decider here. See ADR-0015.
+    #
     # ISO 8601 may carry a trailing "Z"; strip it so the result is tz-naive
     # (matching the xarray bridge, which treats naive times as UTC).
     cleaned = [

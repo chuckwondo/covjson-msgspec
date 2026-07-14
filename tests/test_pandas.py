@@ -19,6 +19,7 @@ from covjson_msgspec import (
     TileSet,
     Unit,
     i18n,
+    to_datetime,
     to_pandas,
 )
 
@@ -77,6 +78,39 @@ def test_standard_calendar_time_axis_parsed_to_datetime() -> None:
             x=Axis.listed((1.0,)),
             y=Axis.listed((2.0,)),
             t=Axis.listed(("2020-01-01T00:00:00Z", "2020-01-02T00:00:00Z")),
+            referencing=(
+                ReferenceSystemConnection(
+                    coordinates=("t",), system=TemporalRS(calendar="Gregorian")
+                ),
+            ),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float", values=(1.0, 2.0), shape=(2,), axis_names=("t",)
+            )
+        },
+    )
+    df = to_pandas(cov)
+
+    assert isinstance(df.index, pd.DatetimeIndex)
+    assert df.index[0] == pd.Timestamp("2020-01-01T00:00:00")
+
+
+def test_naive_time_divergence_bridge_parses_but_resolve_rejects() -> None:
+    # ADR-0015: the pandas bridge and temporal.resolve() / to_datetime are
+    # different functions with different codomains, so they deliberately
+    # disagree on a naive, no-designator time (not a spec form; Spec 5.2
+    # requires a "Z" or "+hh:mm" designator). The bridge parses it leniently;
+    # to_datetime rejects it as None. A change that makes the bridge reject
+    # naive input must trip this test (and revisit ADR-0015).
+    naive = "2020-01-01T00:00:00"
+    assert to_datetime(naive) is None
+
+    cov = Coverage(
+        domain=Domain.point_series(
+            x=Axis.listed((1.0,)),
+            y=Axis.listed((2.0,)),
+            t=Axis.listed((naive, "2020-01-02T00:00:00")),
             referencing=(
                 ReferenceSystemConnection(
                     coordinates=("t",), system=TemporalRS(calendar="Gregorian")
