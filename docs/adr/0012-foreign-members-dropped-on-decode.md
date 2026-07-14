@@ -71,23 +71,48 @@ only the types seen in the corpus still silently drops a `foo:bar` on a
 `Domain`, an `Axis`, or an `NdArray`. Chasing observed types never converges on
 completeness.
 
-**A base-struct `extras` + a bespoke recursive encoder (complete capture).**
-Deferred, not refuted. Putting `extras: dict[str, msgspec.Raw]` on
-`CovJSONStruct` would capture foreign members uniformly at every node, closing
-the leak. The cost is the encoder: `enc_hook` never fires for a `msgspec.Struct`
-(msgspec encodes structs natively), so re-emitting captured members as siblings
-requires a custom recursive walk (`to_builtins` per node, merge that node's
-`extras`) kept in lockstep with the type structure forever. That standing
-maintenance coupling is not worth paying for a hypothetical consumer. It is the
-right design *only* for a caller that must decode a document, modify a typed
-field, and re-encode while preserving foreign siblings, and no such consumer
-exists today.
+**A base-struct `extras` + a bespoke recursive codec (complete capture).**
+Deferred, not refuted. The intent is an `extras: dict[str, msgspec.Raw]` on
+`CovJSONStruct` carrying every foreign member at every node, closing the leak.
+The field alone does not achieve this: msgspec has no unknown-field catch-all
+(no equivalent to pydantic's `extra="allow"`), so a declared `extras` member
+captures only a wire key literally named `extras`, and every other unknown key
+is still dropped on decode (verified on msgspec 0.21.1). Populating `extras`
+takes a custom decode path, not just a struct field: decode the raw tree to
+`dict[str, msgspec.Raw]` alongside the typed decode, diff each node's keys
+against the struct's declared fields, and stash the leftovers, recursively.
+Re-emission is a second custom walk, since `enc_hook` never fires for a
+`msgspec.Struct` (msgspec encodes structs natively): writing captured members
+back as siblings requires `to_builtins` per node merged with that node's
+`extras`. The cost is thus a shadow codec on *both* ends, kept in lockstep with
+the type structure forever. That standing maintenance coupling is not worth
+paying for a hypothetical consumer. It is the right design *only* for a caller
+that must decode a document, modify a typed field, and re-encode while
+preserving foreign siblings, and no such consumer exists today.
 
 **Retain the raw parsed tree as the source of truth, the typed model as a
 view.** Rejected. The model is `frozen`, so "modifying" a value means
 constructing a new one; an overlay-on-encode step then cannot distinguish a
 field the caller changed from one left alone, making the reconciliation
 ambiguous.
+
+**Runtime `defstruct` subclass-threading (a user-side typed-capture helper).**
+Explored with a working prototype, rejected for shipping. msgspec builds struct
+subclasses at runtime (`msgspec.defstruct(bases=...)`), so a helper can take a
+target struct plus the foreign fields to add, rebuild every ancestor along the
+containment path (decode dispatches on the declared field type, so each parent
+must be re-typed to reference the subclass one rung below), and return a custom
+root union to decode against. The prototype does this in ~110 lines with no new
+dependency, reusing the existing encoder unchanged (encode is structural). It is
+rejected because the generated types are invisible to static analysis: a
+`defstruct` result is `type[msgspec.Struct]` to a type checker, so the captured
+members type as `Any` with no completion. For a library whose headline is
+precise static typing, trading that away for terser capture is the wrong
+bargain, and the caller who wants capture without typing already has the raw
+`dict[str, msgspec.Raw]` relay above. A frozen-forcing metaclass over the base
+(to drop the repeated `frozen=True`) does not rescue this path either: any
+custom metaclass on the base breaks `defstruct(bases=...)` outright. The
+supported typed path is instead manual subclassing (see the consequence below).
 
 ## Consequences
 
@@ -110,6 +135,16 @@ ambiguous.
   reformat the raw `dict[str, msgspec.Raw]` tree), never `decode -> encode`.
 - [Section 5.1.4][spec-5.1.4] `cs` / `datum` inline CRS definitions stay
   unmodeled; CRSs are identified by `id`.
+- The supported way to capture a foreign member *with full static typing* is to
+  declare the subclass chain by hand: subclass the target and every ancestor on
+  its path to a root, then build a `msgspec.json.Decoder` over a custom root
+  union; the existing encoder needs no change. Real-world foreign members are
+  shallow (`preferredColor` on a `Category` is the deepest observed, at four),
+  so the chain is short, and the decoded types stay fully typed. A how-to
+  documents this pattern. A codegen helper that *emits* that subclass source
+  (keeping the types static while automating the boilerplate) is a deferred
+  middle ground, worth building only if a genuinely deep foreign member makes
+  the hand-written chain painful.
 - Revisit gate: a concrete consumer that must decode, modify a typed field, and
   re-encode while retaining foreign siblings reopens the deferred base-struct
   `extras` design above. Absent that, the projection stays lossy on purpose.
