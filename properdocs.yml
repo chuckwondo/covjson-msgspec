@@ -120,6 +120,6 @@ nav:
           - "ADR-0009: OpenAPI schema bridge": adr/0009-openapi-schema-bridge.md
           - "ADR-0010: Dependency floor policy": adr/0010-dependency-floor-policy.md
           - "ADR-0011: Axis-ordering checker seam": adr/0011-axis-ordering-checker-seam.md
-          - "ADR-0012: Foreign members dropped on decode": adr/0012-foreign-members-dropped-on-decode.md
+          - "ADR-0012: Custom members dropped on decode": adr/0012-custom-members-dropped-on-decode.md
           - "ADR-0013: UNSET for inheritance members": adr/0013-unset-for-omittable-inheritance-members.md
           - "ADR-0014: Documentation toolchain": adr/0014-documentation-toolchain.md

@@ -26,10 +26,11 @@ point on the curve:
   or a web framework unless you ask: each bridge lives behind its own extra.
 - **Byte-faithful.** Decoding preserves modeled spec members faithfully (raw
   ISO 8601 temporal strings stay strings, for instance), and lossy conversions are
-  confined to the opt-in bridges. Foreign members (the spec's
-  [custom members](https://github.com/covjson/specification/blob/master/spec.md#71-custom-members),
-  extension keys it permits but does not define) are dropped by design; relaying a
-  document's raw bytes forwards them unchanged. The root JSON-LD `@context` is
+  confined to the opt-in bridges.
+  [Custom members](https://github.com/covjson/specification/blob/master/spec.md#71-custom-members)
+  (extension keys the spec permits but does not define) are dropped by design;
+  relaying a document's raw bytes forwards them unchanged. The root JSON-LD
+  `@context` is
   preserved; one conformance edge is still in progress: accepting custom
   reference-system types.
 - **Effects at the edges.** The core never reaches the network or imports a web

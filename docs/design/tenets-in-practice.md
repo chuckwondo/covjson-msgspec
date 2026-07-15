@@ -154,10 +154,9 @@ instants it could not convert instead of raising
 materializes a temporal axis to a concrete numpy `datetime64`, which is exactly the
 information-losing step, and it happens in the bridge, not the core: a year-`0000`
 instant survives the round trip above but cannot survive `to_xarray`. The one loss
-on decode itself is a *foreign member* (the GeoJSON name this codebase adopts for
-what CoverageJSON calls a [custom member][spec-custom], an extension key the spec
+on decode itself is a [custom member][spec-custom] (an extension key the spec
 permits on any object), which decode drops
-([ADR-0012](../adr/0012-foreign-members-dropped-on-decode.md)); to relay a document
+([ADR-0012](../adr/0012-custom-members-dropped-on-decode.md)); to relay a document
 with its extensions intact, forward its raw bytes instead of decoding and
 re-encoding.
 

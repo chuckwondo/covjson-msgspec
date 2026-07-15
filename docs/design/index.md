@@ -31,7 +31,7 @@ lists them all. A few of the load-bearing ones:
   as a functional core, failures as values.
 - [ADR-0008](../adr/0008-temporal-conversion-result-projection.md): temporal
   conversion as a faithful result projection.
-- [ADR-0012](../adr/0012-foreign-members-dropped-on-decode.md): foreign members
+- [ADR-0012](../adr/0012-custom-members-dropped-on-decode.md): custom members
   dropped on decode.
 - [ADR-0013](../adr/0013-unset-for-omittable-inheritance-members.md): `UNSET` for
   omittable inheritance members.

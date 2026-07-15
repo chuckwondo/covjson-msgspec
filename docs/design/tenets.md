@@ -47,8 +47,8 @@ stays permissive: a repairable, slightly-nonconformant document still loads. See
 
 Decode preserves every spec-defined member exactly (temporal values stay raw ISO
 8601 strings; numbers keep their precision). Conversions that lose information
-happen only in the opt-in export bridges. The one carve-out is foreign members,
-which decode drops ([ADR-0012](../adr/0012-foreign-members-dropped-on-decode.md)).
+happen only in the opt-in export bridges. The one carve-out is custom members,
+which decode drops ([ADR-0012](../adr/0012-custom-members-dropped-on-decode.md)).
 
 ## Typed projection over a faithful core
 
