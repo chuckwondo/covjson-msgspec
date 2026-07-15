@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 from covjson_msgspec.coverage import Range
 from covjson_msgspec.domain import Domain
 from covjson_msgspec.range import NdArray
-from covjson_msgspec.referencing import ReferenceSystem, TemporalRS
+from covjson_msgspec.referencing import ResolvedReferenceSystem, TemporalRS
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -265,12 +265,16 @@ def is_standard_calendar(rs: TemporalRS) -> bool:
     return rs.calendar.rsplit("/", 1)[-1].lower() in STANDARD_CALENDARS
 
 
-def coordinate_systems(domain: Domain) -> dict[str, ReferenceSystem]:
+def coordinate_systems(domain: Domain) -> dict[str, ResolvedReferenceSystem]:
     """Index a domain's referencing by coordinate identifier.
 
     Flattens the domain's reference-system connections (each of which ties one or
     more coordinates to a system) into a flat ``coordinate -> system`` lookup, so
-    a caller can ask "which system governs ``t``?" in O(1).
+    a caller can ask "which system governs ``t``?" in O(1). Each system is
+    projected to its typed
+    `~covjson_msgspec.referencing.ResolvedReferenceSystem` variant (via
+    `~covjson_msgspec.referencing.ReferenceSystem.refine`), so callers dispatch on
+    a precise kind.
 
     Parameters
     ----------
@@ -280,25 +284,26 @@ def coordinate_systems(domain: Domain) -> dict[str, ReferenceSystem]:
     Returns
     -------
     dict
-        Each coordinate identifier mapped to its governing reference system.
+        Each coordinate identifier mapped to its governing system's typed variant.
 
     Examples
     --------
-    >>> from covjson_msgspec import Axis, Domain
-    >>> from covjson_msgspec.referencing import ReferenceSystemConnection, TemporalRS
+    >>> from covjson_msgspec import Axis, Domain, ReferenceSystem
+    >>> from covjson_msgspec.referencing import ReferenceSystemConnection
     >>> dom = Domain(
     ...     axes={"t": Axis.listed(("2020-01-01T00:00:00Z",))},
     ...     referencing=[
     ...         ReferenceSystemConnection(
-    ...             coordinates=("t",), system=TemporalRS(calendar="Gregorian")
+    ...             coordinates=("t",),
+    ...             system=ReferenceSystem.temporal(calendar="Gregorian"),
     ...         )
     ...     ],
     ... )
-    >>> coordinate_systems(dom)["t"].calendar
-    'Gregorian'
+    >>> coordinate_systems(dom)["t"]
+    TemporalRS(calendar='Gregorian', time_scale=None)
     """
     return {
-        coordinate: connection.system
+        coordinate: connection.system.refine()
         for connection in domain.referencing
         for coordinate in connection.coordinates
     }
@@ -330,15 +335,16 @@ def temporal_coordinates(domain: Domain) -> set[str]:
 
     Examples
     --------
-    >>> from covjson_msgspec import Axis
-    >>> from covjson_msgspec.referencing import ReferenceSystemConnection, TemporalRS
+    >>> from covjson_msgspec import Axis, ReferenceSystem
+    >>> from covjson_msgspec.referencing import ReferenceSystemConnection
     >>> standard = Domain.grid(
     ...     x=Axis.regular(0.0, 10.0, 3),
     ...     y=Axis.listed((0.0, 1.0)),
     ...     t=Axis.listed(("2020-01-01T00:00:00Z",)),
     ...     referencing=[
     ...         ReferenceSystemConnection(
-    ...             coordinates=("t",), system=TemporalRS(calendar="Gregorian")
+    ...             coordinates=("t",),
+    ...             system=ReferenceSystem.temporal(calendar="Gregorian"),
     ...         )
     ...     ],
     ... )
@@ -354,7 +360,8 @@ def temporal_coordinates(domain: Domain) -> set[str]:
     ...     t=Axis.listed(("2020-01-01T00:00:00Z",)),
     ...     referencing=[
     ...         ReferenceSystemConnection(
-    ...             coordinates=("t",), system=TemporalRS(calendar="360_day")
+    ...             coordinates=("t",),
+    ...             system=ReferenceSystem.temporal(calendar="360_day"),
     ...         )
     ...     ],
     ... )
@@ -365,9 +372,8 @@ def temporal_coordinates(domain: Domain) -> set[str]:
     coordinates: set[str] = set()
 
     for connection in domain.referencing:
-        if isinstance(system := connection.system, TemporalRS) and is_standard_calendar(
-            system
-        ):
+        system = connection.system.refine()
+        if isinstance(system, TemporalRS) and is_standard_calendar(system):
             coordinates.update(connection.coordinates)
 
     return coordinates

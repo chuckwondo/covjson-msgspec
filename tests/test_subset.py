@@ -8,10 +8,10 @@ from covjson_msgspec import (
     Axis,
     Coverage,
     Domain,
-    GeographicCRS,
     NdArray,
     ObservedProperty,
     Parameter,
+    ReferenceSystem,
     ReferenceSystemConnection,
     TiledNdArray,
     TileSet,
@@ -22,7 +22,11 @@ from covjson_msgspec import (
     validate,
 )
 
-_REF = (ReferenceSystemConnection(coordinates=("x", "y"), system=GeographicCRS()),)
+_REF = (
+    ReferenceSystemConnection(
+        coordinates=("x", "y"), system=ReferenceSystem.geographic()
+    ),
+)
 
 
 # --- isel -------------------------------------------------------------------

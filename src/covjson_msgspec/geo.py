@@ -701,13 +701,13 @@ def _crs(domain: Domain) -> str | None:
     Examples
     --------
     >>> from covjson_msgspec import Axis
-    >>> from covjson_msgspec.referencing import GeographicCRS, ReferenceSystemConnection
+    >>> from covjson_msgspec import ReferenceSystem, ReferenceSystemConnection
     >>> domain = Domain.point(
     ...     x=Axis.listed((1.0,)),
     ...     y=Axis.listed((2.0,)),
     ...     referencing=[
     ...         ReferenceSystemConnection(
-    ...             coordinates=("x", "y"), system=GeographicCRS()
+    ...             coordinates=("x", "y"), system=ReferenceSystem.geographic()
     ...         )
     ...     ],
     ... )
@@ -722,7 +722,7 @@ def _crs(domain: Domain) -> str | None:
     # EPSG / OGC CRS URI that pyproj resolves); pass it through, falling back to
     # unset when it carries none. Any other system leaves the CRS unset.
     for connection in domain.referencing:
-        match connection.system:
+        match connection.system.refine():
             case GeographicCRS(id=crs_id):
                 return _geographic_crs(crs_id)
             case ProjectedCRS(id=crs_id) if crs_id is not None:

@@ -5,14 +5,18 @@ import msgspec
 from covjson_msgspec import (
     Axis,
     Domain,
-    GeographicCRS,
+    ReferenceSystem,
     ReferenceSystemConnection,
     validate,
 )
 
 # A minimal valid referencing array, so a domain built for a validate()-clean
 # check satisfies the spec-required referencing presence rule.
-_REF = (ReferenceSystemConnection(coordinates=("x", "y"), system=GeographicCRS()),)
+_REF = (
+    ReferenceSystemConnection(
+        coordinates=("x", "y"), system=ReferenceSystem.geographic()
+    ),
+)
 
 
 def test_grid_builder_and_accessors() -> None:
@@ -33,7 +37,7 @@ def test_grid_roundtrips_with_referencing() -> None:
         y=Axis.listed((0.0, 1.0)),
         referencing=[
             ReferenceSystemConnection(
-                coordinates=("x", "y"), system=GeographicCRS(id="crs")
+                coordinates=("x", "y"), system=ReferenceSystem.geographic(id="crs")
             )
         ],
     )
