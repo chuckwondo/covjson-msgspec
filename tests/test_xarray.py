@@ -1,5 +1,7 @@
 """Behavioral tests for the xarray bridge (to_xarray / from_xarray)."""
 
+from collections.abc import Mapping
+
 import numpy as np
 import pytest
 import xarray as xr
@@ -635,7 +637,7 @@ def _nd(coverage: Coverage, key: str) -> NdArray:
     return array
 
 
-def _params(coverage: Coverage) -> dict[str, Parameter]:
+def _params(coverage: Coverage) -> Mapping[str, Parameter]:
     assert coverage.parameters is not UNSET
     return coverage.parameters
 

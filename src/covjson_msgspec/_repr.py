@@ -16,6 +16,7 @@ previews are truncated), so a repr is cheap even for a big coverage.
 from __future__ import annotations
 
 import html
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from covjson_msgspec._i18n import display
@@ -514,7 +515,7 @@ def _axis_section(domain: Domain) -> str:
     return _table_section("Axes", ["Axis", "Length", "Extent"], rows)
 
 
-def _parameter_section(parameters: dict[str, Parameter]) -> str:
+def _parameter_section(parameters: Mapping[str, Parameter]) -> str:
     """Render a mapping of parameters as a collapsible key/label/unit table.
 
     Parameters
@@ -550,7 +551,7 @@ def _parameter_section(parameters: dict[str, Parameter]) -> str:
     return _table_section("Parameters", ["Key", "Observed property", "Unit"], rows)
 
 
-def _range_section(ranges: dict[str, NdArray | TiledNdArray | str]) -> str:
+def _range_section(ranges: Mapping[str, NdArray | TiledNdArray | str]) -> str:
     """Render a coverage's ranges as a collapsible key/type/shape table.
 
     Parameters

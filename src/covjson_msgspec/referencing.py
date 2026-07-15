@@ -16,6 +16,8 @@ Spec: [Reference system objects](https://github.com/covjson/specification/blob/m
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from covjson_msgspec._base import CovJSONStruct
 from covjson_msgspec.i18n import I18n
 
@@ -141,7 +143,7 @@ class IdentifierRS(CovJSONStruct, frozen=True, tag="IdentifierRS"):
     id: str | None = None
     label: I18n | None = None
     description: I18n | None = None
-    identifiers: dict[str, Concept] | None = None
+    identifiers: Mapping[str, Concept] | None = None
 
 
 # Tagged union over the ``type`` discriminator; msgspec dispatches natively.

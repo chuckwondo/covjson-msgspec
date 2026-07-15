@@ -39,6 +39,7 @@ from __future__ import annotations
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportMissingTypeStubs=false
 import contextlib
 import math
+from collections.abc import Mapping
 from datetime import datetime
 from itertools import pairwise
 from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
@@ -939,7 +940,7 @@ def _crs_coordinate(domain: Domain) -> _Variable | None:
 def _data_variable(
     key: str,
     range_: Range,
-    parameters: dict[str, Parameter] | None,
+    parameters: Mapping[str, Parameter] | None,
 ) -> _Variable:
     """Build a data-variable `_Variable` from one parameter range.
 
