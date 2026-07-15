@@ -42,8 +42,8 @@ titiler moving first (see [ADR-0001](docs/adr/0001-python-3-11-floor.md)).
 
 ## Project layout
 
-A thin core (msgspec plus langcodes, both pure Python) with opt-in bridges, each
-lazy-importing its own dependency.
+A thin core (msgspec, a small C extension, plus the pure-Python langcodes) with
+opt-in bridges, each lazy-importing its own dependency.
 
 Core model (`src/covjson_msgspec/`):
 

@@ -9,7 +9,8 @@ covjson-msgspec: the recurring [design tenets](tenets.md) and the individual
 The [design tenets](tenets.md) are the principles that recur across the library:
 dependency injection at the edges, a functional core with an imperative shell,
 opt-in tiered validation, a byte-faithful model, and typed projection over a
-faithful core.
+faithful core. [Tenets in practice](tenets-in-practice.md) illustrates each with a
+concrete decision from the code.
 
 ## Where the decisions live
 

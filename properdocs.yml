@@ -106,6 +106,7 @@ nav:
   - Design decisions:
       - Overview: design/index.md
       - Design tenets: design/tenets.md
+      - Tenets in practice: design/tenets-in-practice.md
       - Architecture decision records:
           - About the ADRs: adr/README.md
           - "ADR-0001: Python 3.11 floor": adr/0001-python-3-11-floor.md

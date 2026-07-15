@@ -16,15 +16,22 @@ wrangling and a heavier validation stack. covjson-msgspec aims for a different
 point on the curve:
 
 - **Fast, with a small footprint.** The core is built on msgspec rather than
-  pydantic, and depends only on msgspec and langcodes, both pure Python.
-- **Fully typed and spec-complete.** Every domain type, composite and polygon
-  axis, tiled range, referencing system, categorical parameter, and i18n string
-  is modeled, and the public API is verified across several type checkers.
+  pydantic, and depends only on msgspec (a small, self-contained C extension that
+  ships prebuilt wheels) and langcodes (pure Python), neither of which pulls in a
+  heavy dependency stack.
+- **Fully typed.** Every spec-defined type (domain types, composite and polygon
+  axes, tiled ranges, reference systems, categorical parameters, i18n strings) is
+  modeled precisely, and the public API is verified across several type checkers.
 - **A thin core with opt-in bridges.** Nothing drags in numpy, xarray, pandas,
   or a web framework unless you ask: each bridge lives behind its own extra.
-- **Byte-faithful.** Decoding preserves every spec-defined member exactly (raw
-  ISO 8601 temporal strings stay strings, for instance); lossy conversions are
-  confined to the opt-in bridges.
+- **Byte-faithful.** Decoding preserves modeled spec members faithfully (raw
+  ISO 8601 temporal strings stay strings, for instance), and lossy conversions are
+  confined to the opt-in bridges. Foreign members (the spec's
+  [custom members](https://github.com/covjson/specification/blob/master/spec.md#71-custom-members),
+  extension keys it permits but does not define) are dropped by design; relaying a
+  document's raw bytes forwards them unchanged. Two conformance edges are still in
+  progress: preserving the root JSON-LD `@context`, and accepting custom
+  reference-system types.
 - **Effects at the edges.** The core never reaches the network or imports a web
   framework. You inject a fetcher, so the same code serves sync and async
   services alike.
@@ -46,26 +53,58 @@ way.
 
 ## At a glance
 
-Decode a document, reach into its data, and hand it to the scientific stack:
+Which side of the wire you are on shapes how you use the library. Either way, the
+base install (`pip install covjson-msgspec`) covers the whole decode / build /
+encode round trip; the scientific bridges and the FastAPI adapter are opt-in extras
+layered on top.
+
+### Consuming a coverage
+
+Decode a document someone else produced, then read its data straight off the
+typed, immutable model:
 
 ```python
-from covjson_msgspec import decode_coverage, to_xarray
+from covjson_msgspec import decode_coverage
 
-cov = decode_coverage(document)         # `document` is bytes or str
-cov.ranges["temperature"].values        # the range values, preserved as read
-ds = to_xarray(cov)                     # a CF-aware xarray.Dataset (needs [xarray])
+cov = decode_coverage(document)              # `document` is bytes or str
+cov.domain.domain_type                       # the domain type (e.g., 'Grid')
+cov.ranges["temperature"].values             # the values, preserved as read
 ```
 
-Or build one with the narrow, named builders and encode it back to CoverageJSON:
+With the `[xarray]` extra, hand that same coverage to the scientific stack as a
+CF-aware dataset (the `[pandas]` and `[geo]` bridges follow the same shape):
 
 ```python
-from covjson_msgspec import Axis, Domain, NdArray, Coverage, encode
+from covjson_msgspec import to_xarray
+
+ds = to_xarray(cov)                          # an xarray.Dataset
+```
+
+### Producing a coverage
+
+Build one with the narrow, named builders (rather than wide constructors with
+mutually exclusive arguments), then encode it back to CoverageJSON bytes:
+
+```python
+from covjson_msgspec import Axis, Coverage, Domain, NdArray, encode
 
 cov = Coverage(
     domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
-    ranges={"t": NdArray(data_type="float", values=(280.0,))},
+    ranges={"temperature": NdArray(data_type="float", values=(280.0,))},
 )
-encode(cov)                             # b'{"type":"Coverage",...}'
+encode(cov)                                  # b'{"type":"Coverage",...}'
+```
+
+With the `[fastapi]` extra, serve it under the correct CoverageJSON media type by
+returning a `CovJSONResponse` (see [serving over HTTP](guides/http.md)):
+
+```python
+from covjson_msgspec.fastapi import CovJSONResponse
+
+
+@app.get("/coverage", response_class=CovJSONResponse)
+def coverage() -> Coverage:
+    return build_a_coverage()                # sent as application/prs.coverage+json
 ```
 
 ## Where to go next

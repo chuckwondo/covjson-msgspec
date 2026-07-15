@@ -1,10 +1,11 @@
 # Design tenets
 
-The recurring principles behind the library's design. Each is stated as a
-principle and its operational consequence; the
+The recurring principles behind the library's design, each stated as a principle
+and its operational consequence. [Tenets in practice](tenets-in-practice.md)
+illustrates each one with a concrete decision from the code; the
 [architecture decision records](../adr/README.md) hold the specific decisions that
-apply them, and [Core concepts](../concepts.md) works the type
-model through in detail.
+apply them, and [Core concepts](../concepts.md) works the type model through in
+detail.
 
 ## Dependency injection at the edges
 

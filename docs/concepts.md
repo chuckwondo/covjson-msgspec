@@ -37,24 +37,26 @@ Most types transcribe their spec object field-for-field, with no notable modelin
 decision, so the mapping table and the [API reference](reference/coverage.md) cover
 them:
 
-- **[`Domain`](reference/domain.md)**: a container of a `domain_type`, a map of
-  `axes`, and `referencing`; its interesting parts (the axes and reference systems
-  it holds) are covered elsewhere, and its per-domain-type builders follow the same
-  narrow-builder pattern as `Axis`.
-- **[`TiledNdArray`](reference/range.md)**: the same range family as `NdArray`, but
-  with `values` split across tile documents. The struct is straightforward; the
-  interest is behavioral (assembling the tiles), covered in the assembly guide.
-- **[Reference systems](reference/referencing.md)** (`GeographicCRS`,
-  `ProjectedCRS`, `VerticalCRS`, `TemporalRS`, `IdentifierRS`, `Concept`): a family
-  of small structs transcribing the spec's reference-system objects.
-- **[`Parameter`](reference/parameter.md)** and its parts (`ObservedProperty`,
-  `Category`, `CategoryEncoding`, `Unit`, `Symbol`): direct transcriptions; the one
-  local invariant is that a categorical `ObservedProperty` must list its
-  `categories`.
-- **[`ParameterGroup`](reference/parameter.md)**: a direct transcription of the
-  group's members.
-- **[`I18n`](reference/parameter.md)**: a language-tag to string map; its one
-  choice, langcode validation, is noted under Faithful by default.
+- **[`Domain`](reference/domain.md)** ([§6.1][spec-domain]): a container of a
+  `domain_type`, a map of `axes`, and `referencing`; its interesting parts (the
+  axes and reference systems it holds) are covered elsewhere, and its
+  per-domain-type builders follow the same narrow-builder pattern as `Axis`.
+- **[`TiledNdArray`](reference/range.md)** ([§6.3][spec-tiled]): the same range
+  family as `NdArray`, but with `values` split across tile documents. The struct is
+  straightforward; the interest is behavioral (assembling the tiles), covered in
+  the assembly guide.
+- **[Reference systems](reference/referencing.md)** ([§5][spec-refsystems])
+  (`GeographicCRS`, `ProjectedCRS`, `VerticalCRS`, `TemporalRS`, `IdentifierRS`,
+  `Concept`): a family of small structs transcribing the spec's reference-system
+  objects.
+- **[`Parameter`](reference/parameter.md)** ([§3][spec-parameter]) and its parts
+  (`ObservedProperty`, `Category`, `CategoryEncoding`, `Unit`, `Symbol`): direct
+  transcriptions; the one local invariant is that a categorical `ObservedProperty`
+  must list its `categories`.
+- **[`ParameterGroup`](reference/parameter.md)** ([§4][spec-paramgroup]): a direct
+  transcription of the group's members.
+- **[`I18n`](reference/parameter.md)** ([§2][spec-i18n]): a language-tag to string
+  map; its one choice, langcode validation, is noted under Faithful by default.
 
 The sections below walk the remaining types, where mapping the JSON to a struct
 involved a real choice, showing the wire JSON alongside the struct.
@@ -269,6 +271,14 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
 - One non-generic class with `data_type` as a field, rather than
   `NdArrayFloat` / `NdArrayInt` / `NdArrayStr` subclasses or a generic
   `NdArray[T]` ([ADR-0004](adr/0004-ndarray-single-non-generic-class.md)).
+- Precision is opt-in, on the read side: the stored `values` union stays
+  `float | int | str | None`, and [`values_as`](reference/range.md) projects it to
+  a precise element tuple when you know the `dataType`. `values_as(float)` returns
+  `tuple[float | None, ...]`, promoting integer-written values as the spec's
+  `dataType` allows and raising fail-fast on a mismatch (where
+  `validate(check_values=True)` instead *reports* the same mismatch). This is the
+  "view you ask for" half of typed projection: faithful in storage, precise on
+  demand.
 - Decode enforces only what is local and cheap: the `float | int | str | None`
   union rejects a nested array or a boolean. The cross-cutting checks (the
   `values` count versus `shape`, the `shape` rank versus `axisNames`, the element
@@ -279,18 +289,30 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
 
 ## Faithful by default
 
-Across all of these, decoding reproduces every spec-defined member exactly. The
+Across all of these, decoding reproduces the spec members it models faithfully. The
 recurring temptation is to parse on the way in, most visibly turning temporal
 strings into `datetime`. The library resists it, because many valid CoverageJSON
 instants do not fit `datetime` (a year `0000`, non-Gregorian calendars), so parsing
 at decode would reject faithful data. Temporal strings stay raw, and `resolve()`
 returns a faithful
 [`TemporalResult` sum type](adr/0008-temporal-conversion-result-projection.md) on
-request. The one deliberate loss is
-[foreign members (custom extension keys), which decode drops](adr/0012-foreign-members-dropped-on-decode.md)
-rather than capture; relaying a document unchanged forwards its raw bytes. And
-language-tagged text (`I18n` maps such as `{"en": "Air temperature"}`) is validated
-[with langcodes](adr/0005-langcodes-core-dependency.md).
+request. Language-tagged text (`I18n` maps such as `{"en": "Air temperature"}`) is
+validated [with langcodes](adr/0005-langcodes-core-dependency.md).
+
+The deliberate, permanent exception is
+[foreign members](adr/0012-foreign-members-dropped-on-decode.md), the GeoJSON name
+this library uses for what the spec calls [custom members][spec-custom]: extension
+keys the spec permits but does not define, which decode drops rather than captures.
+A modeled spec member survives a decode / encode round trip; a custom member does
+not. To relay a document with its extensions intact, forward its raw bytes instead
+of decoding and re-encoding.
+
+Two spec-defined edges are not yet handled, and are tracked toward the first
+release: the root JSON-LD [`@context`][spec-8] (§8), which decode currently drops
+like a foreign member, and [custom reference-system types][spec-72] (§7.2), which
+the closed reference-system union currently rejects. Until they land, a document
+that carries `@context` will not round-trip it, and one whose reference system uses
+a custom (URI) type will not decode at all.
 
 The [design decisions](adr/README.md) hold the full rationale behind these choices.
 
@@ -305,3 +327,6 @@ The [design decisions](adr/README.md) hold the full rationale behind these choic
 [spec-parameter]: https://github.com/covjson/specification/blob/master/spec.md#3-parameter-objects
 [spec-paramgroup]: https://github.com/covjson/specification/blob/master/spec.md#4-parametergroup-objects
 [spec-i18n]: https://github.com/covjson/specification/blob/master/spec.md#2-i18n-objects
+[spec-custom]: https://github.com/covjson/specification/blob/master/spec.md#71-custom-members
+[spec-72]: https://github.com/covjson/specification/blob/master/spec.md#72-custom-types
+[spec-8]: https://github.com/covjson/specification/blob/master/spec.md#8-json-ld

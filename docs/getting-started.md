@@ -3,7 +3,8 @@
 ## Install
 
 covjson-msgspec targets Python 3.11 and newer. The core depends only on msgspec
-and langcodes, both pure Python, so it installs without a build toolchain.
+(a compiled C extension that ships prebuilt wheels) and langcodes (pure Python),
+so it installs without a build toolchain.
 
 ```sh
 pip install covjson-msgspec          # or: uv add covjson-msgspec
@@ -13,10 +14,16 @@ The bridges to the scientific Python stack are opt-in extras, which keeps the
 core lightweight:
 
 ```sh
+pip install "covjson-msgspec[numpy]"    # NdArray to and from numpy
 pip install "covjson-msgspec[xarray]"   # CF-aware Coverage to and from xarray
 pip install "covjson-msgspec[pandas]"   # point / series / trajectory to pandas
 pip install "covjson-msgspec[geo]"      # polygon / point / trajectory to geopandas, GeoJSON
-pip install "covjson-msgspec[numpy]"    # NdArray to and from numpy
+```
+
+Serving CoverageJSON over HTTP has its own extra, separate from the scientific
+stack, for the FastAPI response class and OpenAPI schema helpers:
+
+```sh
 pip install "covjson-msgspec[fastapi]"  # CovJSONResponse + OpenAPI schema helpers
 ```
 
@@ -33,9 +40,9 @@ from covjson_msgspec import Axis, Domain, NdArray, Coverage
 
 cov = Coverage(
     domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
-    ranges={"t": NdArray(data_type="float", values=(280.0,))},
+    ranges={"temperature": NdArray(data_type="float", values=(280.0,))},
 )
-cov.ranges["t"].values          # (280.0,)
+cov.ranges["temperature"].values    # (280.0,)
 ```
 
 ## Encode to CoverageJSON
@@ -65,21 +72,27 @@ blob = '''
     "axes": {"x": {"values": [1.0]}, "y": {"values": [2.0]}}
   },
   "ranges": {
-    "t": {"type": "NdArray", "dataType": "float", "values": [280.0]}
+    "temperature": {"type": "NdArray", "dataType": "float", "values": [280.0]}
   }
 }
 '''
 
 cov = decode_coverage(blob)
-cov.domain.domain_type          # 'Point'
-cov.ranges["t"].values          # (280.0,)
+cov.domain.domain_type              # 'Point'
+cov.ranges["temperature"].values    # (280.0,)
 ```
 
-Decode is byte-faithful: every spec-defined member is preserved as read (for
-example, temporal values stay raw ISO 8601 strings), and lossy conversions
-happen only in the opt-in bridges. The codec entry points are `decode` (for an
-untyped root), `decode_coverage`, and `decode_coverage_collection`; the [API
-reference](reference/coverage.md) lists the full set.
+Decode is byte-faithful: modeled spec members are preserved as read (for example,
+temporal values stay raw ISO 8601 strings), and lossy conversions happen only in
+the opt-in bridges. Foreign members (the spec's
+[custom members](https://github.com/covjson/specification/blob/master/spec.md#71-custom-members),
+extension keys it permits but does not define) are dropped by design; to relay a
+document with its extensions intact, forward its raw bytes rather than decoding and
+re-encoding. (Two spec edges are still in progress: preserving the root JSON-LD
+`@context`, and accepting custom reference-system types.) The
+codec entry points are `decode` (for an untyped root), `decode_coverage`, and
+`decode_coverage_collection`; the [API reference](reference/coverage.md) lists the
+full set.
 
 ## Next steps
 
