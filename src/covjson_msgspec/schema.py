@@ -84,8 +84,9 @@ def component_schemas() -> dict[str, dict[str, Any]]:
 
     Property names are the camelCase wire names, not the snake_case attributes:
 
-    >>> sorted(schemas["CoverageJSON.Coverage"]["properties"])[:3]
-    ['domain', 'domainType', 'id']
+    >>> props = schemas["CoverageJSON.Coverage"]["properties"]
+    >>> "domainType" in props and "domain_type" not in props and "@context" in props
+    True
 
     Internal references are namespaced too, so they resolve within the mapping:
 

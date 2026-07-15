@@ -307,12 +307,12 @@ A modeled spec member survives a decode / encode round trip; a custom member doe
 not. To relay a document with its extensions intact, forward its raw bytes instead
 of decoding and re-encoding.
 
-Two spec-defined edges are not yet handled, and are tracked toward the first
-release: the root JSON-LD [`@context`][spec-8] (§8), which decode currently drops
-like a foreign member, and [custom reference-system types][spec-72] (§7.2), which
-the closed reference-system union currently rejects. Until they land, a document
-that carries `@context` will not round-trip it, and one whose reference system uses
-a custom (URI) type will not decode at all.
+The root JSON-LD [`@context`][spec-8] (§8) is a modeled member: it round-trips
+faithfully (an IRI string, an inline context object, an array of those, or
+`null`) rather than being dropped. One spec-defined edge remains, tracked
+toward the first release: [custom reference-system types][spec-72] (§7.2), which
+the closed reference-system union currently rejects, so a document whose
+reference system uses a custom (URI) type will not decode at all.
 
 The [design decisions](adr/README.md) hold the full rationale behind these choices.
 

@@ -29,8 +29,8 @@ point on the curve:
   confined to the opt-in bridges. Foreign members (the spec's
   [custom members](https://github.com/covjson/specification/blob/master/spec.md#71-custom-members),
   extension keys it permits but does not define) are dropped by design; relaying a
-  document's raw bytes forwards them unchanged. Two conformance edges are still in
-  progress: preserving the root JSON-LD `@context`, and accepting custom
+  document's raw bytes forwards them unchanged. The root JSON-LD `@context` is
+  preserved; one conformance edge is still in progress: accepting custom
   reference-system types.
 - **Effects at the edges.** The core never reaches the network or imports a web
   framework. You inject a fetcher, so the same code serves sync and async

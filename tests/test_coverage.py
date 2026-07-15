@@ -244,6 +244,94 @@ def test_iterable_fields_keep_empty_tuple_not_unset() -> None:
     assert array.axis_names == ()
 
 
+@pytest.mark.parametrize(
+    ("context_wire", "expected"),
+    [
+        ('"https://covjson.org/context.jsonld"', "https://covjson.org/context.jsonld"),
+        (
+            '["https://covjson.org/context.jsonld",{"ex":"https://ex/"}]',
+            ("https://covjson.org/context.jsonld", {"ex": "https://ex/"}),
+        ),
+        (
+            # a `null` element (a JSON-LD reset) exercises the `| None` inside the
+            # tuple, distinct from a top-level `null`
+            '["https://covjson.org/context.jsonld",null]',
+            ("https://covjson.org/context.jsonld", None),
+        ),
+        (
+            '{"@vocab":"https://ex/","@version":1.1}',
+            {"@vocab": "https://ex/", "@version": 1.1},
+        ),
+        ("null", None),
+    ],
+)
+def test_context_preserved_through_roundtrip(
+    context_wire: str, expected: object
+) -> None:
+    blob = (
+        '{"type":"Coverage","@context":'
+        + context_wire
+        + ',"domain":"http://ex/d.covjson","ranges":{}}'
+    ).encode()
+    cov = msgspec.json.decode(blob, type=Coverage)
+
+    assert cov.context == expected
+    # The library's faithfulness invariant is value equality, decode(encode(x)) == x
+    # (omit_defaults already precludes byte-identity); the union meets it.
+    assert msgspec.json.decode(msgspec.json.encode(cov), type=Coverage) == cov
+
+
+def test_context_absent_is_unset_and_omitted() -> None:
+    cov = msgspec.json.decode(
+        b'{"type":"Coverage","domain":"http://ex/d.covjson","ranges":{}}',
+        type=Coverage,
+    )
+
+    assert cov.context is UNSET
+    assert b"@context" not in msgspec.json.encode(cov)
+
+
+def test_context_explicit_null_is_distinct_from_absent() -> None:
+    cov = msgspec.json.decode(
+        b'{"type":"Coverage","@context":null,'
+        b'"domain":"http://ex/d.covjson","ranges":{}}',
+        type=Coverage,
+    )
+
+    assert cov.context is None
+    assert cov.context is not UNSET
+    assert b'"@context":null' in msgspec.json.encode(cov)
+
+
+def test_context_preserved_in_nested_positions() -> None:
+    # @context is spec-defined only at the document root (section 8), but the
+    # root-able structs are reused nested, so a member coverage / nested domain /
+    # nested range carries the field too. The library preserves it wherever it
+    # appears rather than dropping it; there is no root-only enforcement in the
+    # type (a positional rule that section 8 does not grade as an error anyway).
+    blob = (
+        b'{"type":"CoverageCollection","coverages":[{'
+        b'"type":"Coverage","@context":"https://member/",'
+        b'"domain":{"type":"Domain","@context":{"nested":"domain"},'
+        b'"domainType":"Point","axes":{"x":{"values":[1.0]}}},'
+        b'"ranges":{"t":{"type":"NdArray","@context":["nested-range"],'
+        b'"dataType":"float","values":[1.0]}}}]}'
+    )
+    coll = msgspec.json.decode(blob, type=CoverageCollection)
+    member = coll.coverages[0]
+
+    assert member.context == "https://member/"
+    assert isinstance(member.domain, Domain)
+    assert member.domain.context == {"nested": "domain"}
+    nested_range = member.ranges["t"]
+    assert isinstance(nested_range, NdArray)
+    assert nested_range.context == ("nested-range",)
+    round_tripped = msgspec.json.decode(
+        msgspec.json.encode(coll), type=CoverageCollection
+    )
+    assert round_tripped == coll
+
+
 def _point_coverage() -> Coverage:
     return Coverage(
         domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
