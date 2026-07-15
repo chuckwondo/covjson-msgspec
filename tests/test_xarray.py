@@ -18,12 +18,11 @@ from covjson_msgspec import (
     ObservedProperty,
     Parameter,
     ProjectedCRS,
+    ReferenceSystem,
     ReferenceSystemConnection,
-    TemporalRS,
     TiledNdArray,
     TileSet,
     Unit,
-    VerticalCRS,
     from_datatree,
     from_xarray,
     i18n,
@@ -93,7 +92,8 @@ def test_temporal_axis_parsed_to_datetime64() -> None:
             t=Axis.listed(("2020-01-01T00:00:00Z", "2020-01-02T00:00:00Z")),
             referencing=(
                 ReferenceSystemConnection(
-                    coordinates=("t",), system=TemporalRS(calendar="Gregorian")
+                    coordinates=("t",),
+                    system=ReferenceSystem.temporal(calendar="Gregorian"),
                 ),
             ),
         ),
@@ -119,7 +119,8 @@ def test_temporal_non_standard_calendar_uses_cftime() -> None:
             t=Axis.listed(("2020-01-01", "2020-01-30")),
             referencing=(
                 ReferenceSystemConnection(
-                    coordinates=("t",), system=TemporalRS(calendar="360_day")
+                    coordinates=("t",),
+                    system=ReferenceSystem.temporal(calendar="360_day"),
                 ),
             ),
         ),
@@ -146,7 +147,7 @@ def test_geographic_referencing_sets_cf_attrs_and_grid_mapping() -> None:
             referencing=(
                 ReferenceSystemConnection(
                     coordinates=("x", "y"),
-                    system=GeographicCRS(
+                    system=ReferenceSystem.geographic(
                         id="http://www.opengis.net/def/crs/OGC/1.3/CRS84"
                     ),
                 ),
@@ -180,7 +181,9 @@ def test_vertical_depth_sets_positive_down() -> None:
             referencing=(
                 ReferenceSystemConnection(
                     coordinates=("z",),
-                    system=VerticalCRS(id="http://example/crs/sea_water_depth"),
+                    system=ReferenceSystem.vertical(
+                        id="http://example/crs/sea_water_depth"
+                    ),
                 ),
             ),
         ),
@@ -335,7 +338,8 @@ def test_roundtrip_pointseries_time() -> None:
             t=Axis.listed(("2020-01-01T00:00:00Z", "2020-01-02T00:00:00Z")),
             referencing=(
                 ReferenceSystemConnection(
-                    coordinates=("t",), system=TemporalRS(calendar="Gregorian")
+                    coordinates=("t",),
+                    system=ReferenceSystem.temporal(calendar="Gregorian"),
                 ),
             ),
         ),
@@ -392,7 +396,7 @@ def test_roundtrip_recovers_geographic_referencing() -> None:
             referencing=(
                 ReferenceSystemConnection(
                     coordinates=("x", "y"),
-                    system=GeographicCRS(
+                    system=ReferenceSystem.geographic(
                         id="http://www.opengis.net/def/crs/OGC/1.3/CRS84"
                     ),
                 ),
@@ -410,9 +414,11 @@ def test_roundtrip_recovers_geographic_referencing() -> None:
     back = from_xarray(to_xarray(cov))
 
     (connection,) = [
-        c for c in _dom(back).referencing if isinstance(c.system, GeographicCRS)
+        c
+        for c in _dom(back).referencing
+        if isinstance(c.system.refine(), GeographicCRS)
     ]
-    system = connection.system
+    system = connection.system.refine()
     assert isinstance(system, GeographicCRS)
     assert connection.coordinates == ("x", "y")
     assert system.id == "http://www.opengis.net/def/crs/OGC/1.3/CRS84"
@@ -429,7 +435,7 @@ def test_roundtrip_recovers_projected_referencing() -> None:
             y=Axis.regular(0.0, 5.0, 2),
             referencing=(
                 ReferenceSystemConnection(
-                    coordinates=("x", "y"), system=ProjectedCRS(id=crs_id)
+                    coordinates=("x", "y"), system=ReferenceSystem.projected(id=crs_id)
                 ),
             ),
         ),
@@ -449,9 +455,9 @@ def test_roundtrip_recovers_projected_referencing() -> None:
     back = from_xarray(ds)
 
     (connection,) = [
-        c for c in _dom(back).referencing if isinstance(c.system, ProjectedCRS)
+        c for c in _dom(back).referencing if isinstance(c.system.refine(), ProjectedCRS)
     ]
-    system = connection.system
+    system = connection.system.refine()
     assert isinstance(system, ProjectedCRS)
     assert connection.coordinates == ("x", "y")
     assert system.id == crs_id

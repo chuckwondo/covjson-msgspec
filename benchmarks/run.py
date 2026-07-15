@@ -708,7 +708,7 @@ def _synthetic_grid(*, quick: bool) -> bytes:
     import numpy as np
 
     from covjson_msgspec import Axis, Coverage, Domain, NdArray
-    from covjson_msgspec.referencing import GeographicCRS, ReferenceSystemConnection
+    from covjson_msgspec.referencing import ReferenceSystem, ReferenceSystemConnection
 
     side = 20 if quick else 200
     cov = Coverage(
@@ -717,7 +717,7 @@ def _synthetic_grid(*, quick: bool) -> bytes:
             y=Axis.regular(0.0, float(side), side),
             referencing=[
                 ReferenceSystemConnection(
-                    coordinates=("x", "y"), system=GeographicCRS()
+                    coordinates=("x", "y"), system=ReferenceSystem.geographic()
                 )
             ],
         ),
@@ -750,9 +750,8 @@ def _synthetic_point_series(*, quick: bool) -> bytes:
     """
     from covjson_msgspec import Axis, Coverage, Domain
     from covjson_msgspec.referencing import (
-        GeographicCRS,
+        ReferenceSystem,
         ReferenceSystemConnection,
-        TemporalRS,
     )
 
     steps = 20 if quick else 200
@@ -767,10 +766,11 @@ def _synthetic_point_series(*, quick: bool) -> bytes:
             t=Axis.listed(times),
             referencing=[
                 ReferenceSystemConnection(
-                    coordinates=("x", "y"), system=GeographicCRS()
+                    coordinates=("x", "y"), system=ReferenceSystem.geographic()
                 ),
                 ReferenceSystemConnection(
-                    coordinates=("t",), system=TemporalRS("Gregorian")
+                    coordinates=("t",),
+                    system=ReferenceSystem.temporal(calendar="Gregorian"),
                 ),
             ],
         ),
@@ -800,9 +800,8 @@ def _synthetic_vertical_profile(*, quick: bool) -> bytes:
     """
     from covjson_msgspec import Axis, Coverage, Domain
     from covjson_msgspec.referencing import (
-        GeographicCRS,
+        ReferenceSystem,
         ReferenceSystemConnection,
-        VerticalCRS,
     )
 
     levels = 20 if quick else 200
@@ -813,9 +812,11 @@ def _synthetic_vertical_profile(*, quick: bool) -> bytes:
             z=Axis.listed(tuple(float(i) for i in range(levels))),
             referencing=[
                 ReferenceSystemConnection(
-                    coordinates=("x", "y"), system=GeographicCRS()
+                    coordinates=("x", "y"), system=ReferenceSystem.geographic()
                 ),
-                ReferenceSystemConnection(coordinates=("z",), system=VerticalCRS()),
+                ReferenceSystemConnection(
+                    coordinates=("z",), system=ReferenceSystem.vertical()
+                ),
             ],
         ),
         ranges={},

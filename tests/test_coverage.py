@@ -13,9 +13,9 @@ from covjson_msgspec import (
     ObservedProperty,
     Parameter,
     ParameterGroup,
+    ReferenceSystem,
     ReferenceSystemConnection,
     Unit,
-    VerticalCRS,
     decode,
     decode_coverage,
     decode_coverage_collection,
@@ -135,7 +135,11 @@ def test_resolved_coverages_keeps_member_overrides() -> None:
 
 
 def test_resolved_coverages_injects_referencing_into_inline_domain() -> None:
-    referencing = (ReferenceSystemConnection(coordinates=("z",), system=VerticalCRS()),)
+    referencing = (
+        ReferenceSystemConnection(
+            coordinates=("z",), system=ReferenceSystem.vertical()
+        ),
+    )
     collection = CoverageCollection(
         coverages=(_point_coverage(),),
         referencing=referencing,
@@ -154,7 +158,9 @@ def test_resolved_coverages_skips_referencing_for_url_domain() -> None:
     collection = CoverageCollection(
         coverages=(member,),
         referencing=(
-            ReferenceSystemConnection(coordinates=("z",), system=VerticalCRS()),
+            ReferenceSystemConnection(
+                coordinates=("z",), system=ReferenceSystem.vertical()
+            ),
         ),
     )
     (resolved,) = collection.resolved_coverages()

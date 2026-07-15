@@ -12,11 +12,9 @@ from covjson_msgspec import (
     Coverage,
     CoverageCollection,
     Domain,
-    GeographicCRS,
     NdArray,
-    ProjectedCRS,
+    ReferenceSystem,
     ReferenceSystemConnection,
-    TemporalRS,
     TiledNdArray,
     TileSet,
     to_geojson,
@@ -56,10 +54,11 @@ def test_point_series_is_one_feature_per_time() -> None:
             t=Axis.listed(("2020-01-01T00:00:00Z", "2020-01-02T00:00:00Z")),
             referencing=(
                 ReferenceSystemConnection(
-                    coordinates=("x", "y"), system=GeographicCRS(id="crs")
+                    coordinates=("x", "y"), system=ReferenceSystem.geographic(id="crs")
                 ),
                 ReferenceSystemConnection(
-                    coordinates=("t",), system=TemporalRS(calendar="Gregorian")
+                    coordinates=("t",),
+                    system=ReferenceSystem.temporal(calendar="Gregorian"),
                 ),
             ),
         ),
@@ -127,7 +126,7 @@ def test_projected_referencing_passes_its_id_through() -> None:
             referencing=(
                 ReferenceSystemConnection(
                     coordinates=("x", "y"),
-                    system=ProjectedCRS(
+                    system=ReferenceSystem.projected(
                         id="http://www.opengis.net/def/crs/EPSG/0/27700"
                     ),
                 ),
@@ -148,7 +147,7 @@ def test_projected_referencing_without_id_leaves_crs_unset() -> None:
             y=Axis.listed((2.0,)),
             referencing=(
                 ReferenceSystemConnection(
-                    coordinates=("x", "y"), system=ProjectedCRS()
+                    coordinates=("x", "y"), system=ReferenceSystem.projected()
                 ),
             ),
         ),
@@ -419,7 +418,7 @@ def test_collection_inherits_referencing_for_crs() -> None:
         coverages=(_point_member("a", 1.0, 2.0, 10.0),),
         referencing=(
             ReferenceSystemConnection(
-                coordinates=("x", "y"), system=GeographicCRS(id="crs")
+                coordinates=("x", "y"), system=ReferenceSystem.geographic(id="crs")
             ),
         ),
     )
@@ -615,7 +614,7 @@ def _geographic_point(crs_id: str | None) -> Coverage:
             y=Axis.listed((2.0,)),
             referencing=(
                 ReferenceSystemConnection(
-                    coordinates=("x", "y"), system=GeographicCRS(id=crs_id)
+                    coordinates=("x", "y"), system=ReferenceSystem.geographic(id=crs_id)
                 ),
             ),
         ),

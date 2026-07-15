@@ -14,8 +14,6 @@ from covjson_msgspec import (
     CoverageCollection,
     CovJSONValidationError,
     Domain,
-    GeographicCRS,
-    IdentifierRS,
     Issue,
     NdArray,
     ObservedProperty,
@@ -23,7 +21,6 @@ from covjson_msgspec import (
     ParameterGroup,
     ReferenceSystemConnection,
     Severity,
-    TemporalRS,
     TiledNdArray,
     Unit,
     i18n,
@@ -31,7 +28,11 @@ from covjson_msgspec import (
 )
 from covjson_msgspec.axis import AxisValue
 from covjson_msgspec.range import TileSet
-from covjson_msgspec.referencing import ReferenceSystem
+from covjson_msgspec.referencing import (
+    OpaqueRS,
+    ReferenceSystem,
+    ResolvedReferenceSystem,
+)
 from covjson_msgspec.validation import (
     AxisOrderChecker,
     CoverageDomainTypeConflict,
@@ -49,12 +50,14 @@ from covjson_msgspec.validation import (
     DomainMissingReferencing,
     I18nEmpty,
     I18nInvalidLanguageTag,
+    IdentifierMissingTargetConcept,
     NdArrayShapeRank,
     NdArrayValueCount,
     ParameterGroupUnknownMember,
     RangeInvalidCategoryCode,
     RangeValueTypeMismatch,
     TemporalLexicalForm,
+    TemporalMissingCalendar,
     TiledNdArrayShapeRank,
     TiledNdArrayTileShapeNotPositive,
     TiledNdArrayTileShapeTooLarge,
@@ -67,7 +70,11 @@ from covjson_msgspec.validation import (
 # axis/range checks below carry it so they isolate the one issue under test
 # rather than also tripping the spec-required referencing/parameters presence
 # checks (see test_missing_referencing / test_missing_parameters for those).
-_REF = (ReferenceSystemConnection(coordinates=("x", "y"), system=GeographicCRS()),)
+_REF = (
+    ReferenceSystemConnection(
+        coordinates=("x", "y"), system=ReferenceSystem.geographic()
+    ),
+)
 
 
 def test_valid_grid_has_no_issues() -> None:
@@ -535,7 +542,8 @@ def test_temporal_lexical_form_check_is_opt_in() -> None:
         },
         referencing=(
             ReferenceSystemConnection(
-                coordinates=("t",), system=TemporalRS(calendar="Gregorian")
+                coordinates=("t",),
+                system=ReferenceSystem.temporal(calendar="Gregorian"),
             ),
         ),
     )
@@ -563,7 +571,8 @@ def test_temporal_check_flags_malformed_year_zero_date() -> None:
         axes={"t": Axis.listed(("0000-13-01",))},
         referencing=(
             ReferenceSystemConnection(
-                coordinates=("t",), system=TemporalRS(calendar="Gregorian")
+                coordinates=("t",),
+                system=ReferenceSystem.temporal(calendar="Gregorian"),
             ),
         ),
     )
@@ -583,7 +592,7 @@ def test_temporal_check_skips_non_gregorian_calendar() -> None:
         axes={"t": Axis.listed(("2020-02-30",))},
         referencing=(
             ReferenceSystemConnection(
-                coordinates=("t",), system=TemporalRS(calendar="360_day")
+                coordinates=("t",), system=ReferenceSystem.temporal(calendar="360_day")
             ),
         ),
     )
@@ -832,11 +841,16 @@ def test_i18n_invalid_tag_in_category_label() -> None:
     assert issue.at == "/parameters/lc/observedProperty/categories/0/label/en_US"
 
 
-def test_i18n_invalid_tag_in_crs_description() -> None:
+def test_i18n_invalid_tag_in_identifier_rs_description() -> None:
+    # Only an identifier RS carries a ``description`` (Spec 5.3); the CRS types do
+    # not (Spec 5.1), so this is the reference-system ``description`` i18n path.
     ref = (
         ReferenceSystemConnection(
             coordinates=("x", "y"),
-            system=GeographicCRS(description={"en_US": "WGS 84"}),
+            system=ReferenceSystem.identifier(
+                target_concept=Concept(label={"en": "land cover"}),
+                description={"en_US": "WGS 84"},
+            ),
         ),
     )
     domain = Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,)), referencing=ref)
@@ -846,6 +860,61 @@ def test_i18n_invalid_tag_in_crs_description() -> None:
     assert issue.at == "/referencing/0/system/description/en_US"
 
 
+@pytest.mark.parametrize(
+    ("system", "code", "member"),
+    [
+        (ReferenceSystem(type_="TemporalRS"), "temporal.missing-calendar", "calendar"),
+        (
+            ReferenceSystem(type_="IdentifierRS"),
+            "identifier.missing-target-concept",
+            "targetConcept",
+        ),
+    ],
+)
+def test_refine_and_validate_agree_on_a_malformed_known_rs(
+    system: ReferenceSystem, code: str, member: str
+) -> None:
+    # One rule (missing_required_member) drives both sides, so they cannot
+    # disagree: refine renders a malformed known type opaque (is_custom() False, a
+    # malformed known type rather than a custom one), and validate reports the same
+    # missing member. A custom domainType isolates the reference-system error from
+    # any axis-rule checks.
+    refined = system.refine()
+    assert isinstance(refined, OpaqueRS)
+    assert not refined.is_custom()
+
+    domain = Domain(
+        axes={"x": Axis.listed(("a",))},
+        domain_type="http://example/Custom",
+        referencing=(ReferenceSystemConnection(coordinates=("x",), system=system),),
+    )
+    (issue,) = validate(domain)
+
+    assert issue.code == code
+    assert issue.at == f"/referencing/0/system/{member}"
+    assert issue.severity is Severity.ERROR
+
+
+def test_malformed_identifier_rs_still_reports_i18n() -> None:
+    # A missing required member does not suppress the i18n checks: a bad language
+    # tag on a targetConcept-less identifier RS is reported alongside the structural
+    # error, since i18n validity is independent of the missing member.
+    domain = Domain(
+        axes={"x": Axis.listed(("a",))},
+        domain_type="http://example/Custom",
+        referencing=(
+            ReferenceSystemConnection(
+                coordinates=("x",),
+                system=ReferenceSystem(type_="IdentifierRS", label={"en_US": "x"}),
+            ),
+        ),
+    )
+
+    codes = {i.code for i in validate(domain)}
+
+    assert codes == {"identifier.missing-target-concept", "i18n.invalid-language-tag"}
+
+
 def test_i18n_invalid_tag_in_identifier_rs_identifiers() -> None:
     # A custom-URI domain_type satisfies the domainType SHOULD (else a
     # domain.missing-domain-type warning) without imposing the axis-rule checks a
@@ -853,7 +922,7 @@ def test_i18n_invalid_tag_in_identifier_rs_identifiers() -> None:
     ref = (
         ReferenceSystemConnection(
             coordinates=("x",),
-            system=IdentifierRS(
+            system=ReferenceSystem.identifier(
                 target_concept=Concept(label=i18n("Land cover")),
                 identifiers={"1": Concept(label={"en_US": "Water"})},
             ),
@@ -943,7 +1012,7 @@ def test_every_finding_kind_is_exhaustively_matchable() -> None:
 
 
 def test_axis_monotonic_check_is_opt_in() -> None:
-    domain = _axis_domain(Axis.listed((0.0, 2.0, 1.0)), GeographicCRS())
+    domain = _axis_domain(Axis.listed((0.0, 2.0, 1.0)), ReferenceSystem.geographic())
 
     # Off by default: the value array is not scanned.
     assert not any(i.code == "domain.axis-not-monotonic" for i in validate(domain))
@@ -972,7 +1041,7 @@ def test_axis_monotonic_check_is_opt_in() -> None:
 def test_numeric_axis_monotonicity(
     values: tuple[float, ...], expected: list[str]
 ) -> None:
-    domain = _axis_domain(Axis.listed(values), GeographicCRS())
+    domain = _axis_domain(Axis.listed(values), ReferenceSystem.geographic())
 
     assert _monotonic_paths(domain) == expected
 
@@ -981,7 +1050,7 @@ def test_regular_axis_is_skipped() -> None:
     # A regular (start/stop/num) axis has `values is None`, so the check skips it
     # (it is monotonic by construction regardless). This guards that skip: without
     # it the checker would reach `enumerate(None)` and raise.
-    domain = _axis_domain(Axis.regular(10.0, 0.0, 5), GeographicCRS())
+    domain = _axis_domain(Axis.regular(10.0, 0.0, 5), ReferenceSystem.geographic())
 
     assert _monotonic_paths(domain) == []
 
@@ -991,16 +1060,18 @@ def test_numeric_axis_with_nan_is_not_falsely_flagged() -> None:
     # corrupting the walk: an otherwise-increasing axis is not flagged, and a real
     # reversal elsewhere is still reported at its true index.
     increasing = _axis_domain(
-        Axis.listed((1.0, 2.0, float("nan"), 3.0)), GeographicCRS()
+        Axis.listed((1.0, 2.0, float("nan"), 3.0)), ReferenceSystem.geographic()
     )
     assert _monotonic_paths(increasing) == []
 
-    reversal = _axis_domain(Axis.listed((float("nan"), 1.0, 3.0, 2.0)), GeographicCRS())
+    reversal = _axis_domain(
+        Axis.listed((float("nan"), 1.0, 3.0, 2.0)), ReferenceSystem.geographic()
+    )
     assert _monotonic_paths(reversal) == ["/axes/x/values/3"]
 
 
 def test_strict_checker_flags_equal_adjacent_values() -> None:
-    domain = _axis_domain(Axis.listed((0.0, 0.0, 1.0)), GeographicCRS())
+    domain = _axis_domain(Axis.listed((0.0, 0.0, 1.0)), ReferenceSystem.geographic())
 
     # The default is non-strict, so equal-adjacent values pass.
     assert _monotonic_paths(domain) == []
@@ -1020,7 +1091,7 @@ def test_time_axis_reversal_is_flagged() -> None:
                 "2020-01-02T00:00:00Z",
             )
         ),
-        TemporalRS(calendar="Gregorian"),
+        ReferenceSystem.temporal(calendar="Gregorian"),
         coord="t",
     )
 
@@ -1039,7 +1110,7 @@ def test_time_axis_ordered_by_instant_not_string() -> None:
                 "2020-01-01T09:00:00Z",
             )
         ),
-        TemporalRS(calendar="Gregorian"),
+        ReferenceSystem.temporal(calendar="Gregorian"),
         coord="t",
     )
 
@@ -1055,7 +1126,7 @@ def test_non_standard_calendar_time_axis_is_skipped() -> None:
                 "2020-01-02T00:00:00Z",
             )
         ),
-        TemporalRS(calendar="360_day"),
+        ReferenceSystem.temporal(calendar="360_day"),
         coord="t",
     )
 
@@ -1068,7 +1139,7 @@ def test_mixed_awareness_time_axis_is_skipped() -> None:
     # zone; comparing a naive and an aware datetime would raise TypeError.
     domain = _axis_domain(
         Axis.listed(("2020-01-01", "2020-01-03T00:00:00Z", "2020-01-02")),
-        TemporalRS(calendar="Gregorian"),
+        ReferenceSystem.temporal(calendar="Gregorian"),
         coord="t",
     )
 
@@ -1080,7 +1151,7 @@ def test_malformed_temporal_value_is_not_double_reported() -> None:
     # monotonic check compares only resolvable moments, so it is not re-reported.
     domain = _axis_domain(
         Axis.listed(("2020-01-01T00:00:00Z", "nope", "2020-01-02T00:00:00Z")),
-        TemporalRS(calendar="Gregorian"),
+        ReferenceSystem.temporal(calendar="Gregorian"),
         coord="t",
     )
 
@@ -1093,7 +1164,7 @@ def test_malformed_temporal_value_is_not_double_reported() -> None:
 def test_identifier_axis_with_integer_codes_is_not_flagged() -> None:
     # An identifier system defines no ordering, so integer codes in an arbitrary
     # order are conformant (keying on "the value is numeric" would false-positive).
-    ids = IdentifierRS(target_concept=Concept(label=i18n("class")))
+    ids = ReferenceSystem.identifier(target_concept=Concept(label=i18n("class")))
     domain = _axis_domain(Axis.listed((3, 1, 2)), ids, coord="c")
 
     assert _monotonic_paths(domain) == []
@@ -1111,7 +1182,7 @@ def test_custom_axis_order_checker_overrides_the_default() -> None:
     # The seam can flag what the default skips: here, an identifier axis, held to
     # a strictly-descending order by a caller-supplied policy.
     def strictly_descending(
-        values: Sequence[AxisValue], system: ReferenceSystem | None
+        values: Sequence[AxisValue], system: ResolvedReferenceSystem | None
     ) -> int | None:
         for i in range(1, len(values)):
             previous, current = values[i - 1], values[i]
@@ -1125,7 +1196,7 @@ def test_custom_axis_order_checker_overrides_the_default() -> None:
 
         return None
 
-    ids = IdentifierRS(target_concept=Concept(label=i18n("class")))
+    ids = ReferenceSystem.identifier(target_concept=Concept(label=i18n("class")))
     domain = _axis_domain(Axis.listed((3, 2, 5)), ids, coord="c")
 
     assert _monotonic_paths(domain, strictly_descending) == ["/axes/c/values/2"]
@@ -1219,8 +1290,10 @@ def _describe(issue: Issue) -> str:
             return "coverage"
         case RangeValueTypeMismatch() | RangeInvalidCategoryCode():
             return "range"
-        case TemporalLexicalForm():
+        case TemporalLexicalForm() | TemporalMissingCalendar():
             return "temporal"
+        case IdentifierMissingTargetConcept():
+            return "identifier"
         case ParameterGroupUnknownMember():
             return "parameter-group"
         case I18nInvalidLanguageTag() | I18nEmpty():

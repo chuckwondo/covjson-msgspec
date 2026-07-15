@@ -34,18 +34,14 @@ def test_component_schemas_exposes_the_expected_namespaced_surface() -> None:
             "Axis",
             "Category",
             "Concept",
-            "GeographicCRS",
-            "IdentifierRS",
             "ObservedProperty",
             "Parameter",
             "ParameterGroup",
-            "ProjectedCRS",
+            "ReferenceSystem",
             "ReferenceSystemConnection",
             "Symbol",
-            "TemporalRS",
             "TileSet",
             "Unit",
-            "VerticalCRS",
         )
     }
 

@@ -23,7 +23,7 @@ Each CoverageJSON object maps to a single library type:
 | [Axis][spec-axis] | [`Axis`](reference/domain.md) |
 | [NdArray][spec-ndarray] | [`NdArray`](reference/range.md) |
 | [TiledNdArray][spec-tiled] | [`TiledNdArray`](reference/range.md) |
-| [Reference systems][spec-refsystems] | [`GeographicCRS`, `ProjectedCRS`, `VerticalCRS`, `TemporalRS`, `IdentifierRS`, `Concept`](reference/referencing.md) |
+| [Reference systems][spec-refsystems] | [`ReferenceSystem`, its `refine()` variants, `Concept`](reference/referencing.md) |
 | [Parameter][spec-parameter] | [`Parameter`, `ObservedProperty`, `Category`, `Unit`, `Symbol`](reference/parameter.md) |
 | [ParameterGroup][spec-paramgroup] | [`ParameterGroup`](reference/parameter.md) |
 | [i18n string][spec-i18n] | [`I18n`](reference/parameter.md) |
@@ -45,10 +45,11 @@ them:
   family as `NdArray`, but with `values` split across tile documents. The struct is
   straightforward; the interest is behavioral (assembling the tiles), covered in
   the assembly guide.
-- **[Reference systems](reference/referencing.md)** ([§5][spec-refsystems])
-  (`GeographicCRS`, `ProjectedCRS`, `VerticalCRS`, `TemporalRS`, `IdentifierRS`,
-  `Concept`): a family of small structs transcribing the spec's reference-system
-  objects.
+- **[Reference systems](reference/referencing.md)** ([§5][spec-refsystems]): a
+  permissive `ReferenceSystem` core that decodes any system (including a custom
+  §7.2 type), with an opt-in `refine()` projection to precise per-kind variants
+  (`GeographicCRS`, `TemporalRS`, `IdentifierRS`, ..., or an opaque `OpaqueRS`)
+  plus the categorical `Concept`.
 - **[`Parameter`](reference/parameter.md)** ([§3][spec-parameter]) and its parts
   (`ObservedProperty`, `Category`, `CategoryEncoding`, `Unit`, `Symbol`): direct
   transcriptions; the one local invariant is that a categorical `ObservedProperty`
@@ -308,10 +309,11 @@ extensions intact, forward its raw bytes instead of decoding and re-encoding.
 
 The root JSON-LD [`@context`][spec-8] (§8) is a modeled member: it round-trips
 faithfully (an IRI string, an inline context object, an array of those, or
-`null`) rather than being dropped. One spec-defined edge remains, tracked
-toward the first release: [custom reference-system types][spec-72] (§7.2), which
-the closed reference-system union currently rejects, so a document whose
-reference system uses a custom (URI) type will not decode at all.
+`null`) rather than being dropped. Custom (URI) reference-system types
+([§7.2][spec-72]) also load: a reference system decodes into a permissive
+`ReferenceSystem`, which `refine()` projects to a precise per-kind variant (an
+opaque one for an unrecognized `type`). Its `type` round-trips; any custom
+members on it drop, as above.
 
 The [design decisions](adr/README.md) hold the full rationale behind these choices.
 

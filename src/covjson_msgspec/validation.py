@@ -54,6 +54,7 @@ from covjson_msgspec._bridging import (
     coordinate_systems,
     is_standard_calendar,
 )
+from covjson_msgspec._reference_invariants import missing_required_member
 from covjson_msgspec.axis import AxisValue
 from covjson_msgspec.coverage import (
     Coverage,
@@ -74,8 +75,10 @@ from covjson_msgspec.referencing import (
     Concept,
     GeographicCRS,
     IdentifierRS,
+    OpaqueRS,
     ProjectedCRS,
     ReferenceSystem,
+    ResolvedReferenceSystem,
     TemporalRS,
     VerticalCRS,
 )
@@ -238,6 +241,34 @@ class DomainMissingDomainType(_Issue, frozen=True, tag="domain.missing-domain-ty
 
     def __str__(self) -> str:
         return "domain should have a 'domainType' member"
+
+
+class TemporalMissingCalendar(_Issue, frozen=True, tag="temporal.missing-calendar"):
+    """A temporal RS carries no ``calendar``.
+
+    Spec 5.2: a temporal RS object MUST have a ``calendar`` member
+    (``"Gregorian"`` or a URI), so this is an error (per ADR-0002). Decode stays
+    permissive: a temporal system missing ``calendar`` still loads and refines
+    to `~covjson_msgspec.referencing.OpaqueRS`, and this check reports it.
+    """
+
+    def __str__(self) -> str:
+        return "temporal reference system must have a 'calendar' member"
+
+
+class IdentifierMissingTargetConcept(
+    _Issue, frozen=True, tag="identifier.missing-target-concept"
+):
+    """An identifier RS carries no ``targetConcept``.
+
+    Spec 5.3: an identifier RS object MUST have a ``targetConcept`` member, so
+    this is an error (per ADR-0002). Decode stays permissive: an identifier
+    system missing ``targetConcept`` still loads and refines to
+    `~covjson_msgspec.referencing.OpaqueRS`, and this check reports it.
+    """
+
+    def __str__(self) -> str:
+        return "identifier reference system must have a 'targetConcept' member"
 
 
 class NdArrayShapeRank(_Issue, frozen=True, tag="ndarray.shape-rank"):
@@ -488,6 +519,8 @@ Issue = (
     | DomainAxisNotMonotonic
     | DomainMissingReferencing
     | DomainMissingDomainType
+    | TemporalMissingCalendar
+    | IdentifierMissingTargetConcept
     | NdArrayShapeRank
     | NdArrayValueCount
     | TiledNdArrayShapeRank
@@ -516,7 +549,9 @@ Issue = (
 # applies `require_monotonic` by default; pass an ``axis_order_checker`` to
 # override it (strict monotonicity, a non-standard calendar, or ordering the
 # values the default leaves alone). See `require_monotonic` for the default policy.
-AxisOrderChecker = Callable[[Sequence[AxisValue], ReferenceSystem | None], int | None]
+AxisOrderChecker = Callable[
+    [Sequence[AxisValue], ResolvedReferenceSystem | None], int | None
+]
 
 
 class CovJSONValidationError(Exception):
@@ -725,10 +760,10 @@ def validate(
     Examples
     --------
     >>> from covjson_msgspec import (
-    ...     Axis, Coverage, Domain, GeographicCRS, NdArray, ReferenceSystemConnection
+    ...     Axis, Coverage, Domain, NdArray, ReferenceSystem, ReferenceSystemConnection
     ... )
     >>> ref = ReferenceSystemConnection(
-    ...     coordinates=("x", "y"), system=GeographicCRS()
+    ...     coordinates=("x", "y"), system=ReferenceSystem.geographic()
     ... )
     >>> grid = Domain.grid(
     ...     x=Axis.regular(0, 10, 3), y=Axis.regular(0, 10, 3), referencing=[ref]
@@ -1357,15 +1392,62 @@ def _concept_i18n_issues(
     yield from _label_description_i18n_issues(concept.label, concept.description, path)
 
 
+def _reference_system_issues(
+    system: ReferenceSystem, path: tuple[str | int, ...]
+) -> Iterator[Issue]:
+    """Yield a reference system's required-member and language-tag violations.
+
+    First the required-member MUSTs (Spec 5.2 / 5.3), then the i18n checks
+    (Spec 2), in wire order. The required-member rule is shared with
+    `~covjson_msgspec.referencing.ReferenceSystem.refine` via
+    `~covjson_msgspec._reference_invariants.missing_required_member`, so a system
+    that refines to `~covjson_msgspec.referencing.OpaqueRS` for a missing required
+    member is exactly the one reported here.
+
+    Parameters
+    ----------
+    system
+        The reference system to check (a `ReferenceSystemConnection.system`).
+    path
+        The reference-token path to ``system``, built via `_ptr` for each issue.
+
+    Yields
+    ------
+    Issue
+        The system's required-member and language-tag issues, in wire order.
+
+    Examples
+    --------
+    >>> from covjson_msgspec.referencing import ReferenceSystem
+    >>> issues = _reference_system_issues(ReferenceSystem(type_="TemporalRS"), ())
+    >>> [i.code for i in issues]
+    ['temporal.missing-calendar']
+    """
+    match missing_required_member(system):
+        case "calendar":
+            yield TemporalMissingCalendar(at=_ptr(path, "calendar"))
+
+        case "targetConcept":
+            yield IdentifierMissingTargetConcept(at=_ptr(path, "targetConcept"))
+
+        case _:
+            pass
+
+    yield from _reference_system_i18n_issues(system, path)
+
+
 def _reference_system_i18n_issues(
     system: ReferenceSystem, path: tuple[str | int, ...]
 ) -> Iterator[Issue]:
-    """Yield a `ReferenceSystem`'s language-tag issues, dispatching on its kind.
+    """Yield a reference system's language-tag issues.
 
-    The three spatial CRS types carry only ``description``; `TemporalRS` has no
-    i18n fields at all; `IdentifierRS` carries a `Concept` for ``target_concept``
-    (encoded first on the wire), then its own ``label``/``description``, then
-    each ``identifiers`` value.
+    Only an identifier RS carries i18n members (Spec 5.3): a `Concept` for
+    ``target_concept`` (encoded first on the wire), then its own
+    ``label`` / ``description``, then each ``identifiers`` value. The spatial CRSs
+    and the temporal RS carry no i18n member. The checks read the core's fields
+    directly (keyed on ``type_``), independent of whether the required
+    ``targetConcept`` is present, so a bad language tag is still reported for a
+    malformed identifier RS (one `refine` renders opaque).
 
     Parameters
     ----------
@@ -1381,33 +1463,32 @@ def _reference_system_i18n_issues(
 
     Examples
     --------
-    >>> crs = GeographicCRS(description={"en_US": "WGS 84"})
-    >>> [i.at for i in _reference_system_i18n_issues(crs, ("referencing", 0, "system"))]
-    ['/referencing/0/system/description/en_US']
+    >>> rs = ReferenceSystem.identifier(
+    ...     target_concept=Concept(label={"en_US": "Land cover"})
+    ... )
+    >>> [i.at for i in _reference_system_i18n_issues(rs, ("referencing", 0, "system"))]
+    ['/referencing/0/system/targetConcept/label/en_US']
 
-    A `TemporalRS` has no i18n fields, so it yields nothing:
+    A temporal RS has no i18n member, so it yields nothing:
 
-    >>> list(_reference_system_i18n_issues(TemporalRS(calendar="Gregorian"), ()))
+    >>> list(
+    ...     _reference_system_i18n_issues(
+    ...         ReferenceSystem.temporal(calendar="Gregorian"), ()
+    ...     )
+    ... )
     []
     """
-    match system:
-        case GeographicCRS() | ProjectedCRS() | VerticalCRS():
-            yield from _language_tag_issues(system.description, (*path, "description"))
-        case TemporalRS():
-            pass
-        case IdentifierRS():
-            yield from _concept_i18n_issues(
-                system.target_concept, (*path, "targetConcept")
-            )
-            yield from _label_description_i18n_issues(
-                system.label, system.description, path
-            )
-            yield from chain.from_iterable(
-                _concept_i18n_issues(concept, (*path, "identifiers", key))
-                for key, concept in (system.identifiers or {}).items()
-            )
-        case _:
-            assert_never(system)
+    if system.type_ != "IdentifierRS":
+        return
+
+    if system.target_concept is not None:
+        yield from _concept_i18n_issues(system.target_concept, (*path, "targetConcept"))
+
+    yield from _label_description_i18n_issues(system.label, system.description, path)
+    yield from chain.from_iterable(
+        _concept_i18n_issues(concept, (*path, "identifiers", key))
+        for key, concept in (system.identifiers or {}).items()
+    )
 
 
 def _validate_domain(
@@ -1514,18 +1595,15 @@ def _validate_domain(
     if not domain.referencing:
         yield DomainMissingReferencing(at=_ptr(path, "referencing"))
 
-    # Spec 2: each reference system's i18n objects must be non-empty and their
-    # keys must be valid BCP 47 tags.
+    # Spec 5.2/5.3 required-member MUSTs, then Spec 2 i18n checks, per system.
     yield from chain.from_iterable(
-        _reference_system_i18n_issues(
-            connection.system, (*path, "referencing", i, "system")
-        )
+        _reference_system_issues(connection.system, (*path, "referencing", i, "system"))
         for i, connection in enumerate(domain.referencing)
     )
 
 
 def _resolved_temporal_axes(
-    domain: Domain, systems: Mapping[str, ReferenceSystem]
+    domain: Domain, systems: Mapping[str, ResolvedReferenceSystem]
 ) -> dict[str, tuple[TemporalResult | None, ...]]:
     """Resolve each standard-calendar temporal axis's values once.
 
@@ -1555,12 +1633,13 @@ def _resolved_temporal_axes(
     Examples
     --------
     >>> from covjson_msgspec import Axis, Domain
-    >>> from covjson_msgspec.referencing import ReferenceSystemConnection, TemporalRS
+    >>> from covjson_msgspec import ReferenceSystem, ReferenceSystemConnection
     >>> dom = Domain(
     ...     axes={"t": Axis.listed(("2020", "nope"))},
     ...     referencing=[
     ...         ReferenceSystemConnection(
-    ...             coordinates=("t",), system=TemporalRS(calendar="Gregorian")
+    ...             coordinates=("t",),
+    ...             system=ReferenceSystem.temporal(calendar="Gregorian"),
     ...         )
     ...     ],
     ... )
@@ -1610,12 +1689,13 @@ def _temporal_form_issues(
     Examples
     --------
     >>> from covjson_msgspec import Axis, Domain
-    >>> from covjson_msgspec.referencing import ReferenceSystemConnection, TemporalRS
+    >>> from covjson_msgspec import ReferenceSystem, ReferenceSystemConnection
     >>> dom = Domain(
     ...     axes={"t": Axis.listed(("2020-01-01T00:00:00Z", "nope"))},
     ...     referencing=[
     ...         ReferenceSystemConnection(
-    ...             coordinates=("t",), system=TemporalRS(calendar="Gregorian")
+    ...             coordinates=("t",),
+    ...             system=ReferenceSystem.temporal(calendar="Gregorian"),
     ...         )
     ...     ],
     ... )
@@ -1637,7 +1717,7 @@ def _axis_monotonic_issues(
     domain: Domain,
     path: tuple[str | int, ...],
     axis_order_checker: AxisOrderChecker | None,
-    systems: Mapping[str, ReferenceSystem],
+    systems: Mapping[str, ResolvedReferenceSystem],
     resolved: Mapping[str, tuple[TemporalResult | None, ...]],
 ) -> Iterator[Issue]:
     """Yield an error for each primitive axis whose ``values`` are not monotonic.
@@ -1678,13 +1758,15 @@ def _axis_monotonic_issues(
     --------
     >>> from covjson_msgspec import Axis, Domain
     >>> from covjson_msgspec.referencing import (
-    ...     GeographicCRS,
+    ...     ReferenceSystem,
     ...     ReferenceSystemConnection,
     ... )
     >>> dom = Domain(
     ...     axes={"x": Axis.listed((0.0, 2.0, 1.0))},
     ...     referencing=[
-    ...         ReferenceSystemConnection(coordinates=("x",), system=GeographicCRS())
+    ...         ReferenceSystemConnection(
+    ...             coordinates=("x",), system=ReferenceSystem.geographic()
+    ...         )
     ...     ],
     ... )
     >>> systems = coordinate_systems(dom)
@@ -1723,7 +1805,7 @@ def _axis_monotonic_issues(
 def _axis_break(
     axis_order_checker: AxisOrderChecker | None,
     values: Sequence[AxisValue],
-    system: ReferenceSystem | None,
+    system: ResolvedReferenceSystem | None,
     results: tuple[TemporalResult | None, ...] | None,
 ) -> int | None:
     """The first index where an axis's values break their ordering, or ``None``.
@@ -1813,7 +1895,7 @@ def require_monotonic(*, strict: bool = False) -> AxisOrderChecker:
     """
 
     def check(
-        values: Sequence[AxisValue], system: ReferenceSystem | None
+        values: Sequence[AxisValue], system: ResolvedReferenceSystem | None
     ) -> int | None:
         return _default_break(values, system, None, strict=strict)
 
@@ -1822,7 +1904,7 @@ def require_monotonic(*, strict: bool = False) -> AxisOrderChecker:
 
 def _default_break(
     values: Sequence[AxisValue],
-    system: ReferenceSystem | None,
+    system: ResolvedReferenceSystem | None,
     results: tuple[TemporalResult | None, ...] | None,
     *,
     strict: bool,
@@ -1926,7 +2008,7 @@ def _numeric_keys(values: Sequence[AxisValue]) -> list[tuple[int, Any]]:
 
 
 def _ordering_kind(
-    system: ReferenceSystem | None,
+    system: ResolvedReferenceSystem | None,
 ) -> Literal["numeric", "temporal"] | None:
     """Classify a reference system by the kind of value ordering it defines.
 
@@ -1941,8 +2023,8 @@ def _ordering_kind(
       system, and an axis with no system in scope (``None``) define no ordering.
 
     The ``match`` is exhaustive over the
-    `~covjson_msgspec.referencing.ReferenceSystem` union (closed with
-    `~typing.assert_never`), so adding a reference-system type forces a decision
+    `~covjson_msgspec.referencing.ResolvedReferenceSystem` union (closed with
+    `~typing.assert_never`), so adding a reference-system variant forces a decision
     here rather than silently falling through to "unordered".
 
     Parameters
@@ -1972,9 +2054,9 @@ def _ordering_kind(
             return "numeric"
         case TemporalRS():
             return "temporal" if is_standard_calendar(system) else None
-        case IdentifierRS() | None:
+        case IdentifierRS() | OpaqueRS() | None:
             return None
-        case _:  # pragma: no cover - exhaustive over the ReferenceSystem union
+        case _:  # pragma: no cover - exhaustive over ResolvedReferenceSystem
             assert_never(system)
 
 

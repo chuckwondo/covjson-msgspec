@@ -27,6 +27,7 @@ from covjson_msgspec import (
     Coverage,
     Domain,
     NdArray,
+    ReferenceSystem,
     ReferenceSystemConnection,
     TemporalRS,
     decode_coverage,
@@ -82,7 +83,7 @@ def test_non_gregorian_calendar_is_carried_verbatim(calendar: str) -> None:
 
     assert isinstance(cov.domain, Domain)
     (rsc,) = cov.domain.referencing
-    assert isinstance(rsc.system, TemporalRS)
+    assert isinstance(rsc.system.refine(), TemporalRS)
     assert rsc.system.calendar == calendar
     assert calendar.encode() in encode(cov)
 
@@ -137,7 +138,7 @@ def _series(calendar: str = NON_GREGORIAN_CALENDAR) -> Coverage:
         referencing=[
             ReferenceSystemConnection(
                 coordinates=("t",),
-                system=TemporalRS(calendar=calendar),
+                system=ReferenceSystem.temporal(calendar=calendar),
             )
         ],
     )

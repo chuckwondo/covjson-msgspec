@@ -71,6 +71,7 @@ from covjson_msgspec.referencing import (
     ProjectedCRS,
     ReferenceSystem,
     ReferenceSystemConnection,
+    ResolvedReferenceSystem,
     TemporalRS,
     VerticalCRS,
 )
@@ -636,7 +637,7 @@ def _geographic_roles(domain: Domain) -> dict[str, str]:
     return {
         coordinate: role
         for connection in domain.referencing
-        if isinstance(connection.system, GeographicCRS)
+        if isinstance(connection.system.refine(), GeographicCRS)
         for coordinate, role in zip(
             connection.coordinates, _GEOGRAPHIC_ROLES, strict=False
         )
@@ -645,7 +646,7 @@ def _geographic_roles(domain: Domain) -> dict[str, str]:
 
 def _build_coords(
     domain: Domain,
-    systems: dict[str, ReferenceSystem],
+    systems: dict[str, ResolvedReferenceSystem],
     geo_roles: dict[str, str],
 ) -> dict[str, _Variable]:
     """Turn a domain's axes into xarray coordinate variables.
@@ -709,7 +710,7 @@ def _coordinate(
     coordinate: str,
     dim: str,
     column: list[Any],
-    systems: dict[str, ReferenceSystem],
+    systems: dict[str, ResolvedReferenceSystem],
     geo_roles: dict[str, str],
     *,
     scalar: bool,
@@ -861,10 +862,10 @@ def _vertical_attrs(system: VerticalCRS) -> dict[str, str]:
     """Infer CF vertical attributes from a `~covjson_msgspec.referencing.VerticalCRS`.
 
     CoverageJSON does not say whether a vertical axis points up or down, so this
-    sniffs the system's ``id`` and description: ``"depth"`` implies
-    ``positive="down"``, ``"height"`` / ``"altitude"`` imply ``positive="up"``.
-    An unrecognized system yields no attributes (the coordinate is left
-    direction-agnostic).
+    sniffs the system's ``id`` (the only member a vertical CRS carries, per
+    Spec 5.1.3): ``"depth"`` implies ``positive="down"``, ``"height"`` /
+    ``"altitude"`` imply ``positive="up"``. An unrecognized system yields no
+    attributes (the coordinate is left direction-agnostic).
 
     Parameters
     ----------
@@ -883,7 +884,7 @@ def _vertical_attrs(system: VerticalCRS) -> dict[str, str]:
     >>> _vertical_attrs(VerticalCRS(id="http://example.com/pressure"))
     {}
     """
-    text = " ".join(filter(None, (system.id, display(system.description)))).lower()
+    text = (system.id or "").lower()
 
     if "depth" in text:
         return {"standard_name": "depth", "positive": "down"}
@@ -920,7 +921,9 @@ def _crs_coordinate(domain: Domain) -> _Variable | None:
     crss = (
         system
         for connection in domain.referencing
-        if isinstance(system := connection.system, (GeographicCRS, ProjectedCRS))
+        if isinstance(
+            system := connection.system.refine(), (GeographicCRS, ProjectedCRS)
+        )
     )
 
     if (crs := next(crss, None)) is None:
@@ -1654,9 +1657,9 @@ def _build_referencing(
             crs_type = crs_attrs.get("reference_system_type", crs_type)
 
         horizontal: ReferenceSystem = (
-            ProjectedCRS(id=crs_id)
+            ReferenceSystem.projected(id=crs_id)
             if crs_type == "ProjectedCRS"
-            else GeographicCRS(id=crs_id)
+            else ReferenceSystem.geographic(id=crs_id)
         )
         connections.append(
             ReferenceSystemConnection(coordinates=("x", "y"), system=horizontal)
@@ -1664,14 +1667,18 @@ def _build_referencing(
 
     if roles["z"] is not None:
         connections.append(
-            ReferenceSystemConnection(coordinates=("z",), system=VerticalCRS())
+            ReferenceSystemConnection(
+                coordinates=("z",), system=ReferenceSystem.vertical()
+            )
         )
 
     if roles["t"] is not None:
         connections.append(
             ReferenceSystemConnection(
                 coordinates=("t",),
-                system=TemporalRS(calendar=_calendar(dataset[roles["t"]])),
+                system=ReferenceSystem.temporal(
+                    calendar=_calendar(dataset[roles["t"]])
+                ),
             )
         )
 

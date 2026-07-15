@@ -13,8 +13,8 @@ from covjson_msgspec import (
     NdArray,
     ObservedProperty,
     Parameter,
+    ReferenceSystem,
     ReferenceSystemConnection,
-    TemporalRS,
     TiledNdArray,
     TileSet,
     Unit,
@@ -80,7 +80,8 @@ def test_standard_calendar_time_axis_parsed_to_datetime() -> None:
             t=Axis.listed(("2020-01-01T00:00:00Z", "2020-01-02T00:00:00Z")),
             referencing=(
                 ReferenceSystemConnection(
-                    coordinates=("t",), system=TemporalRS(calendar="Gregorian")
+                    coordinates=("t",),
+                    system=ReferenceSystem.temporal(calendar="Gregorian"),
                 ),
             ),
         ),
@@ -113,7 +114,8 @@ def test_naive_time_divergence_bridge_parses_but_resolve_rejects() -> None:
             t=Axis.listed((naive, "2020-01-02T00:00:00")),
             referencing=(
                 ReferenceSystemConnection(
-                    coordinates=("t",), system=TemporalRS(calendar="Gregorian")
+                    coordinates=("t",),
+                    system=ReferenceSystem.temporal(calendar="Gregorian"),
                 ),
             ),
         ),
@@ -137,7 +139,8 @@ def test_non_standard_calendar_time_stays_strings() -> None:
             t=Axis.listed(("2020-01-01", "2020-01-30")),
             referencing=(
                 ReferenceSystemConnection(
-                    coordinates=("t",), system=TemporalRS(calendar="360_day")
+                    coordinates=("t",),
+                    system=ReferenceSystem.temporal(calendar="360_day"),
                 ),
             ),
         ),
@@ -448,7 +451,8 @@ def test_collection_inherits_parameters_and_referencing() -> None:
         domain_type="PointSeries",
         referencing=(
             ReferenceSystemConnection(
-                coordinates=("t",), system=TemporalRS(calendar="Gregorian")
+                coordinates=("t",),
+                system=ReferenceSystem.temporal(calendar="Gregorian"),
             ),
         ),
     )
