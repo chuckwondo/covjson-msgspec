@@ -1,6 +1,14 @@
-"""Shared msgspec configuration for every CoverageJSON model struct."""
+"""Shared msgspec configuration and wire types for the CoverageJSON model.
+
+Spec: [JSON-LD `@context`][spec-jsonld] (modelled by `JsonLdContext`).
+
+[spec-jsonld]: https://github.com/covjson/specification/blob/master/spec.md#8-json-ld
+"""
 
 from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
 
 import msgspec
 
@@ -38,3 +46,17 @@ class CovJSONStruct(
     immutable and hashable; mapping members stay ``dict`` because there is no
     msgspec-decodable frozen mapping.
     """
+
+
+# The value shape of a JSON-LD ``@context`` (CoverageJSON section 8): an IRI
+# string, an inline context object, an array mixing those, or ``null`` (a context
+# reset). Parsed to native Python and preserved verbatim, never interpreted (no
+# JSON-LD resolution or default-context application). Section 8 places it at the
+# document root, but the root-able structs are reused in nested positions, so a
+# nested ``@context`` is preserved there too rather than dropped.
+# ``Mapping`` rather than ``dict``: msgspec still builds a plain ``dict`` on
+# decode, but the read-only annotation lets a type checker flag mutation of the
+# frozen struct member that holds it.
+JsonLdContext = (
+    str | Mapping[str, Any] | tuple[str | Mapping[str, Any] | None, ...] | None
+)

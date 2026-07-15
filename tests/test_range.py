@@ -405,6 +405,32 @@ def test_assemble_async_does_not_swallow_cancellation() -> None:
         asyncio.run(tiled.assemble_async(fetch, strategy=collect_all))
 
 
+@pytest.mark.parametrize(
+    ("blob", "typ"),
+    [
+        (
+            b'{"type":"NdArray","@context":"https://ex/ctx",'
+            b'"dataType":"float","values":[1.0]}',
+            NdArray,
+        ),
+        (
+            b'{"type":"TiledNdArray","@context":"https://ex/ctx","dataType":"float",'
+            b'"axisNames":["x"],"shape":[1],"tileSets":[]}',
+            TiledNdArray,
+        ),
+    ],
+)
+def test_standalone_range_root_preserves_context(
+    blob: bytes, typ: type[NdArray] | type[TiledNdArray]
+) -> None:
+    # NdArray / TiledNdArray may stand alone as a document root (spec section 6),
+    # so each carries the root JSON-LD @context (section 8).
+    root = msgspec.json.decode(blob, type=typ)
+
+    assert root.context == "https://ex/ctx"
+    assert msgspec.json.decode(msgspec.json.encode(root), type=typ) == root
+
+
 def _tile_store(
     full: "np.ndarray", tiled: TiledNdArray, tileset: int
 ) -> dict[str, bytes]:

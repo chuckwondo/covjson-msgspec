@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any, Final, Literal
 import msgspec
 from msgspec import UNSET, UnsetType
 
-from covjson_msgspec._base import CovJSONStruct
+from covjson_msgspec._base import CovJSONStruct, JsonLdContext
 from covjson_msgspec._best_effort import fail_fast
 from covjson_msgspec.domain import Domain
 from covjson_msgspec.parameter import Parameter, ParameterGroup
@@ -87,6 +87,17 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
     'Point'
     >>> back.ranges["t"].values
     (280.0,)
+
+    A root JSON-LD ``@context`` (spec section 8) is preserved verbatim through
+    the round trip; see `JsonLdContext` for the value shapes:
+
+    >>> cov = Coverage(
+    ...     domain="http://ex/domain.covjson",
+    ...     ranges={},
+    ...     context="https://covjson.org/context.jsonld",
+    ... )
+    >>> msgspec.json.decode(msgspec.json.encode(cov), type=Coverage).context
+    'https://covjson.org/context.jsonld'
     """
 
     domain: Domain | str
@@ -95,6 +106,8 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
     domain_type: str | UnsetType = UNSET
     parameters: dict[str, Parameter] | UnsetType = UNSET
     parameter_groups: tuple[ParameterGroup, ...] | UnsetType = UNSET
+    # JSON-LD @context (spec section 8); see `JsonLdContext`.
+    context: JsonLdContext | UnsetType = msgspec.field(name="@context", default=UNSET)
 
     @property
     def effective_domain_type(self) -> str | None:
@@ -423,6 +436,8 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
     parameters: dict[str, Parameter] | UnsetType = UNSET
     parameter_groups: tuple[ParameterGroup, ...] | UnsetType = UNSET
     referencing: tuple[ReferenceSystemConnection, ...] = ()
+    # JSON-LD @context (spec section 8); see `JsonLdContext`.
+    context: JsonLdContext | UnsetType = msgspec.field(name="@context", default=UNSET)
 
     def resolved_coverages(self) -> tuple[Coverage, ...]:
         """Return the member coverages with collection-level fields inherited.

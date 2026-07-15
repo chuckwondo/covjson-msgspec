@@ -156,3 +156,16 @@ def test_domain_decodes_axes() -> None:
     x = dom.x
     assert x is not None
     assert x.coordinate_values == (1.0,)
+
+
+def test_standalone_domain_root_preserves_context() -> None:
+    # A Domain may stand alone as a document root (spec section 6), so it carries
+    # the root JSON-LD @context (section 8).
+    blob = (
+        b'{"type":"Domain","@context":"https://covjson.org/context.jsonld",'
+        b'"domainType":"Point","axes":{"x":{"values":[1.0]}}}'
+    )
+    dom = msgspec.json.decode(blob, type=Domain)
+
+    assert dom.context == "https://covjson.org/context.jsonld"
+    assert msgspec.json.decode(msgspec.json.encode(dom), type=Domain) == dom

@@ -21,7 +21,10 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Self
 
-from covjson_msgspec._base import CovJSONStruct
+import msgspec
+from msgspec import UNSET, UnsetType
+
+from covjson_msgspec._base import CovJSONStruct, JsonLdContext
 from covjson_msgspec.axis import Axis, PolygonCoords, RingCoords
 from covjson_msgspec.referencing import ReferenceSystemConnection
 
@@ -63,6 +66,8 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
     axes: dict[str, Axis]
     domain_type: str | None = None
     referencing: tuple[ReferenceSystemConnection, ...] = ()
+    # JSON-LD @context (spec section 8); see `JsonLdContext`.
+    context: JsonLdContext | UnsetType = msgspec.field(name="@context", default=UNSET)
 
     @property
     def x(self) -> Axis | None:

@@ -31,8 +31,9 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, Final, Literal, TypeVar, cast
 
 import msgspec
+from msgspec import UNSET, UnsetType
 
-from covjson_msgspec._base import CovJSONStruct
+from covjson_msgspec._base import CovJSONStruct, JsonLdContext
 from covjson_msgspec._best_effort import (
     FailureKind,
     FailureStrategy,
@@ -132,6 +133,8 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
     values: tuple[_Scalar | None, ...]
     shape: tuple[int, ...] = ()
     axis_names: tuple[str, ...] = ()
+    # JSON-LD @context (spec section 8); see `JsonLdContext`.
+    context: JsonLdContext | UnsetType = msgspec.field(name="@context", default=UNSET)
 
     def values_as(self, dtype: type[_ScalarT]) -> tuple[_ScalarT | None, ...]:
         """Project ``values`` to a precise element type, raising on a mismatch.
@@ -512,6 +515,8 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
     axis_names: tuple[str, ...]
     shape: tuple[int, ...]
     tile_sets: tuple[TileSet, ...]
+    # JSON-LD @context (spec section 8); see `JsonLdContext`.
+    context: JsonLdContext | UnsetType = msgspec.field(name="@context", default=UNSET)
 
     def __post_init__(self) -> None:
         # Checked at construction (unlike NdArray, which defers its shape/value
