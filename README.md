@@ -13,6 +13,12 @@ that aims for:
   of wide mutually-exclusive constructors, and a public API verified across
   multiple type checkers.
 
+## Documentation
+
+Full documentation, including the capability guides, the API reference, and the
+design decisions, lives under [`docs/`](docs/index.md). Start with
+[Home](docs/index.md) and [Getting started](docs/getting-started.md).
+
 ## Design
 
 The library follows a **thin core + opt-in bridges** architecture: the core
