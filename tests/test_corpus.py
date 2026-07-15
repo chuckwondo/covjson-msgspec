@@ -51,7 +51,7 @@ def test_playground_corpus_is_present() -> None:
 def test_playground_document_round_trips(path: pathlib.Path) -> None:
     obj = decode(path.read_bytes())
     # decode -> encode -> decode is stable once the object is canonical (the
-    # first decode coerces lists to tuples and drops foreign members).
+    # first decode coerces lists to tuples and drops custom members).
     assert decode(encode(obj)) == obj
 
 

@@ -48,7 +48,7 @@ the same annotations, so nothing here forecloses it.
 
 **Decode to an immutable mapping via a `dec_hook`.** Rejected: a custom decode
 path is a shadow codec kept in lockstep with the type structure forever, the same
-standing cost [ADR-0012](0012-foreign-members-dropped-on-decode.md) rejected for
+standing cost [ADR-0012](0012-custom-members-dropped-on-decode.md) rejected for
 extension capture. Not worth an immutability nicety.
 
 **A `MappingProxyType` field.** Rejected: msgspec cannot decode to it, so it would

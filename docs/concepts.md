@@ -300,12 +300,11 @@ request. Language-tagged text (`I18n` maps such as `{"en": "Air temperature"}`) 
 validated [with langcodes](adr/0005-langcodes-core-dependency.md).
 
 The deliberate, permanent exception is
-[foreign members](adr/0012-foreign-members-dropped-on-decode.md), the GeoJSON name
-this library uses for what the spec calls [custom members][spec-custom]: extension
-keys the spec permits but does not define, which decode drops rather than captures.
-A modeled spec member survives a decode / encode round trip; a custom member does
-not. To relay a document with its extensions intact, forward its raw bytes instead
-of decoding and re-encoding.
+[custom members](adr/0012-custom-members-dropped-on-decode.md)
+([§7.1][spec-custom]): extension keys the spec permits but does not define, which
+decode drops rather than captures. A modeled spec member survives a decode /
+encode round trip; a custom member does not. To relay a document with its
+extensions intact, forward its raw bytes instead of decoding and re-encoding.
 
 The root JSON-LD [`@context`][spec-8] (§8) is a modeled member: it round-trips
 faithfully (an IRI string, an inline context object, an array of those, or

@@ -1,4 +1,4 @@
-# ADR-0012: Foreign members dropped on decode; lossless relay forwards raw bytes
+# ADR-0012: Custom members dropped on decode; lossless relay forwards raw bytes
 
 ## Status
 
@@ -12,16 +12,15 @@ byte-faithful for every spec-defined member, but any other member is silently
 dropped: `decode -> encode` is lossy for it. The loss happens at the core,
 before any export bridge, which is the tension with the byte-faithful tenet.
 
-A *foreign member* is a JSON object member whose key is not one the matching
+A *custom member* is a JSON object member whose key is not one the matching
 struct declares, so on decode msgspec has nowhere to put it and discards it. The
-CoverageJSON spec calls these *custom members* and gives them a home in
-[Section 7, Extensions][spec-7]; "foreign member" is the term GeoJSON (RFC 7946,
-which CoverageJSON builds on) uses for the same idea, and the one this codebase
-uses. Their one naming rule, [Section 7.1][spec-7.1], is that a custom member's
-name SHOULD be a compact URI of the form `"prefix:suffix"`. Neither corpus
-example obeys it (both `preferredColor` and `cs` are bare names), so the very
-documents that motivate this ADR carry technically non-conformant extensions:
-exactly why an implementation must tolerate rather than trust them.
+CoverageJSON spec permits these as *custom members* in
+[Section 7, Extensions][spec-7] and defines them in [Section 7.1][spec-7.1]:
+their one naming rule is that the name SHOULD be a compact URI of the form
+`"prefix:suffix"`. Neither corpus example obeys it (both `preferredColor` and
+`cs` are bare names), so the very documents that motivate this ADR carry
+technically non-conformant extensions: exactly why an implementation must
+tolerate rather than trust them.
 
 Two such members appear in the vendored corpus, and they are two different
 things:
@@ -46,7 +45,7 @@ the types we happen to have observed is therefore incomplete by construction.
 ## Decision
 
 **The typed model is a deliberately lossy projection of the document, not a
-byte-preserving store; foreign members are dropped on decode and we add no
+byte-preserving store; custom members are dropped on decode and we add no
 capture mechanism.** Decode stays permissive (accept and ignore), never
 `forbid_unknown_fields` (accept and reject).
 
@@ -60,7 +59,7 @@ the right shape.
 
 ## Alternatives considered
 
-**`forbid_unknown_fields=True` (reject documents carrying foreign members).**
+**`forbid_unknown_fields=True` (reject documents carrying custom members).**
 Rejected. The spec explicitly permits extensions; rejecting a valid document is
 strictly worse for interoperability than accepting and ignoring it, and it
 would make us reject the spec's own [Section 5.1.4][spec-5.1.4] examples.
@@ -73,7 +72,7 @@ completeness.
 
 **A base-struct `extras` + a bespoke recursive codec (complete capture).**
 Deferred, not refuted. The intent is an `extras: dict[str, msgspec.Raw]` on
-`CovJSONStruct` carrying every foreign member at every node, closing the leak.
+`CovJSONStruct` carrying every custom member at every node, closing the leak.
 The field alone does not achieve this: msgspec has no unknown-field catch-all
 (no equivalent to pydantic's `extra="allow"`), so a declared `extras` member
 captures only a wire key literally named `extras`, and every other unknown key
@@ -88,7 +87,7 @@ back as siblings requires `to_builtins` per node merged with that node's
 the type structure forever. That standing maintenance coupling is not worth
 paying for a hypothetical consumer. It is the right design *only* for a caller
 that must decode a document, modify a typed field, and re-encode while
-preserving foreign siblings, and no such consumer exists today.
+preserving custom siblings, and no such consumer exists today.
 
 **Retain the raw parsed tree as the source of truth, the typed model as a
 view.** Rejected. The model is `frozen`, so "modifying" a value means
@@ -99,8 +98,9 @@ ambiguous.
 **Runtime `defstruct` subclass-threading (a user-side typed-capture helper).**
 Explored with a working prototype, rejected for shipping. msgspec builds struct
 subclasses at runtime (`msgspec.defstruct(bases=...)`), so a helper can take a
-target struct plus the foreign fields to add, rebuild every ancestor along the
-containment path (decode dispatches on the declared field type, so each parent
+target struct plus the custom-member fields to add, rebuild every ancestor
+along the containment path (decode dispatches on the declared field type, so
+each parent
 must be re-typed to reference the subclass one rung below), and return a custom
 root union to decode against. The prototype does this in ~110 lines with no new
 dependency, reusing the existing encoder unchanged (encode is structural). It is
@@ -116,7 +116,7 @@ supported typed path is instead manual subclassing (see the consequence below).
 
 ## Consequences
 
-- `decode -> encode` is lossy for foreign members. This is recorded as the one
+- `decode -> encode` is lossy for custom members. This is recorded as the one
   carve-out to the byte-faithful tenet (CLAUDE.md) and is the documented
   behavior of the corpus round-trip test.
 - `omit_defaults` (on the `CovJSONStruct` base) is a second, milder source of
@@ -127,7 +127,7 @@ supported typed path is instead manual subclassing (see the consequence below).
   re-encodes as an absent member. This loses nothing: the round-tripped object
   is unchanged (`decode(encode(x)) == x`), and CoverageJSON treats an absent
   optional and an explicit-default one as equivalent. It differs in kind from a
-  dropped foreign member, whose value is absent from the decoded object itself
+  dropped custom member, whose value is absent from the decoded object itself
   and unrecoverable. The motive is the CoverageJSON wire idiom (optional
   members are omitted, never emitted as `null`), yielding one canonical,
   null-free encoding; reduced size is incidental.
@@ -135,18 +135,18 @@ supported typed path is instead manual subclassing (see the consequence below).
   reformat the raw `dict[str, msgspec.Raw]` tree), never `decode -> encode`.
 - [Section 5.1.4][spec-5.1.4] `cs` / `datum` inline CRS definitions stay
   unmodeled; CRSs are identified by `id`.
-- The supported way to capture a foreign member *with full static typing* is to
+- The supported way to capture a custom member *with full static typing* is to
   declare the subclass chain by hand: subclass the target and every ancestor on
   its path to a root, then build a `msgspec.json.Decoder` over a custom root
-  union; the existing encoder needs no change. Real-world foreign members are
+  union; the existing encoder needs no change. Real-world custom members are
   shallow (`preferredColor` on a `Category` is the deepest observed, at four),
   so the chain is short, and the decoded types stay fully typed. A how-to
   documents this pattern. A codegen helper that *emits* that subclass source
   (keeping the types static while automating the boilerplate) is a deferred
-  middle ground, worth building only if a genuinely deep foreign member makes
+  middle ground, worth building only if a genuinely deep custom member makes
   the hand-written chain painful.
 - Revisit gate: a concrete consumer that must decode, modify a typed field, and
-  re-encode while retaining foreign siblings reopens the deferred base-struct
+  re-encode while retaining custom siblings reopens the deferred base-struct
   `extras` design above. Absent that, the projection stays lossy on purpose.
 
 [ADR-0002]: 0002-opt-in-tiered-validation.md

@@ -59,7 +59,7 @@ CLAUDE.md.
 - [ADR-0011](0011-axis-ordering-checker-seam.md): the monotonic-axis MUST behind
   an injected `AxisOrderChecker` seam with a conservative `require_monotonic`
   default; a single total classifier decides which reference systems order
-- [ADR-0012](0012-foreign-members-dropped-on-decode.md): foreign members
+- [ADR-0012](0012-custom-members-dropped-on-decode.md): custom members
   (spec extensions) are dropped on decode and not captured; the typed model is a
   lossy projection, and lossless relay forwards raw bytes rather than
   round-tripping
