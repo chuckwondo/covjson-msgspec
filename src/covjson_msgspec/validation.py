@@ -2800,7 +2800,9 @@ def _parameter_group_i18n_issues(
 
 
 def _validate_parameter_groups(
-    coverage: Coverage, parameters: dict[str, Parameter], path: tuple[str | int, ...]
+    coverage: Coverage,
+    parameters: Mapping[str, Parameter],
+    path: tuple[str | int, ...],
 ) -> Iterator[Issue]:
     """Yield each parameter group's references to unknown members.
 
@@ -2836,7 +2838,7 @@ def _validate_parameter_groups(
 def _validate_ranges(
     coverage: Coverage,
     domain: Domain | str,
-    parameters: dict[str, Parameter] | None,
+    parameters: Mapping[str, Parameter] | None,
     path: tuple[str | int, ...],
     check_values: bool,
 ) -> Iterator[Issue]:

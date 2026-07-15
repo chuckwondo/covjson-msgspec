@@ -19,6 +19,7 @@ Spec: [Coverage][spec-coverage] and [CoverageCollection][spec-collection] object
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Final, Literal
 
 import msgspec
@@ -32,8 +33,6 @@ from covjson_msgspec.range import NdArray, TiledNdArray
 from covjson_msgspec.referencing import ReferenceSystemConnection
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
     import geopandas as gpd
     import pandas as pd
     import xarray as xr
@@ -101,10 +100,10 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
     """
 
     domain: Domain | str
-    ranges: dict[str, Range]
+    ranges: Mapping[str, Range]
     id: str | None = None
     domain_type: str | UnsetType = UNSET
-    parameters: dict[str, Parameter] | UnsetType = UNSET
+    parameters: Mapping[str, Parameter] | UnsetType = UNSET
     parameter_groups: tuple[ParameterGroup, ...] | UnsetType = UNSET
     # JSON-LD @context (spec section 8); see `JsonLdContext`.
     context: JsonLdContext | UnsetType = msgspec.field(name="@context", default=UNSET)
@@ -433,7 +432,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
 
     coverages: tuple[Coverage, ...]
     domain_type: str | UnsetType = UNSET
-    parameters: dict[str, Parameter] | UnsetType = UNSET
+    parameters: Mapping[str, Parameter] | UnsetType = UNSET
     parameter_groups: tuple[ParameterGroup, ...] | UnsetType = UNSET
     referencing: tuple[ReferenceSystemConnection, ...] = ()
     # JSON-LD @context (spec section 8); see `JsonLdContext`.

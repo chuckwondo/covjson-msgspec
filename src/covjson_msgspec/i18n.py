@@ -4,22 +4,22 @@ In CoverageJSON, human-readable text members (``label``, ``description``) are
 *language maps*: JSON objects whose keys are RFC 5646 language tags and whose
 values are the corresponding strings. The special tag ``"und"`` (undetermined)
 labels text whose language is unknown. The spec has no bare-string form for
-these members, so we model i18n as ``dict[str, str]`` and provide `i18n` to
-build one without hand-writing the mapping.
+these members, so we model i18n as ``Mapping[str, str]`` (a read-only annotation
+over a runtime ``dict``) and provide `i18n` to build one without hand-writing the
+mapping.
 
 Spec: [i18n objects](https://github.com/covjson/specification/blob/master/spec.md#2-i18n-objects).
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 # A CoverageJSON i18n object: language tag -> string ("und" if undetermined).
-# Deliberately a plain ``dict`` (not a NewType): it is exactly a JSON object and
-# users benefit from the familiar dict API. This is also why structs carrying a
-# label/description are usually unhashable (a dict member is mutable).
-#
+# ``Mapping`` (read-only) rather than ``dict``: see `CovJSONStruct` for why.
 # Plain-assignment alias (not the PEP 695 ``type`` statement, which needs 3.12+;
 # our floor is 3.11).
-I18n = dict[str, str]
+I18n = Mapping[str, str]
 
 
 def i18n(text: str | None = None, /, **languages: str) -> I18n:
@@ -59,14 +59,8 @@ def i18n(text: str | None = None, /, **languages: str) -> I18n:
         ...
     ValueError: i18n() requires `text` or at least one language
     """
-    result: I18n = {}
-
-    if text is not None:
-        result["und"] = text
-
-    result.update(languages)
-
-    if not result:
+    # Build in a mutable `dict`; the `I18n` (read-only `Mapping`) return widens it.
+    if not (result := languages if text is None else {"und": text} | languages):
         msg = "i18n() requires `text` or at least one language"
         raise ValueError(msg)
 

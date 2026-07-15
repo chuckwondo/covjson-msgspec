@@ -18,7 +18,7 @@ specification (see `covjson_msgspec.validation`).
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Self
 
 import msgspec
@@ -63,7 +63,7 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
     (1.0,)
     """
 
-    axes: dict[str, Axis]
+    axes: Mapping[str, Axis]
     domain_type: str | None = None
     referencing: tuple[ReferenceSystemConnection, ...] = ()
     # JSON-LD @context (spec section 8); see `JsonLdContext`.

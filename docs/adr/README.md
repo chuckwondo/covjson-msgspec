@@ -75,6 +75,10 @@ CLAUDE.md.
   classify temporal values by calendar + container range, not via `resolve`;
   the three paths have different codomains, so there is no single classifier to
   unify (resolves the ADR-0008 follow-up as "will not route")
+- [ADR-0016](0016-readonly-mapping-members.md): frozen structs' mapping members
+  are typed read-only `Mapping` (runtime stays `dict`), so a checker rejects
+  in-place mutation at zero runtime cost; a `frozendict` runtime is deferred to
+  #117, and return types are deliberately not swept
 
 Some decisions are recorded in ADRs that land with their implementation rather
 than here; see the issue tracker for the in-flight set.

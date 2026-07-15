@@ -43,8 +43,11 @@ class CovJSONStruct(
       explicit per-field ``name=``. (Inherited by subclasses.)
 
     Sequence members are modelled as ``tuple`` rather than ``list`` so they are
-    immutable and hashable; mapping members stay ``dict`` because there is no
-    msgspec-decodable frozen mapping.
+    immutable and hashable. Mapping members are typed as a read-only ``Mapping``:
+    msgspec still builds a runtime ``dict``, but the annotation stops a caller
+    mutating a frozen struct's mapping in place. That runtime ``dict`` is itself
+    mutable, so a struct carrying a mapping member stays unhashable (a
+    genuinely-immutable frozen-mapping runtime is a later upgrade).
     """
 
 
