@@ -68,6 +68,41 @@ three of five references resolve yields those three in the report alongside two
 failure records, and the caller chose up front whether the fourth failure should
 stop the batch.
 
+## Immutable by default, statically enforced
+
+A `CovJSONStruct` is `frozen=True`, which stops an attribute being rebound. But
+`frozen` says nothing about the *contents* of a container a field holds, so a
+`dict` member leaked mutation: `coverage.ranges["x"] = ...` altered a
+supposedly-frozen coverage with no error. Every mapping member is therefore
+typed as a read-only `Mapping`
+([ADR-0016](../adr/0016-readonly-mapping-members.md)): msgspec still builds a
+runtime `dict`, so decode, encode, and equality are byte-for-byte unchanged, but
+`coverage.ranges["x"] = ...`, `domain.axes.pop(...)`, and
+`parameter.label["fr"] = ...` are now type errors. Sequence members were already
+immutable at runtime as `tuple` (`NdArray.values` / `shape` / `axisNames`,
+`Domain.referencing`, `Coverage.parameterGroups`), and the constant lookup
+tables are `frozenset`.
+
+The rule is one principle across every mutable builtin, statically enforced
+rather than trusted:
+
+| Mutable | Immutable member / value | Read-only parameter |
+| --- | --- | --- |
+| `list` | `tuple` | `Sequence` / `Iterable` |
+| `dict` | `Mapping` (a `frozendict` runtime is deferred to [#117](https://github.com/chuckwondo/covjson-msgspec/issues/117)) | `Mapping` |
+| `set` | `frozenset` | `AbstractSet` |
+| `bytes` | already immutable | `bytes` |
+
+Two escape hatches keep the rule honest. A mutable builtin is fine as a *local
+accumulator* inside a function, where nothing outside ever sees it; and a
+*return handed to external plumbing* stays concrete because the consumer
+requires it (the FastAPI `openapi()` hook merges its dict in place, `xarray`'s
+`attrs=` wants a real dict, GeoJSON features are dicts). The distinction is
+consumer-driven, not reflexive: a builder that returns a read-only *domain* type
+is kept, so `i18n("Air temperature", fr="Température")` hands back an `I18n` (a
+`Mapping`) that is immutable from the moment it is built through every field that
+stores it.
+
 ## Opt-in tiered validation, not `__post_init__`
 
 Two rules land at construction, in `__post_init__`, because a violation leaves the

@@ -23,6 +23,18 @@ effects. Effects (I/O, raising, sleeping, materializing a stream) live in a thin
 shell at the edges: the codec entry points, `validate`'s `mode=`, and the injected
 fetcher. Errors are values first, with an opt-in raise confined to the edge.
 
+## Immutable by default, statically enforced
+
+The model is immutable data, and the type system enforces it: mutating a value
+is a type error, not a convention left to trust. Struct instances are `frozen`;
+sequence members are `tuple`, not `list`; mapping members and read-only
+parameters are `Mapping`, not `dict`; sets are `frozenset` or the read-only
+`AbstractSet`, not `set`. A mutable builtin is confined to two places: a local
+accumulator inside a function, and a return handed to external plumbing that
+needs a concrete type. So a value read from the model, or produced by a domain
+constructor like `i18n()`, is safe to share and cannot be corrupted by a caller.
+See [ADR-0016](../adr/0016-readonly-mapping-members.md).
+
 ## Opt-in tiered validation, not `__post_init__`
 
 `__post_init__` is only for local, O(1) invariants about a single object, and only
