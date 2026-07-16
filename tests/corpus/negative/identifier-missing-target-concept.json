@@ -1,0 +1,13 @@
+{
+  "type": "Domain",
+  "domainType": "Grid",
+  "axes": {
+    "x": { "values": [1.0, 2.0] },
+    "y": { "values": [3.0, 4.0] },
+    "cat": { "values": ["urn:example:category:a"] }
+  },
+  "referencing": [
+    { "coordinates": ["x", "y"], "system": { "type": "GeographicCRS" } },
+    { "coordinates": ["cat"], "system": { "type": "IdentifierRS" } }
+  ]
+}

@@ -17,6 +17,27 @@ or renumbered.
 `template.md` is the copyable starting point and is intentionally not numbered,
 so it never consumes a sequence number.
 
+## What "append-only" protects
+
+The decision and its rationale, not the vocabulary. An accepted ADR is never
+renumbered or deleted, and a decision that is later reversed is superseded
+rather than rewritten, so the record of what was chosen (and why) survives even
+once it stops being true.
+
+Everything else is maintenance. An ADR is amended in place to sweep a rename, so
+the record still resolves to names that exist (#115 renamed
+[ADR-0012](0012-custom-members-dropped-on-decode.md), file included, and
+rewrote its Context to adopt the spec's "custom member" over "foreign member"),
+to sharpen its reasoning as a decision proves itself (#76 added a paragraph to
+[ADR-0002](0002-opt-in-tiered-validation.md) distinguishing which local
+invariants belong at construction), or to record a rejected alternative
+surfaced afterwards.
+
+The test: does the edit change what the ADR decided, or why? If not, it is
+maintenance; make it. If so, supersede instead. Renaming a code an ADR cites
+leaves its decision untouched, so sweep it; a stale identifier only makes the
+record a dead reference.
+
 ## Format
 
 Each ADR follows the lightweight template in [template.md](template.md):
