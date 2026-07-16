@@ -22,6 +22,16 @@ each carrying its substitution values as typed fields, a human message via
 concrete variant (``match`` / `~typing.assert_never` for exhaustiveness, or
 ``isinstance`` to read a variant's typed payload) and use ``code`` for stringly
 work (aggregation, logging, the wire tag).
+
+A ``code`` is ``<category>.<key>``, and the category names the object whose rule
+was broken, not the object it was reached through. So ``axis.*`` covers the Spec
+6.1.1 rules a single axis object must satisfy (its values ordered monotonically),
+while ``domain.*`` covers the domain-type rules over a domain's axis *set* (a
+required axis is absent, an axis the type wants single-valued carries several)
+and the rules about the domain itself. An axis is only ever reached through a
+domain, so what settles the category is what the rule is *about*: ``ndarray.*``,
+``range.*``, ``i18n.*``, and ``parameter-group.*`` follow the same grain.
+
 Pass ``mode="raise"`` to raise a `CovJSONValidationError` instead when any
 error-severity issue is found, and ``check_values=True`` to add the
 value-scanning checks that are skipped by default (each value matching its
@@ -204,23 +214,6 @@ class DomainExtraAxisNotSingle(_Issue, frozen=True, tag="domain.extra-axis-not-s
         )
 
 
-class DomainAxisNotMonotonic(_Issue, frozen=True, tag="domain.axis-not-monotonic"):
-    """A primitive axis's ``values`` are not ordered monotonically.
-
-    Spec 6.1.1 (Axis Objects): when an axis is ``primitive`` and its reference
-    system defines a natural ordering, its ``values`` MUST be ordered
-    monotonically (increasing or decreasing), so this is an error (per ADR-0002).
-    Which systems order, and whether equal-adjacent values are permitted, is the
-    default policy of `require_monotonic`, replaceable via `validate`'s
-    ``axis_order_checker``.
-    """
-
-    axis: str
-
-    def __str__(self) -> str:
-        return f"axis {self.axis!r} values must be ordered monotonically"
-
-
 class DomainMissingReferencing(_Issue, frozen=True, tag="domain.missing-referencing"):
     """The domain carries no ``referencing`` in scope."""
 
@@ -241,6 +234,23 @@ class DomainMissingDomainType(_Issue, frozen=True, tag="domain.missing-domain-ty
 
     def __str__(self) -> str:
         return "domain should have a 'domainType' member"
+
+
+class AxisNotMonotonic(_Issue, frozen=True, tag="axis.not-monotonic"):
+    """A primitive axis's ``values`` are not ordered monotonically.
+
+    Spec 6.1.1 (Axis Objects): when an axis is ``primitive`` and its reference
+    system defines a natural ordering, its ``values`` MUST be ordered
+    monotonically (increasing or decreasing), so this is an error (per ADR-0002).
+    Which systems order, and whether equal-adjacent values are permitted, is the
+    default policy of `require_monotonic`, replaceable via `validate`'s
+    ``axis_order_checker``.
+    """
+
+    axis: str
+
+    def __str__(self) -> str:
+        return f"axis {self.axis!r} values must be ordered monotonically"
 
 
 class TemporalMissingCalendar(_Issue, frozen=True, tag="temporal.missing-calendar"):
@@ -516,9 +526,9 @@ Issue = (
     | DomainAxisNotSingle
     | DomainCompositeDataType
     | DomainExtraAxisNotSingle
-    | DomainAxisNotMonotonic
     | DomainMissingReferencing
     | DomainMissingDomainType
+    | AxisNotMonotonic
     | TemporalMissingCalendar
     | IdentifierMissingTargetConcept
     | NdArrayShapeRank
@@ -721,8 +731,8 @@ def validate(
         are defined in the parameter's encoding (``range.invalid-category-code``),
         temporal values use a recommended lexical form
         (``temporal.lexical-form``), and each ordered primitive axis is monotonic
-        (``domain.axis-not-monotonic``). Off by default because it is
-        O(number of values).
+        (``axis.not-monotonic``). Off by default because it is O(number of
+        values).
     axis_order_checker
         The policy deciding whether a primitive axis's ``values`` are correctly
         ordered (only consulted when ``check_values=True``). Defaults to
@@ -1725,7 +1735,7 @@ def _axis_monotonic_issues(
     For every primitive (non-composite) value-listing axis, the axis-ordering
     policy is asked where the axis's ``values`` first break their required
     ordering, given the reference system governing the axis (``systems``). A
-    returned index becomes a `DomainAxisNotMonotonic` error pointing at that value;
+    returned index becomes an `AxisNotMonotonic` error pointing at that value;
     ``None`` means nothing to report. Regular (``start``/``stop``/``num``) axes are
     monotonic by construction and skipped without materializing. This is a
     value-scanning check, gated behind ``validate(check_values=True)``.
@@ -1752,7 +1762,7 @@ def _axis_monotonic_issues(
     Yields
     ------
     Issue
-        A `DomainAxisNotMonotonic` per offending axis, at its first breaking value.
+        An `AxisNotMonotonic` per offending axis, at its first breaking value.
 
     Examples
     --------
@@ -1794,9 +1804,7 @@ def _axis_monotonic_issues(
 
     # One error per axis that actually breaks, pointing at the breaking value.
     return (
-        DomainAxisNotMonotonic(
-            at=_ptr(path, "axes", name, "values", break_index), axis=name
-        )
+        AxisNotMonotonic(at=_ptr(path, "axes", name, "values", break_index), axis=name)
         for name, break_index in breaks
         if break_index is not None
     )

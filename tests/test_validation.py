@@ -34,6 +34,7 @@ from covjson_msgspec.referencing import (
     ResolvedReferenceSystem,
 )
 from covjson_msgspec.validation import (
+    AxisNotMonotonic,
     AxisOrderChecker,
     CoverageDomainTypeConflict,
     CoverageDomainTypeNotOmitted,
@@ -41,7 +42,6 @@ from covjson_msgspec.validation import (
     CoverageRangeAxisNotInDomain,
     CoverageRangeShapeMismatch,
     CoverageRangeWithoutParameter,
-    DomainAxisNotMonotonic,
     DomainAxisNotSingle,
     DomainCompositeDataType,
     DomainExtraAxisNotSingle,
@@ -1015,13 +1015,13 @@ def test_axis_monotonic_check_is_opt_in() -> None:
     domain = _axis_domain(Axis.listed((0.0, 2.0, 1.0)), ReferenceSystem.geographic())
 
     # Off by default: the value array is not scanned.
-    assert not any(i.code == "domain.axis-not-monotonic" for i in validate(domain))
+    assert not any(i.code == "axis.not-monotonic" for i in validate(domain))
 
     # Opt in: the reversal is flagged as an error, at the offending index.
     (issue,) = [
         i
         for i in validate(domain, check_values=True)
-        if isinstance(i, DomainAxisNotMonotonic)
+        if isinstance(i, AxisNotMonotonic)
     ]
     assert issue.axis == "x"
     assert issue.at == "/axes/x/values/2"
@@ -1158,7 +1158,7 @@ def test_malformed_temporal_value_is_not_double_reported() -> None:
     codes = {i.code for i in validate(domain, check_values=True)}
 
     assert "temporal.lexical-form" in codes
-    assert "domain.axis-not-monotonic" not in codes
+    assert "axis.not-monotonic" not in codes
 
 
 def test_identifier_axis_with_integer_codes_is_not_flagged() -> None:
@@ -1264,11 +1264,12 @@ def _describe(issue: Issue) -> str:
             | DomainAxisNotSingle()
             | DomainCompositeDataType()
             | DomainExtraAxisNotSingle()
-            | DomainAxisNotMonotonic()
             | DomainMissingReferencing()
             | DomainMissingDomainType()
         ):
             return "domain"
+        case AxisNotMonotonic():
+            return "axis"
         case NdArrayShapeRank() | NdArrayValueCount():
             return "ndarray"
         case (
@@ -1313,6 +1314,6 @@ def _axis_domain(axis: Axis, system: ReferenceSystem, coord: str = "x") -> Domai
 def _monotonic_paths(
     domain: Domain, checker: AxisOrderChecker | None = None
 ) -> list[str]:
-    """The ``at`` pointers of the domain's ``domain.axis-not-monotonic`` issues."""
+    """The ``at`` pointers of the domain's ``axis.not-monotonic`` issues."""
     issues = validate(domain, check_values=True, axis_order_checker=checker)
-    return [i.at for i in issues if i.code == "domain.axis-not-monotonic"]
+    return [i.at for i in issues if i.code == "axis.not-monotonic"]
