@@ -9,11 +9,12 @@ CoverageJSON, so validation must report no error-severity issues.
 
 import pathlib
 import tomllib
+from typing import cast, get_args
 
 import msgspec
 import pytest
 
-from covjson_msgspec import CoverageJSON, decode, encode, validate
+from covjson_msgspec import CoverageJSON, Issue, decode, encode, validate
 from covjson_msgspec.validation import Severity
 
 _CORPUS = pathlib.Path(__file__).parent / "corpus"
@@ -108,6 +109,22 @@ def test_negative_document_flags_expected_issues(path: pathlib.Path) -> None:
     # them negative is the validate() issues they carry.
     assert decode(encode(obj)) == obj
     assert _issues(obj) == _NEGATIVE_ISSUES[path.name]
+
+
+def test_every_issue_code_has_corpus_coverage() -> None:
+    # The corpora together must exercise every code `validate` can emit, so that
+    # each one is proven against a whole document and not only the hand-built
+    # structs of test_validation.py. Deriving the expectation from the `Issue`
+    # union (rather than listing it here) is what makes adding a finding kind
+    # without a document fail, instead of silently shrinking the corpus's reach.
+    covered = {code for codes in _VALIDATE_REJECT.values() for code in codes} | {
+        code for issues in _NEGATIVE_ISSUES.values() for code, _ in issues
+    }
+    emitted = {
+        cast("str", variant.__struct_config__.tag) for variant in get_args(Issue)
+    }
+
+    assert emitted == covered
 
 
 def _error_codes(obj: CoverageJSON) -> set[str]:

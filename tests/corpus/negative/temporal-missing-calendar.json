@@ -1,0 +1,13 @@
+{
+  "type": "Domain",
+  "domainType": "PointSeries",
+  "axes": {
+    "x": { "values": [1.0] },
+    "y": { "values": [2.0] },
+    "t": { "values": ["2020-01-01T00:00:00Z"] }
+  },
+  "referencing": [
+    { "coordinates": ["x", "y"], "system": { "type": "GeographicCRS" } },
+    { "coordinates": ["t"], "system": { "type": "TemporalRS" } }
+  ]
+}

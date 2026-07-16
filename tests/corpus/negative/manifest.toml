@@ -3,7 +3,8 @@
 # code that the vendored upstream corpora do not exercise. The harness
 # (tests/test_corpus.py) asserts that validate(check_values=True) reports exactly
 # the listed (code, severity) issues. Together with the covjson-pydantic
-# validate_reject fixtures these cover every code validation.py emits.
+# validate_reject fixtures these cover every code validation.py emits, which
+# test_every_issue_code_has_corpus_coverage enforces rather than trusting.
 
 [[case]]
 file = "ndarray-value-count.json"
@@ -92,3 +93,15 @@ issues = [{ code = "i18n.invalid-language-tag", severity = "error" }]
 [[case]]
 file = "i18n-empty.json"
 issues = [{ code = "i18n.empty", severity = "error" }]
+
+[[case]]
+file = "temporal-missing-calendar.json"
+issues = [{ code = "temporal.missing-calendar", severity = "error" }]
+
+[[case]]
+file = "identifier-missing-target-concept.json"
+issues = [{ code = "identifier.missing-target-concept", severity = "error" }]
+
+[[case]]
+file = "temporal-lexical-form.json"
+issues = [{ code = "temporal.lexical-form", severity = "warning" }]
