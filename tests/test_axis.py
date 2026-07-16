@@ -84,6 +84,38 @@ def test_composite_axis_requires_coordinates() -> None:
         Axis(values=((1.0, 2.0),), data_type="tuple")
 
 
+@pytest.mark.parametrize("data_type", ["tuple", "polygon"])
+def test_composite_axis_rejects_regular_form(data_type: str) -> None:
+    # A composite value MUST be an array (spec 6.1.1), but start/stop/num yields
+    # evenly spaced numbers, so no value satisfies both. Left unguarded, such an
+    # axis decodes clean, validate() stays silent, and the bridges read it as
+    # zero positions: a silent wrong answer rather than an error.
+    with pytest.raises(ValueError, match=f"a {data_type!r} axis requires `values`"):
+        Axis(start=0.0, stop=10.0, num=3, data_type=data_type, coordinates=("x", "y"))
+
+
+@pytest.mark.parametrize("data_type", ["tuple", "polygon"])
+def test_composite_axis_rejects_regular_form_on_decode(data_type: str) -> None:
+    blob = (
+        b'{"dataType": "%s", "coordinates": ["x", "y"],'
+        b' "start": 0, "stop": 10, "num": 3}' % data_type.encode()
+    )
+
+    with pytest.raises(
+        msgspec.ValidationError, match=f"a {data_type!r} axis requires `values`"
+    ):
+        msgspec.json.decode(blob, type=Axis)
+
+
+def test_custom_data_type_keeps_the_regular_form() -> None:
+    # The composite guard derives from the "tuple"/"polygon" value MUSTs, and the
+    # spec constrains no custom dataType's values, so no MUST reaches this axis:
+    # it is conformant and must keep loading.
+    ax = Axis(start=0.0, stop=10.0, num=3, data_type="knmi:range")
+
+    assert ax.coordinate_values == (0.0, 5.0, 10.0)
+
+
 def test_composite_tuple_axis_decodes() -> None:
     blob = (
         b'{"dataType": "tuple", "coordinates": ["t", "x", "y"],'
