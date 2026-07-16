@@ -208,10 +208,19 @@ and a *composite* axis carries tuples with named `coordinates`:
 
 The spec requires **exactly one** of `values` (a non-empty array) or the
 `start` / `stop` / `num` triple; if `num` is 1 then `start` and `stop` MUST be
-equal; a `tuple` or `polygon` axis MUST supply `coordinates`; and an optional
-`bounds` array may accompany any form. All three forms map to one permissive
-struct, because the forms share no `"type"` discriminator and msgspec cannot decode
-an untagged union of structs:
+equal; and an optional `bounds` array may accompany any form.
+
+Two rules we enforce are not stated that plainly, and it is worth being precise
+about where each comes from. A composite axis must list its `values`: that one
+the spec *entails* rather than states, because a `tuple` value MUST be an array
+while the `start` / `stop` / `num` notation yields only numbers, so nothing could
+satisfy both. A composite axis must supply `coordinates`: that one the spec does
+**not** support at all, since §6.1.1 gives `coordinates` a default ("a one-element
+array of the axis identifier") when it is missing. That guard is over-strict and
+is tracked in [#131](https://github.com/chuckwondo/covjson-msgspec/issues/131).
+
+All three forms map to one permissive struct, because the forms share no `"type"`
+discriminator and msgspec cannot decode an untagged union of structs:
 
 ```python
 class Axis(CovJSONStruct, frozen=True):
@@ -224,9 +233,11 @@ class Axis(CovJSONStruct, frozen=True):
     bounds: tuple[float | str, ...] | None = None
 
     def __post_init__(self) -> None:
-        # Enforce the spec-6.1.1 MUSTs that leave an axis uninterpretable if
-        # violated: exactly one of values / start-stop-num, non-empty values,
-        # num == 1 implies start == stop, tuple/polygon requires coordinates.
+        # Enforce the rules that leave an axis uninterpretable if violated:
+        # exactly one of values / start-stop-num, non-empty values, and
+        # num == 1 implies start == stop (all stated by 6.1.1); a composite
+        # axis lists its values (entailed by 6.1.1, not stated); a composite
+        # axis supplies coordinates (neither; see #131).
         ...
 ```
 
@@ -234,13 +245,20 @@ class Axis(CovJSONStruct, frozen=True):
   MUST (and the `num == 1 ⇒ start == stop` MUST) at construction. These are local,
   O(1) invariants that leave the axis uninterpretable if violated, so they belong
   at construction rather than in `validate()`
-  ([ADR-0002](adr/0002-opt-in-tiered-validation.md) draws that line).
+  ([ADR-0002](adr/0002-opt-in-tiered-validation.md) draws that line). Cheapness
+  alone is not the test: an axis whose `bounds` length is wrong is just as cheap
+  to spot, but stays interpretable (only the bounds are junk), so it is
+  `validate()`'s job.
 - You do not build an `Axis` by hand from raw fields: the named builders
   `Axis.listed`, `Axis.regular`, `Axis.tuple_`, and `Axis.polygon` construct a
   valid form directly, so an illegal combination is never expressible.
 - One struct with precise construction, rather than a subclass per form, is the
   same "typed projection over a faithful core" choice made for `NdArray`
-  ([ADR-0004](adr/0004-ndarray-single-non-generic-class.md)).
+  ([ADR-0004](adr/0004-ndarray-single-non-generic-class.md)). `Axis` deliberately
+  has no `refine()` counterpart to `ReferenceSystem`'s: a projection earns its
+  keep only where it recovers a guarantee nothing else enforces, and `Axis`
+  already enforces its own above
+  ([ADR-0018](adr/0018-typed-projection-scope.md)).
 
 ## NdArray
 

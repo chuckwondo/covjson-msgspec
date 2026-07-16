@@ -79,6 +79,10 @@ CLAUDE.md.
   are typed read-only `Mapping` (runtime stays `dict`), so a checker rejects
   in-place mutation at zero runtime cost; a `frozendict` runtime is deferred to
   #117, and return types are deliberately not swept
+- [ADR-0018](0018-typed-projection-scope.md): a typed projection earns its keep
+  only where it recovers a guarantee nothing else enforces, so neither `Axis` nor
+  `NdArray` gains a `refine()`; the three ADR-0004 instances differ by rule, and
+  the "name the repair" test places a check at construction or in `validate()`
 
 Some decisions are recorded in ADRs that land with their implementation rather
 than here; see the issue tracker for the in-flight set.
