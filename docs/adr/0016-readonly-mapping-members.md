@@ -54,6 +54,26 @@ extension capture. Not worth an immutability nicety.
 **A `MappingProxyType` field.** Rejected: msgspec cannot decode to it, so it would
 demand the same custom codec.
 
+**The converse for sequences: annotate sequence members `Sequence[T]` rather than
+`tuple[T, ...]`.** Rejected. msgspec decodes a variable-length `tuple` by building
+a `list` and converting it, so a `Sequence[T]` member (which decodes to a plain
+`list`, no conversion) is faster while the static type stays read-only: the same
+annotation-versus-runtime split this ADR draws for mappings, applied the other
+way. The payoff does not justify it. Measured on the real `NdArray.values` member
+at the largest size benchmarked (40,000 floats, A/B in one session on one
+machine): about 1495us to 1412us, or 1.07x, roughly 2ns per value; at a realistic
+axis length (200) the saving is under a microsecond. Against that it would give up
+two things permanently. It inverts the reasoning above: sequences are `tuple`
+because they *can* be immutable at runtime, whereas mappings are `Mapping` only
+because no decodable frozen mapping exists, so this trades a settled guarantee for
+the compromise mappings are stuck with. And it forecloses half of #117.
+`NdArray`, `Axis`, and `ReferenceSystemConnection` are hashable today precisely
+because every member is a `tuple`; a `list` member makes them permanently
+unhashable, so a `frozendict` runtime could no longer restore hashability across
+the model. The mutability is real rather than theoretical: `frozen=True` blocks
+rebinding but not `array.values[0] = 99.0`, which would falsify the design tenet's
+promise that a value read from the model cannot be corrupted by a caller.
+
 ## Consequences
 
 - Mutating a mapping member is a static error under mypy and basedpyright
