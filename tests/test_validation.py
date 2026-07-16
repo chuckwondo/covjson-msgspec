@@ -34,6 +34,7 @@ from covjson_msgspec.referencing import (
     ResolvedReferenceSystem,
 )
 from covjson_msgspec.validation import (
+    AxisBoundsLengthMismatch,
     AxisOrderChecker,
     CoverageDomainTypeConflict,
     CoverageDomainTypeNotOmitted,
@@ -1298,6 +1299,8 @@ def _describe(issue: Issue) -> str:
             return "parameter-group"
         case I18nInvalidLanguageTag() | I18nEmpty():
             return "i18n"
+        case AxisBoundsLengthMismatch():
+            return "axis"
         case _:
             assert_never(issue)
 
@@ -1316,3 +1319,107 @@ def _monotonic_paths(
     """The ``at`` pointers of the domain's ``domain.axis-not-monotonic`` issues."""
     issues = validate(domain, check_values=True, axis_order_checker=checker)
     return [i.at for i in issues if i.code == "domain.axis-not-monotonic"]
+
+
+def test_axis_bounds_length_mismatch_listed_axis() -> None:
+    # A listed axis with 3 values needs 6 bounds; 2 bounds triggers the check.
+    domain = Domain(
+        axes={
+            "x": Axis.listed((1.0, 2.0, 3.0), bounds=(1.0, 1.5)),
+            "y": Axis.regular(0, 10, 2, bounds=(0.0, 5.0, 5.0, 10.0)),
+        },
+        domain_type="Grid",
+        referencing=_REF,
+    )
+    issues = validate(domain)
+
+    bad = [i for i in issues if i.code == "axis.bounds-length-mismatch"]
+    assert len(bad) == 1
+    assert isinstance(bad[0], AxisBoundsLengthMismatch)
+    assert bad[0].axis == "x"
+    assert bad[0].expected == 6
+    assert bad[0].got == 2
+    assert bad[0].at == "/axes/x/bounds"
+
+
+def test_axis_bounds_length_mismatch_regular_axis() -> None:
+    # A regular axis with num=2 needs 4 bounds; 2 bounds triggers the check.
+    domain = Domain(
+        axes={
+            "x": Axis.regular(0.0, 10.0, 2, bounds=(0.0, 5.0)),  # 2 bounds, need 4
+            "y": Axis.regular(0, 10, 2),
+        },
+        domain_type="Grid",
+        referencing=_REF,
+    )
+    issues = validate(domain)
+
+    bad = [i for i in issues if i.code == "axis.bounds-length-mismatch"]
+    assert len(bad) == 1
+    assert bad[0].axis == "x"
+    assert bad[0].expected == 4
+    assert bad[0].got == 2
+
+
+def test_axis_bounds_too_long_is_reported() -> None:
+    # Extra bounds are silently ignored downstream; validate() should flag them.
+    domain = Domain(
+        axes={
+            "x": Axis.listed((1.0, 2.0), bounds=(0.5, 1.5, 1.5, 2.5, 2.5, 3.5, 3.5, 4.5)),
+            # 8 bounds for 2 values (need 4)
+        },
+        domain_type="Grid",
+        referencing=_REF,
+    )
+    issues = validate(domain)
+
+    bad = [i for i in issues if i.code == "axis.bounds-length-mismatch"]
+    assert len(bad) == 1
+    assert bad[0].axis == "x"
+    assert bad[0].expected == 4
+    assert bad[0].got == 8
+
+
+def test_axis_bounds_correct_length_passes() -> None:
+    # Both listed and regular axes with correct bounds length produce no issues.
+    domain = Domain(
+        axes={
+            "x": Axis.listed((1.0, 2.0, 3.0), bounds=(0.5, 1.5, 1.5, 2.5, 2.5, 3.5)),
+            "y": Axis.regular(0.0, 10.0, 2, bounds=(0.0, 5.0, 5.0, 10.0)),
+        },
+        domain_type="Grid",
+        referencing=_REF,
+    )
+    issues = validate(domain)
+
+    bad = [i for i in issues if i.code == "axis.bounds-length-mismatch"]
+    assert bad == []
+
+
+def test_axis_bounds_check_runs_without_check_values() -> None:
+    # The bounds check is structural (O(1)), not value-scanning, so it runs
+    # even when check_values=False (the default).
+    domain = Domain(
+        axes={"x": Axis.listed((1.0, 2.0, 3.0), bounds=(1.0, 1.5))},
+        domain_type="Grid",
+        referencing=_REF,
+    )
+    issues = validate(domain, check_values=False)
+
+    assert any(i.code == "axis.bounds-length-mismatch" for i in issues)
+
+
+def test_axis_bounds_absent_is_ok() -> None:
+    # Axes without bounds are fine; only present-but-wrong bounds are flagged.
+    domain = Domain(
+        axes={
+            "x": Axis.listed((1.0, 2.0, 3.0)),  # no bounds
+            "y": Axis.regular(0, 10, 2),
+        },
+        domain_type="Grid",
+        referencing=_REF,
+    )
+    issues = validate(domain)
+
+    bad = [i for i in issues if i.code == "axis.bounds-length-mismatch"]
+    assert bad == []

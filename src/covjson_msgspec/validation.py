@@ -498,6 +498,27 @@ class I18nInvalidLanguageTag(_Issue, frozen=True, tag="i18n.invalid-language-tag
         return f"{self.lang!r} is not a valid BCP 47 language tag"
 
 
+class AxisBoundsLengthMismatch(_Issue, frozen=True, tag="axis.bounds-length-mismatch"):
+    """An axis's ``bounds`` length is not ``2 * len(axis)``.
+
+    Spec 6.1.1: when ``bounds`` is present on an axis, it MUST contain exactly
+    two values (lower, upper) per coordinate. A short bounds array causes an
+    ``IndexError`` in downstream code (e.g. ``subset``); a long one is silently
+    ignored. Both are reported here so the document can be repaired (dropping
+    the bad bounds) rather than failing to load.
+    """
+
+    axis: str
+    expected: int
+    got: int
+
+    def __str__(self) -> str:
+        return (
+            f"axis {self.axis!r} has {self.got} bound(s) but needs "
+            f"{self.expected} (2 per coordinate)"
+        )
+
+
 class I18nEmpty(_Issue, frozen=True, tag="i18n.empty"):
     """A present i18n object has no language-tagged entries."""
 
@@ -540,6 +561,7 @@ Issue = (
     | ParameterGroupUnknownMember
     | I18nInvalidLanguageTag
     | I18nEmpty
+    | AxisBoundsLengthMismatch
 )
 
 
@@ -1491,6 +1513,62 @@ def _reference_system_i18n_issues(
     )
 
 
+def _axis_bounds_issues(
+    domain: Domain, path: tuple[str | int, ...]
+) -> Iterator[Issue]:
+    """Yield a ``axis.bounds-length-mismatch`` issue for each axis with bad bounds.
+
+    Spec 6.1.1: when an axis carries ``bounds``, it MUST contain exactly two
+    values (lower, upper) per coordinate. The expected length is ``2 * len(axis)``
+    for both value-listing and regular axes (where ``len(axis)`` is ``num``).
+
+    This check is O(1) per axis and runs unconditionally (not gated by
+    ``check_values``), because a bad bounds array is a structural issue that
+    causes downstream crashes (e.g. ``subset`` raises ``IndexError``) rather
+    than a value-level problem. Per ADR-0002 / ADR-0018 the check lives in
+    ``validate()`` so a document with merely unusable bounds still decodes and
+    can be repaired by dropping them.
+
+    Parameters
+    ----------
+    domain
+        The domain whose axes are checked.
+    path
+        The reference-token path to ``domain``, built via `_ptr` for each issue.
+
+    Yields
+    ------
+    Issue
+        An `AxisBoundsLengthMismatch` per offending axis, in ``axes`` order.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain
+    >>> dom = Domain(
+    ...     axes={
+    ...         "x": Axis.listed((1.0, 2.0, 3.0), bounds=(1.0, 1.5)),  # 2 bounds, need 6
+    ...         "y": Axis.regular(0.0, 10.0, 2, bounds=(0.0, 5.0, 5.0, 10.0)),  # ok: 4 bounds for num=2
+    ...     },
+    ...     domain_type="Grid",
+    ... )
+    >>> issues = list(_axis_bounds_issues(dom, ()))
+    >>> [i.code for i in issues]
+    ['axis.bounds-length-mismatch']
+    >>> issues[0].axis
+    'x'
+    >>> issues[0].expected, issues[0].got
+    (6, 2)
+    """
+    for name, axis in domain.axes.items():
+        if axis.bounds is not None:
+            expected = 2 * len(axis)
+            got = len(axis.bounds)
+            if got != expected:
+                yield AxisBoundsLengthMismatch(
+                    axis=name, expected=expected, got=got, at=_ptr(path, "axes", name, "bounds")
+                )
+
+
 def _validate_domain(
     domain: Domain,
     domain_type: str | None,
@@ -1573,6 +1651,13 @@ def _validate_domain(
         and (rule := DOMAIN_TYPE_RULES.get(domain_type)) is not None
     ):
         yield from _domain_issues(domain, domain_type, rule, path)
+
+    # Axis bounds length check (Spec 6.1.1): runs unconditionally, not gated by
+    # `check_values`, because a bad bounds array is a structural issue that
+    # crashes downstream code (e.g. `subset`), not a value-level problem. The
+    # check is O(1) per axis and belongs in `validate()` per ADR-0002 / ADR-0018
+    # so a document with merely unusable bounds still decodes and can be repaired.
+    yield from _axis_bounds_issues(domain, path)
 
     # Axis values live under `axes`, so these value-scanning checks come before
     # the referencing checks to keep issues in document order. Resolve each
