@@ -151,7 +151,10 @@ is `OpaqueRS` with `type_` preserved and the specific diagnosis in `validate()`.
   this `refine()`-style shape is a consistency follow-up, out of scope here.
   `Axis` has no such whole-struct projection today; `NdArray`'s element-typed
   whole-struct projection was already weighed and deferred by ADR-0004 (its
-  value-level `values_as` covers the common need). Tracked in #123.
+  value-level `values_as` covers the common need). Tracked in #123, and settled
+  by [ADR-0018][adr18]: neither gains one, because a projection earns its keep
+  only where it recovers a guarantee nothing else enforces, and `Axis` already
+  enforces its own at construction.
 
 [spec-5]: https://github.com/covjson/specification/blob/master/spec.md#5-reference-system-objects
 [spec-72]: https://github.com/covjson/specification/blob/master/spec.md#72-custom-types
@@ -159,4 +162,5 @@ is `OpaqueRS` with `type_` preserved and the specific diagnosis in `validate()`.
 [adr4]: 0004-ndarray-single-non-generic-class.md
 [adr6]: 0006-validation-findings-sum-type.md
 [adr12]: 0012-custom-members-dropped-on-decode.md
+[adr18]: 0018-typed-projection-scope.md
 [i103]: https://github.com/chuckwondo/covjson-msgspec/issues/103

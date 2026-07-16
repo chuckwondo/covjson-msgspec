@@ -408,8 +408,10 @@ def _axis_layout(domain: Domain, temporal: set[str]) -> _AxisLayout:
         if axis.data_type == "tuple":
             # Composite axis: one index level (the row position) plus one column
             # per component, transposing the tuples into columns. A "tuple" axis
-            # holds tuple-valued coordinates by construction.
-            rows = cast("tuple[tuple[Any, ...], ...]", axis.values or ())
+            # lists tuple-valued `values` by construction
+            # (`Axis.__post_init__`); `coordinates` is defended below because the
+            # spec defaults it rather than requiring it (see #131).
+            rows = cast("tuple[tuple[Any, ...], ...]", axis.values)
             components = axis.coordinates or ()
             layout.dims.append(key)
             layout.sizes[key] = len(rows)

@@ -688,9 +688,11 @@ def _build_coords(
         if axis.data_type == "tuple":
             # Composite axis: transpose the tuples into one non-dimension
             # coordinate per component, all along the single dimension ``key``.
-            # A "tuple" axis holds tuple-valued coordinates by construction.
+            # A "tuple" axis lists tuple-valued `values` by construction
+            # (`Axis.__post_init__`); `coordinates` is defended below because the
+            # spec defaults it rather than requiring it (see #131).
             components = axis.coordinates or ()
-            rows = cast("tuple[tuple[Any, ...], ...]", axis.values or ())
+            rows = cast("tuple[tuple[Any, ...], ...]", axis.values)
 
             for index, coordinate in enumerate(components):
                 column = [row[index] for row in rows]

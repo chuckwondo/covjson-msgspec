@@ -181,6 +181,16 @@ storage is one permissive struct and `Axis.listed`, `Axis.regular`, `Axis.tuple_
 and `Axis.polygon` are the typed builders that construct a valid one
 ([ADR-0004](../adr/0004-ndarray-single-non-generic-class.md)).
 
+The tenet offers "an accessor or a builder", and that choice is deliberate per
+instance rather than a shape each type should converge on. `ReferenceSystem` adds
+a third form, a whole-struct `refine()`
+([ADR-0017](../adr/0017-reference-systems-permissive-core-projection.md)) --
+because a custom `type` must load, so its core *cannot* enforce that a
+`TemporalRS` has a `calendar`, and `refine()` is the only place that guarantee
+exists. `Axis` gets no `refine()` precisely because its core already enforces its
+own invariants at construction, leaving a projection nothing to recover
+([ADR-0018](../adr/0018-typed-projection-scope.md)).
+
 The same shape recurs beyond ranges. A `Coverage.domain` is typed `Domain | str`,
 mirroring the spec's allowance of
 [an inline object or a URL that references one][spec-coverage]: a URL stays a string

@@ -123,6 +123,21 @@ class Axis(CovJSONStruct, frozen=True):
     Traceback (most recent call last):
         ...
     ValueError: Axis `coordinates` must be non-empty
+
+    A composite axis must list its values: the regular form describes evenly
+    spaced numbers, which can never be the tuples a ``"tuple"`` axis promises:
+
+    >>> Axis(start=0.0, stop=10.0, num=3, data_type="tuple", coordinates=("x", "y"))
+    Traceback (most recent call last):
+        ...
+    ValueError: a 'tuple' axis requires `values`
+
+    That rule is derived from the ``"tuple"`` / ``"polygon"`` value MUSTs, so it
+    reaches only those two: the spec constrains no custom ``dataType``'s values,
+    and such an axis keeps both forms.
+
+    >>> Axis(start=0.0, stop=10.0, num=3, data_type="knmi:range").coordinate_values
+    (0.0, 5.0, 10.0)
     """
 
     values: tuple[AxisValue, ...] | None = None
@@ -173,6 +188,21 @@ class Axis(CovJSONStruct, frozen=True):
 
         if self.data_type in ("tuple", "polygon") and self.coordinates is None:
             msg = f"a {self.data_type!r} axis requires `coordinates`"
+            raise ValueError(msg)
+
+        # Derived from two spec 6.1.1 MUSTs rather than stated by either: a
+        # 'tuple' axis value MUST be "an array of fixed size of primitive values"
+        # (a 'polygon' value, "a GeoJSON Polygon coordinate array"), while
+        # start/stop/num is "a compact notation for a regularly spaced numeric
+        # axis" and so yields only numbers. No value satisfies both, so the pair
+        # is unsatisfiable rather than merely odd. Named dataTypes only: the spec
+        # defines no value structure for a custom dataType (6.1.1 grants only
+        # "Custom values MAY be used"), so no MUST constrains its values and this
+        # rule cannot be derived for one. Belongs here rather than in validate()
+        # because the contradiction leaves the axis uninterpretable (ADR-0002,
+        # ADR-0018).
+        if self.data_type in ("tuple", "polygon") and self.values is None:
+            msg = f"a {self.data_type!r} axis requires `values`"
             raise ValueError(msg)
 
         # Spec 6.1.1: `coordinates`, when given, is a non-empty array. Applies to
