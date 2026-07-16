@@ -49,8 +49,8 @@ returns the index of the first value that breaks the required ordering, or `None
 for nothing to report. The check is value-scanning, so it runs only under
 `check_values=True` ([ADR-0002]); the parameter defaults to `None`, resolved to
 the exported default `require_monotonic()`, so the check runs by default when
-values are scanned and the seam only *customizes* it. A finding is a
-`DomainAxisNotMonotonic` error pointing at the breaking value.
+values are scanned and the seam only *customizes* it. A finding is an
+`AxisNotMonotonic` error pointing at the breaking value.
 
 **The default, `require_monotonic(*, strict=False)`, encodes the conservative
 reading:**
@@ -107,7 +107,7 @@ a custom `AxisOrderChecker`.
 
 ## Consequences
 
-- A new error code, `domain.axis-not-monotonic`, runs by default under
+- A new error code, `axis.not-monotonic`, runs by default under
   `check_values=True`, so a document that was silently non-conformant on this
   MUST now surfaces an error (the expected effect of adding a conformance check).
 - `_ordering_kind` is the single home for "which systems define a natural
