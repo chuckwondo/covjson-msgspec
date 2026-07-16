@@ -32,6 +32,12 @@ and the rules about the domain itself. An axis is only ever reached through a
 domain, so what settles the category is what the rule is *about*: ``ndarray.*``,
 ``range.*``, ``i18n.*``, and ``parameter-group.*`` follow the same grain.
 
+A rule spanning two objects belongs to the one whose invariant it is, which is
+the container: ``coverage.range-shape-mismatch`` is a coverage rule (its range
+and domain must agree) even though it reports on a range, while
+``range.value-type-mismatch`` is intrinsic to a range and stays ``range.*``.
+The ``axis.*`` / ``domain.*`` split is that same shape one level down.
+
 Pass ``mode="raise"`` to raise a `CovJSONValidationError` instead when any
 error-severity issue is found, and ``check_values=True`` to add the
 value-scanning checks that are skipped by default (each value matching its
