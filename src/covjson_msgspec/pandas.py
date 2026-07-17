@@ -50,6 +50,7 @@ from typing import TYPE_CHECKING, Any, cast
 from covjson_msgspec._bridging import (
     POLYGON_DOMAIN_TYPES,
     broadcast,
+    composite_columns,
     maybe_datetime,
     range_column,
     require_inline_ndarray,
@@ -96,7 +97,9 @@ def to_pandas(obj: Coverage | CoverageCollection) -> pd.DataFrame:
     ------
     ValueError
         If a domain is a URL reference, a domain type is a polygon type
-        (use the geopandas bridge), or a range is not an inline `NdArray`.
+        (use the geopandas bridge), a composite ``tuple`` axis has a value that
+        is not a tuple matching its coordinate identifiers, or a range is not an
+        inline `NdArray`.
 
     Examples
     --------
@@ -407,18 +410,15 @@ def _axis_layout(domain: Domain, temporal: set[str]) -> _AxisLayout:
 
         if axis.data_type == "tuple":
             # Composite axis: one index level (the row position) plus one column
-            # per component, transposing the tuples into columns. A "tuple" axis
-            # lists tuple-valued `values` by construction
-            # (`Axis.__post_init__`); `coordinates` is defended below because the
-            # spec defaults it rather than requiring it (see #131).
-            rows = cast("tuple[tuple[Any, ...], ...]", axis.values)
-            components = axis.coordinates or ()
+            # per component. `composite_columns` transposes the tuples and raises
+            # a clean error if a value is not a matching tuple, so a malformed
+            # axis fails here rather than deep inside pandas.
+            n_rows = len(axis.values or ())
             layout.dims.append(key)
-            layout.sizes[key] = len(rows)
-            layout.values[key] = range(len(rows))
+            layout.sizes[key] = n_rows
+            layout.values[key] = range(n_rows)
 
-            for index, component in enumerate(components):
-                column = [row[index] for row in rows]
+            for component, column in composite_columns(axis, key):
                 layout.composite_columns.append(
                     (component, key, maybe_datetime(column, component in temporal))
                 )

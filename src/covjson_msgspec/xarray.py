@@ -42,13 +42,14 @@ import math
 from collections.abc import Mapping
 from datetime import datetime
 from itertools import pairwise
-from typing import TYPE_CHECKING, Any, Literal, NoReturn, cast
+from typing import TYPE_CHECKING, Any, Literal, NoReturn
 
 from msgspec import UNSET
 
 from covjson_msgspec._bridging import (
     POLYGON_DOMAIN_TYPES,
     STANDARD_CALENDARS,
+    composite_columns,
     coordinate_systems,
     require_inline_ndarray,
 )
@@ -120,7 +121,9 @@ def to_xarray(coverage: Coverage) -> xr.Dataset:
     ------
     ValueError
         If the domain is a URL reference, the domain type is a polygon type
-        (use the geopandas bridge), or a range is not an inline `NdArray`.
+        (use the geopandas bridge), a composite ``tuple`` axis has a value that
+        is not a tuple matching its coordinate identifiers, or a range is not an
+        inline `NdArray`.
 
     Examples
     --------
@@ -688,14 +691,10 @@ def _build_coords(
         if axis.data_type == "tuple":
             # Composite axis: transpose the tuples into one non-dimension
             # coordinate per component, all along the single dimension ``key``.
-            # A "tuple" axis lists tuple-valued `values` by construction
-            # (`Axis.__post_init__`); `coordinates` is defended below because the
-            # spec defaults it rather than requiring it (see #131).
-            components = axis.coordinates or ()
-            rows = cast("tuple[tuple[Any, ...], ...]", axis.values)
-
-            for index, coordinate in enumerate(components):
-                column = [row[index] for row in rows]
+            # `composite_columns` raises a clean error if a value is not a
+            # matching tuple, so a malformed axis fails here rather than deep
+            # inside numpy.
+            for coordinate, column in composite_columns(axis, key):
                 coords[coordinate] = _coordinate(
                     coordinate, key, column, systems, geo_roles, scalar=False
                 )

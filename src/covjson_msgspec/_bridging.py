@@ -6,12 +6,18 @@ the same standard calendars, guard ranges with the same message, and lay axis
 data over a domain's grid with the same broadcasting rules. numpy / pandas are
 imported lazily inside the helpers, so importing this module never pulls in an
 optional dependency.
+
+A few helpers here read a spec-defined fact off the model rather than serve a
+bridge specifically (`coordinate_systems`, `temporal_coordinates`,
+`coordinate_identifiers`); `~covjson_msgspec.validation` shares those, so that
+each fact has one home rather than one per consumer.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
+from covjson_msgspec.axis import Axis
 from covjson_msgspec.coverage import Range
 from covjson_msgspec.domain import Domain
 from covjson_msgspec.range import NdArray
@@ -377,6 +383,120 @@ def temporal_coordinates(domain: Domain) -> set[str]:
             coordinates.update(connection.coordinates)
 
     return coordinates
+
+
+def coordinate_identifiers(axis: Axis, axis_name: str) -> tuple[str, ...]:
+    """The coordinate identifiers an axis carries, with spec 6.1.1's default applied.
+
+    Spec 6.1.1 makes ``coordinates`` optional: "If missing, the member
+    ``"coordinates"`` defaults to a one-element array of the axis identifier and
+    MUST NOT be included for that default case." The identifier lives in the
+    `~covjson_msgspec.domain.Domain.axes` mapping key rather than on the axis, so
+    only a caller holding both can apply the default, which is why this takes
+    ``axis_name`` alongside. It is the one place the default is applied: the
+    bridges and `~covjson_msgspec.validation.validate` all read it from here.
+
+    Parameters
+    ----------
+    axis
+        The axis whose coordinate identifiers are wanted.
+    axis_name
+        The axis's identifier: its key in `~covjson_msgspec.domain.Domain.axes`.
+
+    Returns
+    -------
+    tuple of str
+        ``axis.coordinates`` when present, else the one-element default naming
+        the axis itself.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis
+    >>> composite = Axis.tuple_(
+    ...     [("2020-01-01T00:00:00Z", 1.0, 2.0)], coordinates=("t", "x", "y")
+    ... )
+    >>> coordinate_identifiers(composite, "composite")
+    ('t', 'x', 'y')
+
+    An axis that omits ``coordinates`` relies on the default, which names the
+    axis itself:
+
+    >>> coordinate_identifiers(Axis.listed((1.0, 2.0)), "x")
+    ('x',)
+    """
+
+    return axis.coordinates if axis.coordinates is not None else (axis_name,)
+
+
+def composite_columns(axis: Axis, axis_name: str) -> tuple[tuple[str, list[Any]], ...]:
+    """Transpose a ``"tuple"`` axis's values into one column per coordinate.
+
+    A composite ``"tuple"`` axis stores one tuple (a position) per row; the
+    dataframe/array bridges lay each component out as its own column. Spec 6.1.1
+    requires every value to be a tuple whose size matches the coordinate
+    identifier count (`coordinate_identifiers`), and
+    `~covjson_msgspec.validation.validate` reports a violation as
+    ``axis.composite-value-shape`` / ``axis.composite-arity``. The bridges do not
+    require a validated document, so the same malformation is rejected here with
+    one clean `ValueError` rather than an index or typing failure surfacing from
+    inside pandas / numpy. Centralizing it keeps that error identical across the
+    pandas and xarray bridges, as `require_inline_ndarray` does for range narrowing.
+
+    Parameters
+    ----------
+    axis
+        The ``"tuple"`` axis to transpose.
+    axis_name
+        The axis's identifier: its key in `~covjson_msgspec.domain.Domain.axes`,
+        used to resolve the coordinate default and to name the error.
+
+    Returns
+    -------
+    tuple of (str, list)
+        One ``(identifier, column)`` pair per coordinate, in identifier order;
+        each column holds that component across the axis's positions.
+
+    Raises
+    ------
+    ValueError
+        If any value is not a tuple, or is a tuple whose length differs from the
+        coordinate identifier count.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis
+    >>> axis = Axis.tuple_([(1.0, 10.0), (2.0, 20.0)], coordinates=("x", "y"))
+    >>> composite_columns(axis, "composite")
+    (('x', [1.0, 2.0]), ('y', [10.0, 20.0]))
+
+    A value that is not a matching tuple is rejected with a clean message rather
+    than left to fail inside the bridge:
+
+    >>> bad = Axis(values=(1.0, 2.0), data_type="tuple", coordinates=("x", "y"))
+    >>> composite_columns(bad, "composite")
+    Traceback (most recent call last):
+        ...
+    ValueError: composite axis 'composite' needs 2-tuple values, but value 0 is 1.0
+    """
+
+    components = coordinate_identifiers(axis, axis_name)
+    expected = len(components)
+    rows = axis.values or ()
+
+    for index, row in enumerate(rows):
+        if not isinstance(row, tuple) or len(row) != expected:
+            msg = (
+                f"composite axis {axis_name!r} needs {expected}-tuple values, "
+                f"but value {index} is {row!r}"
+            )
+            raise ValueError(msg)
+
+    positions = cast("tuple[tuple[Any, ...], ...]", rows)
+
+    return tuple(
+        (component, [row[index] for row in positions])
+        for index, component in enumerate(components)
+    )
 
 
 def maybe_datetime(values: list[Any], is_temporal: bool) -> Any:

@@ -79,9 +79,17 @@ def test_regular_num_one_with_equal_start_stop_is_allowed() -> None:
     assert axis.coordinate_values == (5.0,)
 
 
-def test_composite_axis_requires_coordinates() -> None:
-    with pytest.raises(ValueError, match="requires `coordinates`"):
-        Axis(values=((1.0, 2.0),), data_type="tuple")
+@pytest.mark.parametrize("data_type", ["tuple", "polygon"])
+def test_composite_axis_may_omit_coordinates(data_type: str) -> None:
+    # Spec 6.1.1 makes `coordinates` optional: "If missing, the member
+    # `coordinates` defaults to a one-element array of the axis identifier". No
+    # MUST ties it to a composite dataType, and the default is the sole repair,
+    # so the axis stays interpretable and construction is the wrong tier for the
+    # rule (ADR-0018). An arity that then disagrees with the default is
+    # validate()'s `axis.composite-arity`, not a load-time error.
+    axis = Axis(values=((1.0,),), data_type=data_type)
+
+    assert axis.coordinates is None
 
 
 @pytest.mark.parametrize("data_type", ["tuple", "polygon"])

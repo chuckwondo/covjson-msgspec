@@ -571,6 +571,67 @@ def test_single_vertex_trajectory_linestring_is_rejected() -> None:
         to_geopandas(cov, trajectory_as="linestring")
 
 
+@pytest.mark.parametrize(
+    ("domain_type", "expected"), [("Trajectory", "tuple"), ("Polygon", "polygon")]
+)
+def test_primitive_composite_axis_is_rejected(domain_type: str, expected: str) -> None:
+    # The geometry builders read `composite`'s values as positions or rings, so a
+    # primitive axis wearing the name must be rejected by name rather than fail
+    # from inside shapely. validate() reports the same document as
+    # `domain.composite-data-type`, but the bridge does not require a validated
+    # one, so the check is repeated here at the boundary.
+    cov = Coverage(
+        domain=Domain(
+            axes={"composite": Axis.listed((1.0, 2.0))}, domain_type=domain_type
+        ),
+        ranges={},
+    )
+
+    with pytest.raises(ValueError, match=f"requires a {expected!r} composite axis"):
+        to_geopandas(cov, trajectory_as="linestring")
+
+
+@pytest.mark.parametrize("domain_type", ["Trajectory", "Polygon"])
+def test_geometry_domain_without_a_composite_axis_is_rejected(domain_type: str) -> None:
+    # The geometry builders read `domain.axes["composite"]`; a domain typed for
+    # geometry but missing that axis must raise a clear bridge error rather than
+    # a bare KeyError from inside the builder. validate() reports the same as
+    # `domain.missing-axis`, but the bridge does not require a validated document.
+    cov = Coverage(
+        domain=Domain(axes={"x": Axis.listed((1.0, 2.0))}, domain_type=domain_type),
+        ranges={},
+    )
+
+    with pytest.raises(ValueError, match="requires a 'composite' axis"):
+        to_geopandas(cov, trajectory_as="linestring")
+
+
+@pytest.mark.parametrize("domain_type", ["Trajectory", "Polygon"])
+def test_composite_axis_without_horizontal_coordinates_is_rejected(
+    domain_type: str,
+) -> None:
+    # Spec 6.1.1 defaults an omitted `coordinates` to a one-element array naming
+    # the axis, so this resolves to ("composite",), which names no x or y and
+    # cannot place a position. Previously the polygon builder guessed ("x", "y")
+    # and silently built geometry from positions 0 and 1 regardless.
+    data_type = "tuple" if domain_type == "Trajectory" else "polygon"
+    values = (
+        ((1.0, 10.0), (2.0, 20.0))
+        if domain_type == "Trajectory"
+        else (((0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 0.0)),)
+    )
+    cov = Coverage(
+        domain=Domain(
+            axes={"composite": Axis(data_type=data_type, values=values)},
+            domain_type=domain_type,
+        ),
+        ranges={},
+    )
+
+    with pytest.raises(ValueError, match="needs x and y coordinates"):
+        to_geopandas(cov, trajectory_as="linestring")
+
+
 def test_collection_of_trajectories_as_linestrings() -> None:
     a = _trajectory("x", "y", values=((1.0, 10.0), (2.0, 20.0)))
     b = _trajectory("x", "y", values=((3.0, 30.0), (4.0, 40.0)))
