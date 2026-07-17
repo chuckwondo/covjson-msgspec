@@ -319,6 +319,37 @@ class AxisCompositeArity(_Issue, frozen=True, tag="axis.composite-arity"):
         )
 
 
+class AxisBoundsLength(_Issue, frozen=True, tag="axis.bounds-length"):
+    """An axis's ``bounds`` array is not twice the axis length.
+
+    Spec 6.1.1 (Axis Objects): "An axis object MAY have axis value bounds defined
+    in the member ``"bounds"`` where the value is an array of values of length
+    ``len*2`` with ``len`` being the length of the ``"values"`` array." The MAY
+    governs whether ``bounds`` is *present*; once present, the spec *defines* its
+    length (two per axis value, a lower and an upper), so a wrong-length array
+    fails to be a bounds array at all. There is nothing to interpret and the one
+    repair is to drop it, which makes it an error (per ADR-0002), exactly as
+    `Axis.__post_init__` rejects an empty ``values`` on the equally keyword-free
+    "The value of ``"values"`` is a non-empty array of axis values".
+
+    The length is stated over ``values``, and the regular (``start`` / ``stop`` /
+    ``num``) form inherits it by derivation: a regular axis has no ``values``
+    array, so ``len`` is read as ``num`` (the axis length), making the expected
+    length ``2 * num``. That reading is a sound derivation, not 6.1.1 text, and
+    the code labels it as derived rather than presenting it as spec wording.
+    """
+
+    axis: str
+    expected: int
+    got: int
+
+    def __str__(self) -> str:
+        return (
+            f"axis {self.axis!r} has {self.got} bounds but must have "
+            f"{self.expected} (two per axis value)"
+        )
+
+
 class TemporalMissingCalendar(_Issue, frozen=True, tag="temporal.missing-calendar"):
     """A temporal RS carries no ``calendar``.
 
@@ -597,6 +628,7 @@ Issue = (
     | AxisNotMonotonic
     | AxisCompositeValueShape
     | AxisCompositeArity
+    | AxisBoundsLength
     | TemporalMissingCalendar
     | IdentifierMissingTargetConcept
     | NdArrayShapeRank
@@ -782,8 +814,9 @@ def validate(
     requirements, each range lines up with the domain (axis names, shapes),
     parameter groups reference known members, a coverage and domain carry the
     ``parameters`` / ``referencing`` the spec requires (resolving collection-level
-    inheritance first), a `TiledNdArray`'s tile sets are well-formed, and (with
-    ``check_values=True``) every value matches its range's ``dataType``,
+    inheritance first), a `TiledNdArray`'s tile sets are well-formed, an axis's
+    ``bounds`` (when present) has the spec-defined length of twice the axis, and
+    (with ``check_values=True``) every value matches its range's ``dataType``,
     categorical codes are defined, temporal values are well-formed, and each
     ordered primitive axis is monotonic. Reach for it when you need those
     spec-conformance guarantees, e.g. before publishing a document or when
@@ -1581,14 +1614,18 @@ def _validate_domain(
     First, when the effective ``domain_type`` is absent, a
     `DomainMissingDomainType` warning (Spec 6.1 RECOMMENDS one). Then, resolves
     ``domain_type`` to a `DomainTypeRule` and, when one applies, yields the
-    violations `_domain_issues` finds; then, when ``check_values``, the axis
-    value-scans (a time-axis value outside the Gregorian lexical forms via
-    `_temporal_form_issues`, and a non-monotonic ordered axis via
-    `_axis_monotonic_issues`); then a missing-referencing issue when the domain
-    carries no ``referencing`` in scope, and each reference system's language-tag
-    issues (`_reference_system_i18n_issues`). An absent or unrecognized (e.g.
-    custom URI) ``domain_type`` carries no axis rules, but the referencing checks
-    still apply. All issues stay in document order.
+    violations `_domain_issues` finds. Then, unconditionally (it is O(1) per
+    axis), an ``axis.bounds-length`` error for each axis whose ``bounds`` length
+    is not twice the axis length (`_axis_bounds_issues`). Then, when
+    ``check_values``, the axis value-scans (a time-axis value outside the
+    Gregorian lexical forms via `_temporal_form_issues`, and a non-monotonic
+    ordered axis via `_axis_monotonic_issues`); then a missing-referencing issue
+    when the domain carries no ``referencing`` in scope, and each reference
+    system's language-tag issues (`_reference_system_i18n_issues`). An absent or
+    unrecognized (e.g. custom URI) ``domain_type`` carries no axis rules, but the
+    referencing checks still apply. Issues come in the domain's member order: a
+    ``domainType`` issue first, then the ``axes`` issues (``bounds`` included),
+    then the ``referencing`` issues.
 
     Parameters
     ----------
@@ -1651,6 +1688,11 @@ def _validate_domain(
         and (rule := DOMAIN_TYPE_RULES.get(domain_type)) is not None
     ):
         yield from _domain_issues(domain, domain_type, rule, path)
+
+    # The bounds-length test is O(1) per axis, so unlike the value-scans below it
+    # runs unconditionally rather than under `check_values`. It sits under `axes`,
+    # so it comes before the referencing checks to keep issues in document order.
+    yield from _axis_bounds_issues(domain, path)
 
     # Axis values live under `axes`, so these value-scanning checks come before
     # the referencing checks to keep issues in document order. Resolve each
@@ -2030,6 +2072,50 @@ def _is_position_array(ring: object) -> bool:
     positions = cast("Sequence[object]", ring)
 
     return all(isinstance(position, (list, tuple)) for position in positions)
+
+
+def _axis_bounds_issues(
+    domain: Domain, path: tuple[str | int, ...]
+) -> Iterator[AxisBoundsLength]:
+    """Yield an ``axis.bounds-length`` error per axis with wrong-length ``bounds``.
+
+    Spec 6.1.1 defines a present ``bounds`` array as ``2 * len`` values (a lower
+    and an upper per axis value), so an axis whose ``bounds`` length differs is
+    reported. ``len`` is the axis length, which for a regular axis is ``num``
+    (`Axis.__len__` never materializes a regular axis's values), so the test is
+    O(1) per axis and its caller runs it unconditionally, not under
+    ``check_values``. An axis without ``bounds`` is skipped.
+
+    Parameters
+    ----------
+    domain
+        The domain whose axes are checked.
+    path
+        The reference-token path to ``domain``, extended per issue via `_ptr`.
+
+    Yields
+    ------
+    AxisBoundsLength
+        One error per axis whose ``bounds`` length is not ``2 * len(axis)``,
+        pointing at that axis's ``bounds`` array.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain
+    >>> dom = Domain(axes={"x": Axis.listed((1.0, 2.0), bounds=(0.5, 1.5, 1.5))})
+    >>> [issue.at for issue in _axis_bounds_issues(dom, ())]
+    ['/axes/x/bounds']
+    """
+    return (
+        AxisBoundsLength(
+            at=_ptr(path, "axes", name, "bounds"),
+            axis=name,
+            expected=2 * len(axis),
+            got=len(bounds),
+        )
+        for name, axis in domain.axes.items()
+        if (bounds := axis.bounds) is not None and len(bounds) != 2 * len(axis)
+    )
 
 
 def _axis_monotonic_issues(

@@ -33,12 +33,12 @@ Four facts constrain the answer:
   `{"dataType":"knmi:range","start":0,...}` must round-trip, so an `OpaqueAxis`
   would need `{data_type, values | start/stop/num, coordinates, bounds}`: the
   core, minus nothing.
-- **ADR-0017's honesty rule bites.** It rejects a variant whose declared type is
-  a lie. But `Axis.values` is `tuple[AxisValue, ...]`, and §6.1.1's "For
-  `"tuple"`, each axis value MUST be an array of fixed size of primitive values"
-  is O(n) to check, which [ADR-0002][adr2] keeps out of `__post_init__`. So a
-  `TupleAxis.values: tuple[tuple[Any, ...], ...]` needs an O(n) gate on a struct
-  whose `__len__` is deliberately O(1), or it is a lie.
+- **ADR-0017's honesty rule gets in the way.** It rejects a variant whose
+  declared type is a lie. But `Axis.values` is `tuple[AxisValue, ...]`, and
+  §6.1.1's "For `"tuple"`, each axis value MUST be an array of fixed size of
+  primitive values" is O(n) to check, which [ADR-0002][adr2] keeps out of
+  `__post_init__`. So a `TupleAxis.values: tuple[tuple[Any, ...], ...]` needs an
+  O(n) gate on a struct whose `__len__` is deliberately O(1), or it is a lie.
 - **ADR-0002 already draws a line** between what is checked at construction and
   what is deferred to `validate()`, and the three instances sit on different
   sides of it.
@@ -71,45 +71,49 @@ One gap in the `Axis` row is closed here, because the decision depends on it: a
 composite axis now requires `values`, so the regular form and a `"tuple"` /
 `"polygon"` dataType can no longer be combined.
 
-### Why this strictens decode where ADR-0017 loosened it
+### Why this tightens decode where ADR-0017 loosened it
 
 ADR-0017 moved a former decode error to a `validate()` error. The guard above
 moves the other way: a document that used to load now raises. Both cite ADR-0002,
 so the two look contradictory. They are not: they sit on **opposite sides of the
 same line**. ADR-0002 reserves `__post_init__` for invariants that are local,
 O(1), **and** whose violation leaves the object *uninterpretable in isolation*.
-The operative test:
+The operative criterion:
 
 > **Name the repair.** Exactly one repair means the object is interpretable, so
 > the check belongs in `validate()`. Zero or ambiguous repairs mean it is not,
 > so the check belongs at construction.
 
 A `TemporalRS` without a `calendar` has one reading: temporal, calendar unknown.
-A `"tuple"` axis carrying `start`/`stop`/`num` has two incompatible ones -- the
+A `"tuple"` axis carrying `start`/`stop`/`num` has two incompatible ones: the
 producer mislabeled the `dataType` (repair: three numbers), or the producer lost
-the tuples (repair: impossible) -- and nothing in the document chooses. The test
-agrees with every existing placement in the library but one, and that one is a
-bug it found rather than a counterexample:
+the tuples (repair: impossible); nothing in the document chooses.
 
-| State | Repairs | Predicted | Actual |
-|---|---|---|---|
-| both axis forms present | ambiguous | construction | construction |
-| `values` empty | none | construction | construction |
-| `num == 1`, `start != stop` | ambiguous | construction | construction |
-| **composite with the regular form** | **two, incompatible** | **construction** | **construction (this ADR)** |
-| `bounds` length is not `2 * len(values)` | one: drop the bounds | `validate()` | unchecked ([#129][i129]) |
-| a `TemporalRS` without `calendar` | one | `validate()` | `validate()` |
-| values not matching `dataType` | one | `validate()` | `validate()` |
-| composite without `coordinates` | **one: apply the documented default** | **not construction** | **not construction ([#131][i131])** |
+To show the criterion is not special-pleading for this one guard, apply it to
+every local invariant the library already places, and check its verdict against
+where the code actually puts the check. It reproduces all of them. The
+invariants kept at construction each have zero or ambiguous repairs: both axis
+forms present (ambiguous), an empty `values` (none), and `num == 1` with
+`start != stop` (ambiguous). The invariants deferred to `validate()` each have
+exactly one repair: a `TemporalRS` without `calendar`, an axis value not
+matching its `dataType`, and a wrong-length `bounds` array. The new guard this
+ADR adds, a composite axis with the regular form, has two incompatible repairs,
+so the criterion places it at construction with the rest.
 
-That last row is the test earning its keep. 6.1.1 does not require a composite
-axis to supply `coordinates`; it says "If missing, the member `"coordinates"`
-defaults to a one-element array of the axis identifier". A missing `coordinates`
-therefore has exactly one repair, the spec's own default, so the axis stays
-interpretable and construction is the wrong tier. `__post_init__` rejected it
-anyway, so `Axis(values=((1.0,),), data_type="tuple")` (a legal one-tuple axis)
-did not load. The test found that as a bug rather than a counterexample, and
-[#131][i131] removed the guard, which is why the row now reads as predicted.
+The criterion agrees with every one of those existing placements. It disagrees
+in exactly one case, and there the code was wrong, not the criterion:
+
+> **The criterion found a bug rather than tripping over one.** A composite axis
+> without `coordinates` was rejected at construction, yet the criterion says such
+> an axis should load.
+
+§6.1.1 makes `coordinates` optional: "If missing, the member `"coordinates"`
+defaults to a one-element array of the axis identifier." That default is a single
+repair, applied in one place (`coordinate_identifiers`, which the bridges and
+`validate` both read), so the axis stays interpretable and its check belongs
+below construction. `__post_init__` rejected it anyway, so
+`Axis(values=((1.0,),), data_type="tuple")`, a legal one-tuple axis, failed to
+load. [#131][i131] removed that guard.
 
 Removing it cost nothing the guard was actually providing, which is the sharper
 lesson. The guard checked that `coordinates` was *present*, never that it *fit*:
@@ -120,12 +124,11 @@ tier, over the *resolved* identifiers, as `validate`'s `axis.composite-arity`
 ([#127][i127]). An over-strict guard is not a conservative guard: it rejects
 conformant documents while the malformation it was mistaken for walks past.
 
-The `bounds` row is the separator, and it is why the rule is not "local and cheap
-implies construction": `len(bounds) != 2 * len(axis)` is local *and* O(1), yet it
-still belongs in `validate()`, because such an axis stays interpretable -- its
+The `bounds`-length check is the separator, and it is why the rule is not "local
+and cheap implies construction": `len(bounds) != 2 * len(axis)` is local *and* O(1), yet it
+still belongs in `validate()`, because such an axis stays interpretable: its
 coordinates are fine and only `bounds` is junk. Cheapness alone does not earn
-construction-tier; only uninterpretability does. (That rule is unimplemented;
-[#129][i129].)
+construction-tier; only uninterpretability does.
 
 ### Why a guard rather than an unrepresentable state
 
@@ -133,7 +136,7 @@ Making the state unrepresentable is unavailable, not skipped. `Axis` is one
 permissive struct because msgspec cannot decode an untagged union of structs and
 the forms share no `"type"` discriminator: the same wall ADR-0017 hit when it
 rejected a sum type as the *stored* form for reference systems. The construction
-path is already unrepresentable, via the builders -- `Axis.tuple_` cannot produce
+path is already unrepresentable, via the builders: `Axis.tuple_` cannot produce
 this state. The guard covers only the decode path, which no type can reach.
 
 ## Alternatives considered
@@ -156,7 +159,7 @@ on four counts:
   O(n) element gate; a dishonest one is the exact thing ADR-0017 rejected.
 - *`bounds` rebuilds the grab-bag.* §6.1.1 permits `bounds` on any axis,
   unrestricted by dataType, so every variant carries `bounds: ... | None`,
-  including `PolygonAxis` where it is meaningless -- the failure ADR-0017 named
+  including `PolygonAxis` where it is meaningless: the failure ADR-0017 named
   when it rejected `OpaqueRS` carrying `id` / `description`.
 - *The payoff is two call sites.* Only two places in the library distinguish
   regular from listed: `_repr.py`'s axis detail, which infers "regular" from an
@@ -169,7 +172,7 @@ on four counts:
 
 **Element-typed `NdArrayFloat | NdArrayInt | NdArrayStr`.** Rejected, reaffirming
 ADR-0004: it reopens the multi-type shape that ADR retired and duplicates
-`shape` / `axis_names` across variants. The demand signal never arrived --
+`shape` / `axis_names` across variants. The demand signal never arrived:
 `values_as` has no callers inside the library, the same evidence ADR-0004 read
 when it deferred this.
 
@@ -185,12 +188,12 @@ question once, so the recurrence is demonstrated and warrants its own record.
 ## Consequences
 
 - `Axis` and `NdArray` keep their current shapes. The three ADR-0004 instances
-  differ **by rule**, not by drift, and a future reader has the test rather than
-  three precedents to average.
+  differ **by rule**, not by drift, and a future reader has the criterion rather
+  than three precedents to average.
 - A composite axis with the regular form now raises at construction and at decode
   (`a 'tuple' axis requires 'values'`). This is a behavior change, pre-1.0: such
   a document used to decode clean, pass `validate()`, and convert to *zero rows*
-  in the pandas and xarray bridges -- silent data loss with no error the caller
+  in the pandas and xarray bridges: silent data loss with no error the caller
   could catch. Nothing in the library, tests, or docs constructed one.
 - A custom §7.2 `dataType` is unaffected and keeps both forms; the guard names
   `"tuple"` and `"polygon"` explicitly rather than excluding "primitive", and a
@@ -214,5 +217,4 @@ question once, so the recurrence is demonstrated and warrants its own record.
 [spec-72]: https://github.com/covjson/specification/blob/master/spec.md#72-custom-types
 [i123]: https://github.com/chuckwondo/covjson-msgspec/issues/123
 [i127]: https://github.com/chuckwondo/covjson-msgspec/issues/127
-[i129]: https://github.com/chuckwondo/covjson-msgspec/issues/129
 [i131]: https://github.com/chuckwondo/covjson-msgspec/issues/131

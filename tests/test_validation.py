@@ -34,6 +34,7 @@ from covjson_msgspec.referencing import (
     ResolvedReferenceSystem,
 )
 from covjson_msgspec.validation import (
+    AxisBoundsLength,
     AxisCompositeArity,
     AxisCompositeValueShape,
     AxisNotMonotonic,
@@ -1323,6 +1324,58 @@ def test_composite_issues_are_gated_by_check_values() -> None:
     assert [i for i in validate(domain) if i.code.startswith("axis.composite-")] == []
 
 
+@pytest.mark.parametrize(
+    ("axis", "expected", "got"),
+    [
+        # A value-listing axis: `len` is the spec's own length of `values`.
+        (Axis.listed((0.0, 1.0, 2.0), bounds=(-0.5, 0.5)), 6, 2),
+        (Axis.listed((0.0, 1.0), bounds=(0.0, 1.0, 1.0, 2.0, 2.0, 3.0)), 4, 6),
+        # A regular axis has no `values`, so `2 * num` is the derived length.
+        (Axis.regular(0.0, 2.0, 3, bounds=(-0.5, 2.5)), 6, 2),
+        # A composite (tuple) axis: `len` counts the tuples, so `expected` is
+        # `2 * len(values)`, unrelated to the tuple width.
+        (
+            Axis(
+                values=((1.0, 2.0), (3.0, 4.0)),
+                data_type="tuple",
+                coordinates=("x", "y"),
+                bounds=(0.0, 1.0),
+            ),
+            4,
+            2,
+        ),
+    ],
+)
+def test_wrong_length_bounds_is_reported(axis: Axis, expected: int, got: int) -> None:
+    issues = _bounds_issues(axis)
+
+    assert [i.code for i in issues] == ["axis.bounds-length"]
+    assert (issues[0].expected, issues[0].got) == (expected, got)
+    assert issues[0].at == "/axes/a/bounds"
+
+
+@pytest.mark.parametrize(
+    "axis",
+    [
+        Axis.listed((0.0, 1.0), bounds=(-0.5, 0.5, 0.5, 1.5)),  # 2 * len(values)
+        Axis.regular(0.0, 2.0, 3, bounds=(-0.5, 0.5, 0.5, 1.5, 1.5, 2.5)),  # 2 * num
+        Axis.listed((0.0, 1.0)),  # bounds absent
+    ],
+)
+def test_correct_or_absent_bounds_is_silent(axis: Axis) -> None:
+    assert _bounds_issues(axis) == []
+
+
+def test_bounds_length_check_runs_without_check_values() -> None:
+    # The test is O(1) per axis, so it is not gated by `check_values` the way the
+    # value-scans are: a wrong-length `bounds` is caught in the default pass.
+    axis = Axis.listed((0.0, 1.0, 2.0), bounds=(-0.5, 0.5))
+
+    assert [i.code for i in _bounds_issues(axis, check_values=False)] == [
+        "axis.bounds-length"
+    ]
+
+
 def _composite_issues(axis: Axis) -> list[Issue]:
     """The ``axis.composite-*`` issues a one-axis domain's ``axis`` draws."""
     domain = Domain(axes={"composite": axis}, referencing=_REF)
@@ -1331,6 +1384,17 @@ def _composite_issues(axis: Axis) -> list[Issue]:
         issue
         for issue in validate(domain, check_values=True)
         if issue.code.startswith("axis.composite-")
+    ]
+
+
+def _bounds_issues(axis: Axis, *, check_values: bool = True) -> list[AxisBoundsLength]:
+    """The ``axis.bounds-length`` issues a one-axis domain's ``axis`` draws."""
+    domain = Domain(axes={"a": axis}, referencing=_REF)
+
+    return [
+        issue
+        for issue in validate(domain, check_values=check_values)
+        if isinstance(issue, AxisBoundsLength)
     ]
 
 
@@ -1400,7 +1464,12 @@ def _describe(issue: Issue) -> str:
             | DomainMissingDomainType()
         ):
             return "domain"
-        case AxisNotMonotonic() | AxisCompositeValueShape() | AxisCompositeArity():
+        case (
+            AxisNotMonotonic()
+            | AxisCompositeValueShape()
+            | AxisCompositeArity()
+            | AxisBoundsLength()
+        ):
             return "axis"
         case NdArrayShapeRank() | NdArrayValueCount():
             return "ndarray"
