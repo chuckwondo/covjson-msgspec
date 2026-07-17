@@ -54,11 +54,13 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from covjson_msgspec._bridging import (
     POLYGON_DOMAIN_TYPES,
     broadcast,
+    coordinate_identifiers,
     maybe_datetime,
     range_column,
     require_inline_ndarray,
     temporal_coordinates,
 )
+from covjson_msgspec.axis import Axis
 from covjson_msgspec.coverage import Coverage, CoverageCollection
 from covjson_msgspec.domain import Domain
 from covjson_msgspec.referencing import GeographicCRS, ProjectedCRS
@@ -135,9 +137,10 @@ def to_geopandas(
     ValueError
         If a domain is a URL reference, a point-like domain lacks ``x`` / ``y``
         coordinates, a range is not an inline `NdArray`, ``trajectory_as`` is not
-        ``"points"`` or ``"linestring"``, or (in ``"linestring"`` mode) a
-        Trajectory has fewer than two vertices or a ``composite`` axis without
-        ``x`` / ``y``.
+        ``"points"`` or ``"linestring"``, a geometry-bearing domain's
+        ``composite`` axis declares the wrong ``dataType`` or resolves to
+        coordinates without ``x`` / ``y``, or (in ``"linestring"`` mode) a
+        Trajectory has fewer than two vertices.
 
     Warns
     -----
@@ -220,7 +223,8 @@ def to_geojson(
     ------
     ValueError
         Propagated from `to_geopandas` (URL domain, missing ``x`` / ``y``, a
-        non-inline range, or an invalid ``trajectory_as``).
+        non-composite ``composite`` axis, a non-inline range, or an invalid
+        ``trajectory_as``).
 
     Warns
     -----
@@ -486,6 +490,132 @@ def _point_geometry(frame: pd.DataFrame) -> npt.NDArray[np.object_]:
     return cast("npt.NDArray[np.object_]", geometry)
 
 
+def _require_composite_axis(
+    domain: Domain, domain_type: str, expected: Literal["tuple", "polygon"]
+) -> Axis:
+    """Return the ``composite`` axis, or raise if it is absent or the wrong shape.
+
+    The geometry builders read the ``composite`` axis's values as positions or
+    rings, which only a composite axis holds.  `~covjson_msgspec.validation.validate`
+    reports the same malformations as ``domain.missing-axis`` and
+    ``domain.composite-data-type``, but the bridges do not require a validated
+    document, so without this an unvalidated one reaches shapely and fails from
+    inside a third-party library. The wrong-``dataType`` message mirrors that
+    issue's wording.
+
+    Parameters
+    ----------
+    domain
+        The domain whose ``composite`` axis is wanted.
+    domain_type
+        The effective domain type, for the message.
+    expected
+        The ``dataType`` this domain type's geometry requires.
+
+    Returns
+    -------
+    Axis
+        The ``composite`` axis, known to declare ``expected``.
+
+    Raises
+    ------
+    ValueError
+        If the ``composite`` axis is absent, or declares any other ``dataType``.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain
+    >>> domain = Domain(axes={"composite": Axis.listed((1.0, 2.0))})
+    >>> _require_composite_axis(domain, "Polygon", "polygon")
+    Traceback (most recent call last):
+        ...
+    ValueError: a Polygon domain requires a 'polygon' composite axis; got dataType None
+
+    A domain with no ``composite`` axis is rejected the same way:
+
+    >>> bare = Domain(axes={"x": Axis.listed((1.0,))})
+    >>> _require_composite_axis(bare, "Polygon", "polygon")
+    Traceback (most recent call last):
+        ...
+    ValueError: a Polygon domain requires a 'composite' axis, but the domain has none
+    """
+
+    if (axis := domain.axes.get("composite")) is None:
+        msg = (
+            f"a {domain_type} domain requires a 'composite' axis, "
+            "but the domain has none"
+        )
+        raise ValueError(msg)
+
+    if axis.data_type != expected:
+        msg = (
+            f"a {domain_type} domain requires a {expected!r} composite axis; "
+            f"got dataType {axis.data_type!r}"
+        )
+        raise ValueError(msg)
+
+    return axis
+
+
+def _horizontal_indices(
+    coords: tuple[str, ...], domain_type: str, geometry: str
+) -> tuple[int, int, int | None]:
+    """Locate the ``x`` / ``y`` (and optional ``z``) components in ``coords``.
+
+    Spec 6.1.1 defaults an axis's ``coordinates`` to a one-element array naming
+    the axis, so an omitted ``coordinates`` resolves to ``("composite",)``, which
+    names no horizontal component and cannot place a position. Rather than guess
+    at ``("x", "y")``, that is reported as the error it is: the document has not
+    said which components its positions carry.
+
+    Parameters
+    ----------
+    coords
+        The resolved coordinate identifiers, from
+        `~covjson_msgspec._bridging.coordinate_identifiers`.
+    domain_type
+        The effective domain type, for the message.
+    geometry
+        The geometry being built, for the message (e.g. ``"LineString"``).
+
+    Returns
+    -------
+    tuple of (int, int, int or None)
+        The positions of ``x``, ``y``, and ``z`` (``None`` when 2D).
+
+    Raises
+    ------
+    ValueError
+        If ``coords`` lacks ``x`` or ``y``.
+
+    Examples
+    --------
+    >>> _horizontal_indices(("t", "x", "y"), "Trajectory", "LineString")
+    (1, 2, None)
+
+    An omitted ``coordinates`` resolves to the axis's own name, which places
+    nothing:
+
+    >>> _horizontal_indices(("composite",), "Trajectory", "LineString")
+    Traceback (most recent call last):
+        ...
+    ValueError: a Trajectory needs x and y coordinates to build a LineString; ...
+    """
+
+    if "x" not in coords or "y" not in coords:
+        msg = (
+            f"a {domain_type} needs x and y coordinates to build a {geometry}; "
+            f"got composite coordinates {list(coords)}"
+        )
+        raise ValueError(msg)
+
+    return (
+        coords.index("x"),
+        coords.index("y"),
+        coords.index("z") if "z" in coords else None,
+    )
+
+
 def _trajectory_linestring_frame(
     domain: Domain,
 ) -> tuple[pd.DataFrame, npt.NDArray[np.object_]]:
@@ -511,8 +641,9 @@ def _trajectory_linestring_frame(
     Raises
     ------
     ValueError
-        If the composite axis lacks ``x`` / ``y`` coordinates, or has fewer than
-        two vertices (too few for a line; use the default points geometry).
+        If the ``composite`` axis is not a ``"tuple"`` axis, lacks ``x`` / ``y``
+        coordinates, or has fewer than two vertices (too few for a line; use the
+        default points geometry).
     """
     # Linestring mode reads only the composite axis; unlike _point_frame and
     # _polygon_frame it needs nothing from the coverage (the per-vertex range
@@ -521,20 +652,10 @@ def _trajectory_linestring_frame(
     import pandas as pd
     import shapely
 
-    composite = domain.axes["composite"]
-    coords = composite.coordinates or ()
-
-    if "x" not in coords or "y" not in coords:
-        msg = (
-            "a Trajectory needs x and y coordinates to build a LineString; "
-            f"got composite coordinates {list(coords)}"
-        )
-        raise ValueError(msg)
-
-    x_index = coords.index("x")
-    y_index = coords.index("y")
+    composite = _require_composite_axis(domain, "Trajectory", "tuple")
+    coords = coordinate_identifiers(composite, "composite")
     # A vertical component makes the path 3D (LINESTRING Z).
-    z_index = coords.index("z") if "z" in coords else None
+    x_index, y_index, z_index = _horizontal_indices(coords, "Trajectory", "LineString")
     # A "tuple" composite holds one tuple (position) per vertex by construction.
     positions = cast("tuple[tuple[Any, ...], ...]", composite.values or ())
 
@@ -590,17 +711,17 @@ def _polygon_frame(
     Raises
     ------
     ValueError
-        If a range is not an inline `NdArray`.
+        If the ``composite`` axis is not a ``"polygon"`` axis or lacks ``x`` /
+        ``y`` coordinates, or a range is not an inline `NdArray`.
     """
     import numpy as np
     import pandas as pd
 
-    composite = domain.axes["composite"]
-    coords = composite.coordinates or ("x", "y")
-    x_index = coords.index("x") if "x" in coords else 0
-    y_index = coords.index("y") if "y" in coords else 1
+    domain_type = coverage.effective_domain_type or "Polygon"
+    composite = _require_composite_axis(domain, domain_type, "polygon")
+    coords = coordinate_identifiers(composite, "composite")
     # A vertical component in the ring positions becomes a 3D polygon (POLYGON Z).
-    z_index = coords.index("z") if "z" in coords else None
+    x_index, y_index, z_index = _horizontal_indices(coords, domain_type, "Polygon")
     polygons = [
         _shapely_polygon(polygon, x_index, y_index, z_index)
         for polygon in (composite.values or ())

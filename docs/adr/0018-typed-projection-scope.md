@@ -100,17 +100,25 @@ bug it found rather than a counterexample:
 | `bounds` length is not `2 * len(values)` | one: drop the bounds | `validate()` | unchecked ([#129][i129]) |
 | a `TemporalRS` without `calendar` | one | `validate()` | `validate()` |
 | values not matching `dataType` | one | `validate()` | `validate()` |
-| composite without `coordinates` | **one: apply the documented default** | **not construction** | **construction ([#131][i131])** |
+| composite without `coordinates` | **one: apply the documented default** | **not construction** | **not construction ([#131][i131])** |
 
 That last row is the test earning its keep. 6.1.1 does not require a composite
 axis to supply `coordinates`; it says "If missing, the member `"coordinates"`
 defaults to a one-element array of the axis identifier". A missing `coordinates`
 therefore has exactly one repair, the spec's own default, so the axis stays
-interpretable and construction is the wrong tier. `__post_init__` rejects it
-anyway, so `Axis(values=((1.0,),), data_type="tuple")` -- a legal one-tuple axis
--- does not load. That predates this ADR and is filed as [#131][i131]; it is
-noted here because the table would otherwise present an over-strict rule as
-evidence for the rule.
+interpretable and construction is the wrong tier. `__post_init__` rejected it
+anyway, so `Axis(values=((1.0,),), data_type="tuple")` (a legal one-tuple axis)
+did not load. The test found that as a bug rather than a counterexample, and
+[#131][i131] removed the guard, which is why the row now reads as predicted.
+
+Removing it cost nothing the guard was actually providing, which is the sharper
+lesson. The guard checked that `coordinates` was *present*, never that it *fit*:
+`Axis(values=((1.0, 2.0, 3.0),), data_type="tuple", coordinates=("composite",))`
+satisfied it and still had three components against one identifier, and the
+bridges silently dropped the surplus two. The real rule lives at the scanning
+tier, over the *resolved* identifiers, as `validate`'s `axis.composite-arity`
+([#127][i127]). An over-strict guard is not a conservative guard: it rejects
+conformant documents while the malformation it was mistaken for walks past.
 
 The `bounds` row is the separator, and it is why the rule is not "local and cheap
 implies construction": `len(bounds) != 2 * len(axis)` is local *and* O(1), yet it

@@ -186,10 +186,6 @@ class Axis(CovJSONStruct, frozen=True):
             msg = "Axis with `num` of 1 requires equal `start` and `stop`"
             raise ValueError(msg)
 
-        if self.data_type in ("tuple", "polygon") and self.coordinates is None:
-            msg = f"a {self.data_type!r} axis requires `coordinates`"
-            raise ValueError(msg)
-
         # Derived from two spec 6.1.1 MUSTs rather than stated by either: a
         # 'tuple' axis value MUST be "an array of fixed size of primitive values"
         # (a 'polygon' value, "a GeoJSON Polygon coordinate array"), while

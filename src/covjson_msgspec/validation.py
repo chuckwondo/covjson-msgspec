@@ -67,11 +67,12 @@ import msgspec
 from msgspec import UNSET
 
 from covjson_msgspec._bridging import (
+    coordinate_identifiers,
     coordinate_systems,
     is_standard_calendar,
 )
 from covjson_msgspec._reference_invariants import missing_required_member
-from covjson_msgspec.axis import AxisValue
+from covjson_msgspec.axis import Axis, AxisValue
 from covjson_msgspec.coverage import (
     Coverage,
     CoverageCollection,
@@ -257,6 +258,65 @@ class AxisNotMonotonic(_Issue, frozen=True, tag="axis.not-monotonic"):
 
     def __str__(self) -> str:
         return f"axis {self.axis!r} values must be ordered monotonically"
+
+
+class AxisCompositeValueShape(_Issue, frozen=True, tag="axis.composite-value-shape"):
+    """A composite axis's value is not the array its ``dataType`` demands.
+
+    Spec 6.1.1 (Axis Objects): for ``"tuple"``, each axis value MUST be "an array
+    of fixed size of primitive values in a defined order"; for ``"polygon"``, "a
+    GeoJSON Polygon coordinate array". A value that is not an array at all
+    violates either MUST, so this is an error (per ADR-0002).
+
+    Decode cannot catch it: `~covjson_msgspec.axis.AxisValue` is one union serving
+    primitive and composite axes alike, so nothing in the type ties a value's
+    shape to the axis's ``dataType``. A custom dataType is never reported: 6.1.1
+    grants only "Custom values MAY be used" and defines no value structure for
+    one, so no MUST constrains it.
+    """
+
+    axis: str
+    data_type: Literal["tuple", "polygon"]
+
+    def __str__(self) -> str:
+        shape = (
+            "an array of primitive values"
+            if self.data_type == "tuple"
+            else "a GeoJSON Polygon coordinate array"
+        )
+
+        return (
+            f"axis {self.axis!r} is {self.data_type!r}, so each value must be {shape}"
+        )
+
+
+class AxisCompositeArity(_Issue, frozen=True, tag="axis.composite-arity"):
+    """A ``"tuple"`` axis's values do not match its coordinate identifier count.
+
+    Spec 6.1.1 (Axis Objects): for ``"tuple"``, "the tuple size corresponds to the
+    number of coordinate identifiers", so a mismatch violates a MUST and is an
+    error (per ADR-0002). Left unreported, the bridges zip each tuple against the
+    identifiers and silently drop every surplus component.
+
+    The identifier count is the *resolved* one
+    (`~covjson_msgspec._bridging.coordinate_identifiers`): an axis omitting
+    ``coordinates`` defaults to a one-element array naming itself, so its tuples
+    must be 1-tuples.
+
+    ``"polygon"`` is deliberately outside this rule: its ``coordinates`` give "the
+    order of coordinates" *within* each GeoJSON position, so a polygon value's
+    length is its ring count and bears no relation to the identifier count.
+    """
+
+    axis: str
+    expected: int
+    got: int
+
+    def __str__(self) -> str:
+        return (
+            f"axis {self.axis!r} has {self.got}-tuple values but "
+            f"{self.expected} coordinate identifiers"
+        )
 
 
 class TemporalMissingCalendar(_Issue, frozen=True, tag="temporal.missing-calendar"):
@@ -535,6 +595,8 @@ Issue = (
     | DomainMissingReferencing
     | DomainMissingDomainType
     | AxisNotMonotonic
+    | AxisCompositeValueShape
+    | AxisCompositeArity
     | TemporalMissingCalendar
     | IdentifierMissingTargetConcept
     | NdArrayShapeRank
@@ -1595,6 +1657,7 @@ def _validate_domain(
     # standard-calendar temporal axis once here and share the result with both
     # value-scans, so a temporal string is parsed once per domain, not twice.
     if check_values:
+        yield from _axis_composite_issues(domain, path)
         systems = coordinate_systems(domain)
         resolved = _resolved_temporal_axes(domain, systems)
         yield from _temporal_form_issues(path, resolved)
@@ -1727,6 +1790,246 @@ def _temporal_form_issues(
         for i, result in enumerate(resolved[coord])
         if isinstance(result, Malformed)
     )
+
+
+def _axis_composite_issues(
+    domain: Domain, path: tuple[str | int, ...]
+) -> Iterator[Issue]:
+    """Yield the spec 6.1.1 value-shape issues for each composite axis.
+
+    Dispatches per ``dataType`` rather than sharing one rule, because 6.1.1
+    states two different requirements at two different depths: a ``"tuple"``
+    value's size matches the coordinate identifier count, while a ``"polygon"``
+    value's ``coordinates`` order the components *inside* each GeoJSON position
+    (its length is the ring count, unrelated to the identifiers). A custom
+    dataType yields nothing: 6.1.1 grants only "Custom values MAY be used" and
+    defines no value structure for one.
+
+    Parameters
+    ----------
+    domain
+        The domain whose axes are scanned.
+    path
+        The reference-token path to ``domain``, built via `_ptr` for each issue.
+
+    Yields
+    ------
+    Issue
+        The composite issues, in ``axes`` order.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain
+    >>> dom = Domain(
+    ...     axes={"composite": Axis(values=((1.0, 2.0),), data_type="tuple")},
+    ...     domain_type="Trajectory",
+    ... )
+    >>> [issue.code for issue in _axis_composite_issues(dom, ())]
+    ['axis.composite-arity']
+
+    A custom dataType is left alone:
+
+    >>> custom = Domain(axes={"composite": Axis.listed((1.0,), )})
+    >>> list(_axis_composite_issues(custom, ()))
+    []
+    """
+
+    for name, axis in domain.axes.items():
+        if axis.data_type == "tuple":
+            yield from _tuple_axis_issues(name, axis, path)
+        elif axis.data_type == "polygon":
+            yield from _polygon_axis_issues(name, axis, path)
+
+
+def _tuple_axis_issues(
+    name: str, axis: Axis, path: tuple[str | int, ...]
+) -> Iterator[Issue]:
+    """Yield the shape and arity issues for one ``"tuple"`` axis.
+
+    Spec 6.1.1: each value MUST be "an array of fixed size of primitive values in
+    a defined order, where the tuple size corresponds to the number of coordinate
+    identifiers". Shape gates arity: a value that is not an array has no
+    meaningful size, and a ``str`` would otherwise pass an arity check by its
+    character count (``len("abc") == 3``).
+
+    The identifier count is the resolved one, so an axis omitting ``coordinates``
+    is measured against 6.1.1's one-element default rather than skipped.
+
+    Parameters
+    ----------
+    name
+        The axis's identifier: its key in `~covjson_msgspec.domain.Domain.axes`.
+    axis
+        The composite axis to scan.
+    path
+        The reference-token path to the domain, built via `_ptr` for each issue.
+
+    Yields
+    ------
+    Issue
+        An `AxisCompositeValueShape` or `AxisCompositeArity` per offending value.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis
+    >>> axis = Axis(values=("abc",), data_type="tuple", coordinates=("t", "x", "y"))
+    >>> [issue.code for issue in _tuple_axis_issues("composite", axis, ())]
+    ['axis.composite-value-shape']
+    """
+
+    expected = len(coordinate_identifiers(axis, name))
+
+    for index, value in enumerate(axis.values or ()):
+        at = _ptr(path, "axes", name, "values", index)
+
+        if not isinstance(value, tuple):
+            yield AxisCompositeValueShape(axis=name, data_type="tuple", at=at)
+        elif len(value) != expected:
+            yield AxisCompositeArity(
+                axis=name, expected=expected, got=len(value), at=at
+            )
+
+
+def _polygon_axis_issues(
+    name: str, axis: Axis, path: tuple[str | int, ...]
+) -> Iterator[Issue]:
+    """Yield the shape issues for one ``"polygon"`` axis.
+
+    Spec 6.1.1: each value MUST be "a GeoJSON Polygon coordinate array", meaning
+    an array of linear rings, each an array of positions. The check stops there:
+    it confirms each position is an array without reading its contents, leaving
+    the position-vs-``coordinates`` length rule to its own check.
+
+    Only the outermost level is annotated (`~covjson_msgspec.axis.AxisValue` is
+    ``tuple[Any, ...]``, its interior deliberately ``Any``), so a decoded polygon
+    arrives as a tuple of *lists* of lists. Rings and positions are therefore
+    tested against both sequence types, while the value itself is tested against
+    the ``tuple`` its annotation promises.
+
+    Parameters
+    ----------
+    name
+        The axis's identifier: its key in `~covjson_msgspec.domain.Domain.axes`.
+    axis
+        The composite axis to scan.
+    path
+        The reference-token path to the domain, built via `_ptr` for each issue.
+
+    Yields
+    ------
+    Issue
+        An `AxisCompositeValueShape` per value that is not a Polygon array.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis
+    >>> axis = Axis(values=(1.0,), data_type="polygon", coordinates=("x", "y"))
+    >>> [issue.code for issue in _polygon_axis_issues("composite", axis, ())]
+    ['axis.composite-value-shape']
+    """
+
+    for index, value in enumerate(axis.values or ()):
+        if not _is_polygon_array(value):
+            yield AxisCompositeValueShape(
+                axis=name,
+                data_type="polygon",
+                at=_ptr(path, "axes", name, "values", index),
+            )
+
+
+def _is_polygon_array(value: AxisValue) -> bool:
+    """Whether ``value`` is a GeoJSON Polygon coordinate array: rings of positions.
+
+    Only the outermost level is annotated
+    (`~covjson_msgspec.axis.AxisValue` is ``tuple[Any, ...]``), so a decoded
+    polygon is a tuple of *lists* of lists: the value is held to the ``tuple`` its
+    annotation promises, while the rings beneath it are widened to ``object`` and
+    narrowed by `_is_position_array` rather than left as `~typing.Any`.
+
+    The array must be non-empty: a polygon with no rings is not a GeoJSON Polygon
+    (RFC 7946), and it reaches shapely as an unpack error rather than a clean one.
+    The rings' interiors are not read beyond nesting: whether a ring has enough
+    positions, closes, or matches ``coordinates`` in length is a separate, deeper
+    rule.
+
+    Parameters
+    ----------
+    value
+        One value of a ``"polygon"`` axis.
+
+    Returns
+    -------
+    bool
+        True when ``value`` is a non-empty array whose every element is a ring.
+
+    Examples
+    --------
+    >>> _is_polygon_array(([[100.0, 0.0], [101.0, 0.0], [100.0, 0.0]],))
+    True
+
+    A bare ring, one nesting level short of a polygon, is not:
+
+    >>> _is_polygon_array(([100.0, 0.0], [101.0, 0.0]))
+    False
+
+    Nor is a polygon with no rings at all:
+
+    >>> _is_polygon_array(())
+    False
+    """
+
+    if not isinstance(value, tuple) or not value:
+        return False
+
+    rings: tuple[object, ...] = value
+
+    return all(map(_is_position_array, rings))
+
+
+def _is_position_array(ring: object) -> bool:
+    """Whether ``ring`` is an array of positions, each itself an array.
+
+    A GeoJSON linear ring is a sequence of positions (spec 6.1.1 defers to
+    GeoJSON for the structure). Position *contents* are not read: this answers
+    only whether the nesting is right, and that the ring is non-empty (an empty
+    ring is not a ring, and reaches shapely as an empty geometry).
+
+    Parameters
+    ----------
+    ring
+        A candidate linear ring, from a polygon axis value's interior. Typed
+        ``object`` because that interior is `~typing.Any`: it may be any decoded
+        JSON value, and narrowing it here beats propagating the ``Any``.
+
+    Returns
+    -------
+    bool
+        True when ``ring`` is a non-empty list or tuple whose every element is
+        one too.
+
+    Examples
+    --------
+    >>> _is_position_array([[100.0, 0.0], [101.0, 1.0]])
+    True
+    >>> _is_position_array([100.0, 0.0])
+    False
+    >>> _is_position_array("nope")
+    False
+
+    An empty ring holds no positions, so it is not a ring:
+
+    >>> _is_position_array([])
+    False
+    """
+
+    if not isinstance(ring, (list, tuple)) or not ring:
+        return False
+
+    # `isinstance` narrows the element type to Unknown rather than `object`, so
+    # name it: every position is only ever read through `isinstance` below.
+    positions = cast("Sequence[object]", ring)
+
+    return all(isinstance(position, (list, tuple)) for position in positions)
 
 
 def _axis_monotonic_issues(

@@ -369,6 +369,30 @@ def test_non_ndarray_range_is_rejected() -> None:
         to_pandas(cov)
 
 
+def test_malformed_composite_axis_raises_a_clean_error() -> None:
+    # A "tuple" axis whose values are not matching tuples used to index into a
+    # float and raise a bare TypeError from inside pandas. The bridge does not
+    # require a validated document (validate() reports axis.composite-value-shape),
+    # so it rejects the same input here with a clear message.
+    cov = Coverage(
+        domain=Domain(
+            axes={"composite": Axis(values=(1.0, 2.0), data_type="tuple")},
+            domain_type="Trajectory",
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=(1.0, 2.0),
+                shape=(2,),
+                axis_names=("composite",),
+            )
+        },
+    )
+
+    with pytest.raises(ValueError, match="composite axis 'composite' needs 1-tuple"):
+        to_pandas(cov)
+
+
 def test_string_parameter_values_preserved() -> None:
     cov = Coverage(
         domain=Domain.point_series(

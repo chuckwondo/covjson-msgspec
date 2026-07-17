@@ -34,6 +34,8 @@ from covjson_msgspec.referencing import (
     ResolvedReferenceSystem,
 )
 from covjson_msgspec.validation import (
+    AxisCompositeArity,
+    AxisCompositeValueShape,
     AxisNotMonotonic,
     AxisOrderChecker,
     CoverageDomainTypeConflict,
@@ -1202,6 +1204,136 @@ def test_custom_axis_order_checker_overrides_the_default() -> None:
     assert _monotonic_paths(domain, strictly_descending) == ["/axes/c/values/2"]
 
 
+def test_tuple_axis_arity_mismatch_is_reported() -> None:
+    axis = Axis(
+        values=((1.0, 2.0), (3.0, 4.0)), data_type="tuple", coordinates=("t", "x", "y")
+    )
+
+    issues = _composite_issues(axis)
+
+    assert [i.code for i in issues] == ["axis.composite-arity"] * 2
+    assert isinstance(issues[0], AxisCompositeArity)
+    assert (issues[0].expected, issues[0].got) == (3, 2)
+    assert issues[0].at == "/axes/composite/values/0"
+
+
+def test_tuple_axis_without_coordinates_is_measured_against_the_default() -> None:
+    # Spec 6.1.1 defaults `coordinates` to a one-element array naming the axis,
+    # so a 3-tuple disagrees with that default exactly as it would with an
+    # explicit one-element array. #131 removed the load-time guard requiring
+    # `coordinates`; this is the rule that catches the real malformation, and it
+    # measures against the resolved identifiers rather than skipping the axis.
+    axis = Axis(values=((1.0, 2.0, 3.0),), data_type="tuple")
+
+    issues = _composite_issues(axis)
+
+    assert isinstance(issues[0], AxisCompositeArity)
+    assert (issues[0].expected, issues[0].got) == (1, 3)
+
+
+def test_tuple_axis_matching_the_default_is_silent() -> None:
+    # The #131 acceptance criterion: a legal one-tuple axis relying on the
+    # default loads and draws nothing.
+    assert _composite_issues(Axis(values=((1.0,), (2.0,)), data_type="tuple")) == []
+
+
+def test_tuple_axis_string_value_is_reported_as_shape_not_arity() -> None:
+    # A str satisfies len() and indexing, so `len("abc") == 3` passes an arity
+    # check against three identifiers and the bridges then read 'a'/'b'/'c' as
+    # the components. Shape gates arity, so shape alone is reported: an arity
+    # check over an unshaped value certifies the garbage rather than catching it.
+    axis = Axis(values=("abc",), data_type="tuple", coordinates=("t", "x", "y"))
+
+    issues = _composite_issues(axis)
+
+    assert [i.code for i in issues] == ["axis.composite-value-shape"]
+    assert isinstance(issues[0], AxisCompositeValueShape)
+    assert issues[0].data_type == "tuple"
+
+
+def test_legal_polygon_decoded_from_the_wire_is_silent() -> None:
+    # Decoded from bytes rather than built from literals, deliberately: only
+    # `AxisValue`'s outermost level is annotated (`tuple[Any, ...]`), so a
+    # decoded polygon is a tuple of *lists* of lists. A shape check expecting a
+    # tuple at every depth fires on this legal document, and a Python-literal
+    # fixture would hide that.
+    axis = msgspec.json.decode(
+        b'{"values": [[[[100.0, 0.0], [101.0, 0.0], [101.0, 1.0], [100.0, 0.0]]]],'
+        b' "dataType": "polygon", "coordinates": ["x", "y"]}',
+        type=Axis,
+    )
+
+    assert _composite_issues(axis) == []
+
+
+# A ring with no positions, typed so strict pyright sees a known element type
+# rather than `list[Unknown]`. Defined before its use in the parametrize below.
+_EMPTY_RING: list[list[float]] = []
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param((), id="no-rings"),
+        pytest.param((_EMPTY_RING,), id="empty-ring"),
+    ],
+)
+def test_polygon_axis_with_an_empty_array_is_reported(value: AxisValue) -> None:
+    # `all()` over an empty sequence is vacuously true, so a polygon with no
+    # rings, or a ring with no positions, would slip through a naive shape check
+    # and reach shapely as an unpack error or an empty geometry. RFC 7946 (which
+    # 6.1.1 defers to) requires a non-empty array at each level.
+    axis = Axis(values=(value,), data_type="polygon", coordinates=("x", "y"))
+
+    issues = _composite_issues(axis)
+
+    assert [i.code for i in issues] == ["axis.composite-value-shape"]
+
+
+def test_polygon_axis_given_a_bare_ring_is_reported() -> None:
+    # One nesting level short: a ring supplied where a polygon (a sequence of
+    # rings) belongs, so the ring's positions are read as rings.
+    axis = Axis(
+        values=(((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 0.0)),),
+        data_type="polygon",
+        coordinates=("x", "y"),
+    )
+
+    issues = _composite_issues(axis)
+
+    assert [i.code for i in issues] == ["axis.composite-value-shape"]
+    assert isinstance(issues[0], AxisCompositeValueShape)
+    assert issues[0].data_type == "polygon"
+
+
+@pytest.mark.parametrize("data_type", [None, "knmi:range"])
+def test_non_composite_axis_draws_no_composite_issue(data_type: str | None) -> None:
+    # Spec 6.1.1 defines no value structure for a custom dataType (it grants only
+    # "Custom values MAY be used"), so no MUST constrains one and neither rule
+    # applies. A primitive axis is likewise out of scope.
+    assert _composite_issues(Axis(values=(1.0, 2.0), data_type=data_type)) == []
+
+
+def test_composite_issues_are_gated_by_check_values() -> None:
+    # Both rules scan every value, so they belong behind `check_values` (ADR-0002)
+    # rather than in the default pass.
+    axis = Axis(values=("abc",), data_type="tuple", coordinates=("t", "x", "y"))
+    domain = Domain(axes={"composite": axis}, referencing=_REF)
+
+    assert [i for i in validate(domain) if i.code.startswith("axis.composite-")] == []
+
+
+def _composite_issues(axis: Axis) -> list[Issue]:
+    """The ``axis.composite-*`` issues a one-axis domain's ``axis`` draws."""
+    domain = Domain(axes={"composite": axis}, referencing=_REF)
+
+    return [
+        issue
+        for issue in validate(domain, check_values=True)
+        if issue.code.startswith("axis.composite-")
+    ]
+
+
 def _value_type_paths(issues: list[Issue]) -> list[str]:
     """Paths of the value-type-mismatch issues, in document order."""
     return [i.at for i in issues if i.code == "range.value-type-mismatch"]
@@ -1268,7 +1400,7 @@ def _describe(issue: Issue) -> str:
             | DomainMissingDomainType()
         ):
             return "domain"
-        case AxisNotMonotonic():
+        case AxisNotMonotonic() | AxisCompositeValueShape() | AxisCompositeArity():
             return "axis"
         case NdArrayShapeRank() | NdArrayValueCount():
             return "ndarray"
