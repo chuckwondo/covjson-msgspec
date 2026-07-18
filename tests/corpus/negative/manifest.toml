@@ -125,3 +125,7 @@ issues = [{ code = "axis.composite-value-shape", severity = "error" }]
 [[case]]
 file = "axis-bounds-length.json"
 issues = [{ code = "axis.bounds-length", severity = "error" }]
+
+[[case]]
+file = "axis-coordinates-not-omitted.json"
+issues = [{ code = "axis.coordinates-not-omitted", severity = "error" }]
