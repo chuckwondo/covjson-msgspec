@@ -198,12 +198,21 @@ rules   = { invalid-argument-type = "ignore" }
 # via the implicit import from `[tool.mypy]`) so `tests/` is on the search path:
 # the suite imports shared helpers by top-level name (e.g. `import fetchers`) via
 # pytest's `pythonpath`, which the default `src`-only import root cannot resolve.
-# `preset = "legacy"` keeps the same strictness the mypy import applied; raising it
-# to "strict" is tracked in #71.
+# `preset = "strict"` sharpens the informational signal past what the blocking
+# mypy / basedpyright pair flag (see #71).
 [tool.pyrefly]
-preset           = "legacy"
+preset           = "strict"
 project_includes = [ "src", "tests", "benchmarks" ]
 search_path      = [ "src", "tests", "benchmarks" ]
+
+[tool.pyrefly.errors]
+# strict's `missing-override-decorator` wants `@override` on ~32 overriding
+# methods. On the 3.11 floor (ADR-0001) `typing.override` does not exist, so that
+# means `typing_extensions` -- a new core runtime dependency (neither msgspec nor
+# langcodes pulls it) added only to satisfy an informational-only checker the
+# blocking mypy / basedpyright pair do not gate on. Not worth the dependency;
+# revisit at the 3.12 floor, where `typing.override` is free. See #71.
+missing-override-decorator = false
 
 [tool.pytest.ini_options]
 # Run doctests in the package modules alongside the test suite. `importlib`
