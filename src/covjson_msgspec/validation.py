@@ -60,7 +60,7 @@ import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from functools import cache
 from itertools import chain, pairwise
-from typing import Any, Literal, assert_never, cast
+from typing import Any, Literal, TypeGuard, assert_never, cast
 
 import langcodes
 import msgspec
@@ -305,7 +305,8 @@ class AxisCompositeArity(_Issue, frozen=True, tag="axis.composite-arity"):
 
     ``"polygon"`` is deliberately outside this rule: its ``coordinates`` give "the
     order of coordinates" *within* each GeoJSON position, so a polygon value's
-    length is its ring count and bears no relation to the identifier count.
+    length is its ring count and bears no relation to the identifier count. The
+    position-length rule a polygon does obey lives in `AxisPolygonPositionArity`.
     """
 
     axis: str
@@ -316,6 +317,80 @@ class AxisCompositeArity(_Issue, frozen=True, tag="axis.composite-arity"):
         return (
             f"axis {self.axis!r} has {self.got}-tuple values but "
             f"{self.expected} coordinate identifiers"
+        )
+
+
+class AxisPolygonPositionArity(_Issue, frozen=True, tag="axis.polygon-position-arity"):
+    """A ``"polygon"`` axis position's length differs from its coordinate count.
+
+    Spec 6.1.1 (Axis Objects): for ``"polygon"``, each value is a GeoJSON Polygon
+    coordinate array "where the order of coordinates is given by the
+    ``"coordinates"`` array", so a position's components *are* those coordinates and
+    its length MUST equal the coordinate identifier count. A mismatch violates that
+    MUST and is an error (per ADR-0002). This is the ``"polygon"`` twin of
+    `AxisCompositeArity`: a tuple's arity is its value length (depth 1), a polygon's
+    is its *position* length (depth 3).
+
+    Left unreported, the geo bridge indexes each position by coordinate name, so a
+    position shorter than the identifiers raises an ``IndexError`` and a longer one
+    silently drops the surplus components. The identifier count is the *resolved*
+    one (`~covjson_msgspec._bridging.coordinate_identifiers`).
+    """
+
+    axis: str
+    expected: int
+    got: int
+
+    def __str__(self) -> str:
+        return (
+            f"axis {self.axis!r} polygon position has {self.got} components but "
+            f"{self.expected} coordinate identifiers"
+        )
+
+
+class AxisPolygonRingTooShort(_Issue, frozen=True, tag="axis.polygon-ring-too-short"):
+    """A ``"polygon"`` axis ring has fewer than the four positions a ring needs.
+
+    Spec 6.1.1 defers to GeoJSON for a polygon value's structure, and RFC 7946
+    (section 3.1.6) defines a linear ring as "a closed LineString with four or more
+    positions". A ring with fewer is not a linear ring, so it fails to be a GeoJSON
+    Polygon at all: an error (per ADR-0002), the same "fails to be the thing" shape
+    as `AxisBoundsLength`.
+
+    The geo bridge tolerates some of these (shapely auto-closes a three-position
+    ring) but rejects a ring of two, so the rule is a spec-conformance check that
+    also heads off the ``ValueError`` shapely raises for a degenerate ring.
+    """
+
+    axis: str
+    got: int
+
+    def __str__(self) -> str:
+        return (
+            f"axis {self.axis!r} polygon ring has {self.got} positions but "
+            "a linear ring needs four or more"
+        )
+
+
+class AxisPolygonRingNotClosed(_Issue, frozen=True, tag="axis.polygon-ring-not-closed"):
+    """A ``"polygon"`` axis ring's first and last positions are not identical.
+
+    Spec 6.1.1 defers to GeoJSON for a polygon value's structure, and RFC 7946
+    (section 3.1.6) requires a linear ring to be closed: "The first and last
+    positions are equivalent, and they MUST contain identical values." A ring whose
+    first and last positions differ violates that MUST and is an error (per
+    ADR-0002).
+
+    The geo bridge silently repairs this (shapely auto-closes the ring), so nothing
+    downstream breaks: the rule is a pure spec-conformance check.
+    """
+
+    axis: str
+
+    def __str__(self) -> str:
+        return (
+            f"axis {self.axis!r} polygon ring is not closed: its first and last "
+            "positions must be identical"
         )
 
 
@@ -671,6 +746,9 @@ Issue = (
     | AxisNotMonotonic
     | AxisCompositeValueShape
     | AxisCompositeArity
+    | AxisPolygonPositionArity
+    | AxisPolygonRingTooShort
+    | AxisPolygonRingNotClosed
     | AxisBoundsLength
     | AxisCoordinatesNotOmitted
     | TemporalMissingCalendar
@@ -1980,12 +2058,13 @@ def _tuple_axis_issues(
 def _polygon_axis_issues(
     name: str, axis: Axis, path: tuple[str | int, ...]
 ) -> Iterator[Issue]:
-    """Yield the shape issues for one ``"polygon"`` axis.
+    """Yield the shape and per-ring issues for one ``"polygon"`` axis.
 
-    Spec 6.1.1: each value MUST be "a GeoJSON Polygon coordinate array", meaning
-    an array of linear rings, each an array of positions. The check stops there:
-    it confirms each position is an array without reading its contents, leaving
-    the position-vs-``coordinates`` length rule to its own check.
+    Spec 6.1.1: each value MUST be "a GeoJSON Polygon coordinate array", meaning an
+    array of linear rings, each an array of positions. Shape gates the deeper reads:
+    a value that is not a polygon array is reported as `AxisCompositeValueShape` and
+    never reaches the depth-3 rules (`_polygon_ring_issues`), so those only ever see
+    a value whose rings and positions are non-empty arrays.
 
     Only the outermost level is annotated (`~covjson_msgspec.axis.AxisValue` is
     ``tuple[Any, ...]``, its interior deliberately ``Any``), so a decoded polygon
@@ -2005,7 +2084,8 @@ def _polygon_axis_issues(
     Yields
     ------
     Issue
-        An `AxisCompositeValueShape` per value that is not a Polygon array.
+        An `AxisCompositeValueShape` per value that is not a Polygon array; else,
+        for a well-shaped value, the `_polygon_ring_issues` of each of its rings.
 
     Examples
     --------
@@ -2013,7 +2093,16 @@ def _polygon_axis_issues(
     >>> axis = Axis(values=(1.0,), data_type="polygon", coordinates=("x", "y"))
     >>> [issue.code for issue in _polygon_axis_issues("composite", axis, ())]
     ['axis.composite-value-shape']
+
+    A well-shaped value is scanned deeper; here its one ring is a position short:
+
+    >>> ring = [[0.0, 0.0], [1.0, 0.0], [0.0, 0.0]]
+    >>> axis = Axis(values=((ring,),), data_type="polygon", coordinates=("x", "y"))
+    >>> [issue.code for issue in _polygon_axis_issues("composite", axis, ())]
+    ['axis.polygon-ring-too-short']
     """
+
+    expected = len(coordinate_identifiers(axis, name))
 
     for index, value in enumerate(axis.values or ()):
         if not _is_polygon_array(value):
@@ -2022,9 +2111,85 @@ def _polygon_axis_issues(
                 data_type="polygon",
                 at=_ptr(path, "axes", name, "values", index),
             )
+            continue
+
+        # `_is_polygon_array` is a TypeGuard, so `value` is now a tuple of rings.
+        for ring_index, ring in enumerate(value):
+            ring_path = (*path, "axes", name, "values", index, ring_index)
+            yield from _polygon_ring_issues(name, expected, ring, ring_path)
 
 
-def _is_polygon_array(value: AxisValue) -> bool:
+def _polygon_ring_issues(
+    name: str, expected: int, ring: object, ring_path: tuple[str | int, ...]
+) -> Iterator[Issue]:
+    """Yield the depth-3 spec 6.1.1 / RFC 7946 issues for one polygon linear ring.
+
+    Called only for a ring that has already passed `_is_position_array` (via
+    `_is_polygon_array`), so ``ring`` is a non-empty sequence of non-empty position
+    sequences: ``len(position)``, ``ring[0]``, and ``ring[-1]`` are all safe. Three
+    independent MUSTs are checked, and every one that fails is reported (a
+    three-position unclosed ring draws both a too-short and a not-closed issue):
+
+    * **position arity** (spec 6.1.1): each position's length equals ``expected``,
+      the coordinate identifier count (`AxisPolygonPositionArity`, per position).
+    * **ring length** (RFC 7946 section 3.1.6): four or more positions
+      (`AxisPolygonRingTooShort`).
+    * **closure** (RFC 7946 section 3.1.6): the first and last positions are
+      identical (`AxisPolygonRingNotClosed`).
+
+    Parameters
+    ----------
+    name
+        The axis's identifier, for the issue payloads.
+    expected
+        The resolved coordinate identifier count each position must match.
+    ring
+        One linear ring: a non-empty sequence of position sequences. Typed
+        ``object`` because the polygon interior is `~typing.Any`.
+    ring_path
+        The reference tokens to this ring; the ring issues point here and each
+        position issue appends its index, both via `_ptr`.
+
+    Yields
+    ------
+    Issue
+        One `AxisPolygonPositionArity` per wrong-length position, then an
+        `AxisPolygonRingTooShort` and/or `AxisPolygonRingNotClosed` for the ring.
+
+    Examples
+    --------
+    A three-position ring is both too short and, here, unclosed:
+
+    >>> ring = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]
+    >>> [i.code for i in _polygon_ring_issues("composite", 2, ring, ())]
+    ['axis.polygon-ring-too-short', 'axis.polygon-ring-not-closed']
+
+    A conformant ring draws nothing:
+
+    >>> closed = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 0.0]]
+    >>> list(_polygon_ring_issues("composite", 2, closed, ()))
+    []
+    """
+
+    positions = cast("Sequence[Sequence[object]]", ring)
+
+    for position_index, position in enumerate(positions):
+        if len(position) != expected:
+            yield AxisPolygonPositionArity(
+                axis=name,
+                expected=expected,
+                got=len(position),
+                at=_ptr(ring_path, position_index),
+            )
+
+    if len(positions) < 4:
+        yield AxisPolygonRingTooShort(axis=name, got=len(positions), at=_ptr(ring_path))
+
+    if positions[0] != positions[-1]:
+        yield AxisPolygonRingNotClosed(axis=name, at=_ptr(ring_path))
+
+
+def _is_polygon_array(value: AxisValue) -> TypeGuard[tuple[Any, ...]]:
     """Whether ``value`` is a GeoJSON Polygon coordinate array: rings of positions.
 
     Only the outermost level is annotated
@@ -2047,7 +2212,10 @@ def _is_polygon_array(value: AxisValue) -> bool:
     Returns
     -------
     bool
-        True when ``value`` is a non-empty array whose every element is a ring.
+        True (a `~typing.TypeGuard` narrowing ``value`` to ``tuple``) when it is a
+        non-empty array whose every element is a ring. The guard narrows only the
+        positive case: `~typing.TypeIs` would be unsound, since an empty ``()`` is
+        a ``tuple`` this returns False for.
 
     Examples
     --------

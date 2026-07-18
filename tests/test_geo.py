@@ -19,6 +19,7 @@ from covjson_msgspec import (
     TileSet,
     to_geojson,
     to_geopandas,
+    validate,
 )
 
 
@@ -304,6 +305,32 @@ def test_multipolygon_is_one_feature_per_polygon() -> None:
 
     assert [g.geom_type for g in gdf.geometry] == ["Polygon", "Polygon"]
     assert gdf["v"].tolist() == [1.0, 2.0]
+
+
+def test_wrong_arity_polygon_is_reported_before_the_bridge_indexerrors() -> None:
+    # Coordinates ["x", "y"] but one-component positions: the bridge reads
+    # position[y_index=1] and raises IndexError. validate() reports the arity fault
+    # first, so a caller who validates is warned before hitting that raw crash.
+    ring = ((0.0,), (1.0,), (2.0,), (0.0,))  # four closed one-component positions
+    axis = Axis(values=((ring,),), data_type="polygon", coordinates=("x", "y"))
+    cov = Coverage(
+        domain=Domain(
+            axes={"composite": axis},
+            domain_type="Polygon",
+            referencing=(
+                ReferenceSystemConnection(
+                    coordinates=("x", "y"), system=ReferenceSystem.geographic()
+                ),
+            ),
+        ),
+        ranges={},
+    )
+
+    codes = {issue.code for issue in validate(cov, check_values=True)}
+    assert "axis.polygon-position-arity" in codes
+
+    with pytest.raises(IndexError):
+        to_geopandas(cov)
 
 
 def test_polygon_series_repeats_geometry_over_time() -> None:

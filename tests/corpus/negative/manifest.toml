@@ -122,6 +122,20 @@ issues = [{ code = "axis.composite-value-shape", severity = "error" }]
 file = "axis-composite-value-shape-polygon.json"
 issues = [{ code = "axis.composite-value-shape", severity = "error" }]
 
+# The three depth-3 polygon rules (position arity, ring length, ring closure),
+# each a distinct code with its own document isolating just that violation.
+[[case]]
+file = "axis-polygon-position-arity.json"
+issues = [{ code = "axis.polygon-position-arity", severity = "error" }]
+
+[[case]]
+file = "axis-polygon-ring-too-short.json"
+issues = [{ code = "axis.polygon-ring-too-short", severity = "error" }]
+
+[[case]]
+file = "axis-polygon-ring-not-closed.json"
+issues = [{ code = "axis.polygon-ring-not-closed", severity = "error" }]
+
 [[case]]
 file = "axis-bounds-length.json"
 issues = [{ code = "axis.bounds-length", severity = "error" }]
