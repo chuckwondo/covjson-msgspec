@@ -60,7 +60,7 @@ from covjson_msgspec._bridging import (
     require_inline_ndarray,
     temporal_coordinates,
 )
-from covjson_msgspec.axis import Axis
+from covjson_msgspec.axis import Axis, AxisValue
 from covjson_msgspec.coverage import Coverage, CoverageCollection
 from covjson_msgspec.domain import Domain
 from covjson_msgspec.referencing import GeographicCRS, ProjectedCRS
@@ -732,7 +732,9 @@ def _polygon_frame(
     dims = ["composite"]
     sizes = {"composite": len(polygons)}
     t_axis = domain.axes.get("t")
-    times = list(t_axis.coordinate_values) if t_axis is not None else []
+    times: list[AxisValue] = (
+        list(t_axis.coordinate_values) if t_axis is not None else []
+    )
 
     if len(times) > 1:
         dims.append("t")

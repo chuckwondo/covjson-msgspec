@@ -321,6 +321,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         """
         from covjson_msgspec.references import resolve_references_async
 
+        # pyrefly: ignore[bad-return]  Self-typed report; blocking pair accepts it
         return await resolve_references_async(self, fetch, strategy=strategy)
 
     def isel(
@@ -655,6 +656,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
         """
         from covjson_msgspec.references import resolve_references_async
 
+        # pyrefly: ignore[bad-return]  Self-typed report; blocking pair accepts it
         return await resolve_references_async(self, fetch, strategy=strategy)
 
     def _repr_html_(self) -> str:
