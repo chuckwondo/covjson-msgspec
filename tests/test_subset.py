@@ -205,6 +205,39 @@ def test_isel_slices_bounds() -> None:
     assert _axis(sub, "x").bounds == (5.0, 15.0, 15.0, 25.0)
 
 
+@pytest.mark.parametrize(
+    ("bounds", "got"),
+    [
+        ((-0.5, 2.5), 2),  # too short
+        ((0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0, 4.0), 8),  # too long
+    ],
+)
+def test_isel_wrong_length_bounds_raises_diagnostic(
+    bounds: tuple[float, ...], got: int
+) -> None:
+    # decode is permissive, so a bounds array that is not 2 * len(values) loads;
+    # subset raises a diagnostic ValueError naming the axis.
+    cov = Coverage(
+        domain=Domain(
+            axes={
+                "x": Axis.listed((0.0, 1.0, 2.0), bounds=bounds),  # needs 6
+                "y": Axis.listed((0.0, 1.0)),
+            }
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                axis_names=("y", "x"),
+                shape=(2, 3),
+                values=tuple(float(i) for i in range(6)),
+            )
+        },
+    )
+
+    with pytest.raises(ValueError, match=rf"axis 'x' has {got} bounds but must have 6"):
+        isel(cov, x=1)
+
+
 def test_isel_scalar_range_untouched() -> None:
     cov = Coverage(
         domain=Domain.grid(x=Axis.regular(0.0, 30.0, 4), y=Axis.regular(0.0, 10.0, 2)),
