@@ -77,8 +77,11 @@ def isel(
     Raises
     ------
     ValueError
-        If the domain is a URL reference, an indexer names an unknown axis, or
-        the same axis is given both positionally and as a keyword.
+        If the domain is a URL reference, an indexer names an unknown axis, the
+        same axis is given both positionally and as a keyword, or a selected
+        axis carries a ``bounds`` array whose length is not twice the axis
+        length (spec 6.1.1; `~covjson_msgspec.validate` reports it as
+        ``axis.bounds-length``).
     IndexError
         If an integer indexer is out of bounds for its axis, or a slice
         selects no positions (CoverageJSON forbids an empty axis).
@@ -126,7 +129,7 @@ def isel(
         for name, indexer in selection.items()
     }
     new_axes = {
-        name: _select_axis(axis, resolved[name]) if name in resolved else axis
+        name: _select_axis(name, axis, resolved[name]) if name in resolved else axis
         for name, axis in domain.axes.items()
     }
     new_ranges = {
@@ -445,7 +448,7 @@ def _resolve_indexer(axis: Axis, indexer: Indexer) -> _AxisSelection:
     return _AxisSelection((position,), keep_dim=False)
 
 
-def _select_axis(axis: Axis, selection: _AxisSelection) -> Axis:
+def _select_axis(name: str, axis: Axis, selection: _AxisSelection) -> Axis:
     """Build the value-listing axis holding an axis's selected coordinates.
 
     The selected coordinate values (and matching cell `~Axis.bounds`, if any) are
@@ -455,6 +458,9 @@ def _select_axis(axis: Axis, selection: _AxisSelection) -> Axis:
 
     Parameters
     ----------
+    name
+        The axis's identifier (its `Domain.axes` key), used only in the
+        wrong-length ``bounds`` diagnostic.
     axis
         The source axis.
     selection
@@ -465,17 +471,44 @@ def _select_axis(axis: Axis, selection: _AxisSelection) -> Axis:
     Axis
         A listed axis of the selected coordinates.
 
+    Raises
+    ------
+    ValueError
+        If ``axis`` carries a ``bounds`` array whose length is not twice the
+        axis length (spec 6.1.1). ``decode`` is permissive, so a malformed
+        ``bounds`` reaches here; `~covjson_msgspec.validate` reports it as
+        ``axis.bounds-length`` but does not repair it.
+
     Examples
     --------
     >>> from covjson_msgspec import Axis
-    >>> _select_axis(Axis.regular(0.0, 30.0, 4), _AxisSelection((1, 3), True)).values
+    >>> ax = Axis.regular(0.0, 30.0, 4)
+    >>> _select_axis("x", ax, _AxisSelection((1, 3), True)).values
     (10.0, 30.0)
+    >>> bad = Axis.listed((0.0, 1.0, 2.0), bounds=(-0.5, 2.5))  # needs 6, has 2
+    >>> _select_axis("x", bad, _AxisSelection((1,), False))
+    Traceback (most recent call last):
+        ...
+    ValueError: axis 'x' has 2 bounds but must have 6 (two per axis value)...
     """
     coords = axis.coordinate_values
     values = tuple(coords[position] for position in selection.positions)
     bounds = None
 
     if axis.bounds is not None:
+        # Spec 6.1.1: a present bounds array is 2 * len(axis). The 2*position
+        # indexing below assumes that length, so guard it: a wrong-length bounds
+        # raises a clear diagnostic here instead of a bare IndexError below.
+        expected = 2 * len(axis)
+
+        if len(axis.bounds) != expected:
+            msg = (
+                f"axis {name!r} has {len(axis.bounds)} bounds but must have "
+                f"{expected} (two per axis value); subset requires a well-formed "
+                f"bounds array (validate() reports this as axis.bounds-length)"
+            )
+            raise ValueError(msg)
+
         bounds = tuple(
             bound
             for position in selection.positions
