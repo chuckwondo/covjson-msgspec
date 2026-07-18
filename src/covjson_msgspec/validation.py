@@ -350,6 +350,49 @@ class AxisBoundsLength(_Issue, frozen=True, tag="axis.bounds-length"):
         )
 
 
+class AxisCoordinatesNotOmitted(
+    _Issue, frozen=True, tag="axis.coordinates-not-omitted"
+):
+    """An axis includes default ``coordinates`` explicitly; the default MUST be
+    omitted (left implicit).
+
+    An axis's ``coordinates`` member names the coordinate identifiers for its
+    values. Spec 6.1.1 (Axis Objects) makes it optional: when absent it defaults to
+    a one-element array holding the axis's own identifier (its key in the
+    `~covjson_msgspec.domain.Domain.axes` mapping), and MUST NOT be written out for
+    that default case. So an axis at key ``"x"`` may write ``coordinates: ["y"]`` or
+    omit the member, but ``coordinates: ["x"]`` restates the default and is
+    forbidden. That is a MUST NOT, so this is an error (per ADR-0002).
+
+    The rule covers every axis except the composite ``"tuple"`` and ``"polygon"``
+    types, which are excluded for two different reasons. A ``"polygon"`` value is a
+    GeoJSON coordinate array whose positions hold at least two components, so its
+    ``coordinates`` structurally cannot be the one-element default: a
+    single-identifier polygon is an arity fault, not a restated default. A
+    ``"tuple"`` is subtler, since a one-wide tuple could carry a one-element
+    ``coordinates``; §6.1.1 leaves it ambiguous whether a composite axis's
+    ``coordinates`` is required (its size defines the tuple width) or defaultable
+    like a primitive's. This rule reads it as required, so a composite axis has no
+    default case to restate and is excluded. A ``primitive`` axis and a
+    custom-``dataType`` axis both can carry a one-element ``coordinates``, and
+    §6.1.1 states the default generally, so both are in scope.
+
+    Neither decode nor `~covjson_msgspec.axis.Axis` construction can catch it: the
+    identifier is the ``axes`` key, not a field on the axis, so an axis alone does
+    not know its own name. The builders do not see the key either, so ``encode`` can
+    emit the violation; consistent with the permissive core, the library reports it
+    rather than rewriting the axis at construction time.
+    """
+
+    axis: str
+
+    def __str__(self) -> str:
+        return (
+            f"axis {self.axis!r} must omit coordinates [{self.axis!r}], "
+            "which equals the default"
+        )
+
+
 class TemporalMissingCalendar(_Issue, frozen=True, tag="temporal.missing-calendar"):
     """A temporal RS carries no ``calendar``.
 
@@ -629,6 +672,7 @@ Issue = (
     | AxisCompositeValueShape
     | AxisCompositeArity
     | AxisBoundsLength
+    | AxisCoordinatesNotOmitted
     | TemporalMissingCalendar
     | IdentifierMissingTargetConcept
     | NdArrayShapeRank
@@ -1689,10 +1733,11 @@ def _validate_domain(
     ):
         yield from _domain_issues(domain, domain_type, rule, path)
 
-    # The bounds-length test is O(1) per axis, so unlike the value-scans below it
-    # runs unconditionally rather than under `check_values`. It sits under `axes`,
-    # so it comes before the referencing checks to keep issues in document order.
+    # These axis tests are O(1) per axis, so unlike the value-scans below, they run
+    # unconditionally rather than under `check_values`. They sit under `axes`, so
+    # they come before the referencing checks to keep issues in document order.
     yield from _axis_bounds_issues(domain, path)
+    yield from _axis_coordinates_issues(domain, path)
 
     # Axis values live under `axes`, so these value-scanning checks come before
     # the referencing checks to keep issues in document order. Resolve each
@@ -2115,6 +2160,56 @@ def _axis_bounds_issues(
         )
         for name, axis in domain.axes.items()
         if (bounds := axis.bounds) is not None and len(bounds) != 2 * len(axis)
+    )
+
+
+def _axis_coordinates_issues(
+    domain: Domain, path: tuple[str | int, ...]
+) -> Iterator[AxisCoordinatesNotOmitted]:
+    """Yield an ``axis.coordinates-not-omitted`` error per axis restating its default.
+
+    Spec 6.1.1 defaults a missing ``coordinates`` to a one-element array of the
+    axis identifier and forbids writing that default out, so an axis whose
+    ``coordinates`` equals ``(name,)`` (its own `~covjson_msgspec.domain.Domain.axes`
+    key) is reported. The comparison is O(1) per axis, so like `_axis_bounds_issues`
+    its caller runs it unconditionally, not under ``check_values``. An axis omitting
+    ``coordinates`` (the conformant form) has ``coordinates`` of ``None`` and is
+    skipped.
+
+    Composite ``"tuple"`` and ``"polygon"`` axes are excluded (the same filter
+    `_axis_monotonic_issues` uses); `AxisCoordinatesNotOmitted` explains why a
+    composite axis has no default ``coordinates`` to restate. Every other axis is
+    in scope, ``primitive`` and custom ``dataType`` alike.
+
+    Parameters
+    ----------
+    domain
+        The domain whose axes are checked.
+    path
+        The reference-token path to ``domain``, extended per issue via `_ptr`.
+
+    Yields
+    ------
+    AxisCoordinatesNotOmitted
+        One error per in-scope axis whose ``coordinates`` restates the one-element
+        default, pointing at that axis's ``coordinates`` array.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain
+    >>> dom = Domain(
+    ...     axes={
+    ...         "x": Axis(values=(1.0,), coordinates=("x",)),
+    ...         "y": Axis(values=(1.0,), coordinates=("t",)),
+    ...     }
+    ... )
+    >>> [issue.at for issue in _axis_coordinates_issues(dom, ())]
+    ['/axes/x/coordinates']
+    """
+    return (
+        AxisCoordinatesNotOmitted(at=_ptr(path, "axes", name, "coordinates"), axis=name)
+        for name, axis in domain.axes.items()
+        if axis.data_type not in ("tuple", "polygon") and axis.coordinates == (name,)
     )
 
 

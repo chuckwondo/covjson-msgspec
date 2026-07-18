@@ -37,6 +37,7 @@ from covjson_msgspec.validation import (
     AxisBoundsLength,
     AxisCompositeArity,
     AxisCompositeValueShape,
+    AxisCoordinatesNotOmitted,
     AxisNotMonotonic,
     AxisOrderChecker,
     CoverageDomainTypeConflict,
@@ -1376,6 +1377,63 @@ def test_bounds_length_check_runs_without_check_values() -> None:
     ]
 
 
+# Each case pairs an axis with the `name` it is filed under, so the reader sees at
+# the case site whether `coordinates` restates that name. The rule fires exactly
+# when `coordinates == (name,)`: the one-element default the spec forbids stating.
+@pytest.mark.parametrize(
+    ("name", "axis"),
+    [
+        # A primitive axis restating its own name (the one-element default).
+        ("x", Axis(values=(0.0, 1.0, 2.0), coordinates=("x",))),
+        # A custom dataType is in scope too: 6.1.1 states the default generally and
+        # defines no coordinate structure for a custom type, so a one-element
+        # `coordinates` naming the axis restates the default just the same.
+        ("t", Axis(values=(0.0, 1.0, 2.0), data_type="ex:custom", coordinates=("t",))),
+    ],
+)
+def test_stated_default_coordinates_is_reported(name: str, axis: Axis) -> None:
+    issues = _coordinates_issues(name, axis)
+
+    assert [i.code for i in issues] == ["axis.coordinates-not-omitted"]
+    assert issues[0].axis == name
+    assert issues[0].at == f"/axes/{name}/coordinates"
+
+
+@pytest.mark.parametrize(
+    ("name", "axis"),
+    [
+        # `coordinates` names a different identifier, not the axis's own name.
+        ("x", Axis(values=(0.0, 1.0, 2.0), coordinates=("y",))),
+        # `coordinates` omitted (the conformant form).
+        ("x", Axis.listed((0.0, 1.0, 2.0))),
+        # A composite axis is out of scope even when `coordinates` equals its name:
+        # a tuple/polygon fixes its arity via `coordinates`, so a one-element value
+        # is an arity fault (#138), not a restated default the axis should omit.
+        ("x", Axis(values=((0.0,), (1.0,)), data_type="tuple", coordinates=("x",))),
+        (
+            "x",
+            Axis(
+                values=(((0.0, 0.0), (1.0, 0.0), (0.0, 0.0)),),
+                data_type="polygon",
+                coordinates=("x",),
+            ),
+        ),
+    ],
+)
+def test_non_default_or_omitted_coordinates_is_silent(name: str, axis: Axis) -> None:
+    assert _coordinates_issues(name, axis) == []
+
+
+def test_coordinates_check_runs_without_check_values() -> None:
+    # Like the bounds test, this is O(1) per axis and not gated by `check_values`:
+    # a stated default is caught in the default pass.
+    axis = Axis(values=(0.0, 1.0, 2.0), coordinates=("x",))
+
+    assert [i.code for i in _coordinates_issues("x", axis, check_values=False)] == [
+        "axis.coordinates-not-omitted"
+    ]
+
+
 def _composite_issues(axis: Axis) -> list[Issue]:
     """The ``axis.composite-*`` issues a one-axis domain's ``axis`` draws."""
     domain = Domain(axes={"composite": axis}, referencing=_REF)
@@ -1395,6 +1453,21 @@ def _bounds_issues(axis: Axis, *, check_values: bool = True) -> list[AxisBoundsL
         issue
         for issue in validate(domain, check_values=check_values)
         if isinstance(issue, AxisBoundsLength)
+    ]
+
+
+def _coordinates_issues(
+    name: str, axis: Axis, *, check_values: bool = True
+) -> list[AxisCoordinatesNotOmitted]:
+    """The ``axis.coordinates-not-omitted`` issues a domain's ``axis`` draws when
+    filed under ``name``; ``name`` is the identifier the check compares
+    ``coordinates`` against."""
+    domain = Domain(axes={name: axis}, referencing=_REF)
+
+    return [
+        issue
+        for issue in validate(domain, check_values=check_values)
+        if isinstance(issue, AxisCoordinatesNotOmitted)
     ]
 
 
@@ -1469,6 +1542,7 @@ def _describe(issue: Issue) -> str:
             | AxisCompositeValueShape()
             | AxisCompositeArity()
             | AxisBoundsLength()
+            | AxisCoordinatesNotOmitted()
         ):
             return "axis"
         case NdArrayShapeRank() | NdArrayValueCount():
