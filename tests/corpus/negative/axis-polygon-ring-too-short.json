@@ -1,0 +1,22 @@
+{
+  "type": "Domain",
+  "axes": {
+    "composite": {
+      "values": [
+        [
+          [
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [0.0, 0.0]
+          ]
+        ]
+      ],
+      "dataType": "polygon",
+      "coordinates": ["x", "y"]
+    }
+  },
+  "domainType": "Polygon",
+  "referencing": [
+    { "coordinates": ["x", "y"], "system": { "type": "GeographicCRS" } }
+  ]
+}

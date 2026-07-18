@@ -40,6 +40,9 @@ from covjson_msgspec.validation import (
     AxisCoordinatesNotOmitted,
     AxisNotMonotonic,
     AxisOrderChecker,
+    AxisPolygonPositionArity,
+    AxisPolygonRingNotClosed,
+    AxisPolygonRingTooShort,
     CoverageDomainTypeConflict,
     CoverageDomainTypeNotOmitted,
     CoverageMissingParameters,
@@ -1325,6 +1328,123 @@ def test_composite_issues_are_gated_by_check_values() -> None:
     assert [i for i in validate(domain) if i.code.startswith("axis.composite-")] == []
 
 
+# `_polygon_axis` is called at module-load time by the parametrize decorators
+# below, so it precedes them (test helpers otherwise live after the tests).
+def _polygon_axis(polygon: str, coords: str = '["x", "y"]') -> Axis:
+    """Decode a one-value ``"polygon"`` axis from a wire polygon (a list of rings).
+
+    Building from bytes rather than nested tuples mirrors production: only
+    ``AxisValue``'s outermost level is annotated, so a decoded polygon is a tuple
+    of *lists* of lists, the exact shape the depth-3 reads must handle.
+    """
+    wire = f'{{"values": [{polygon}], "dataType": "polygon", "coordinates": {coords}}}'
+
+    return msgspec.json.decode(wire.encode(), type=Axis)
+
+
+@pytest.mark.parametrize(
+    ("axis", "codes"),
+    [
+        # A position longer than the two identifiers: surplus the bridge would drop.
+        pytest.param(
+            _polygon_axis(
+                "[[[0.0,0.0,5.0],[1.0,0.0,5.0],[1.0,1.0,5.0],[0.0,0.0,5.0]]]"
+            ),
+            {"axis.polygon-position-arity"},
+            id="position-too-long",
+        ),
+        # A position shorter than three identifiers: the bridge would IndexError.
+        pytest.param(
+            _polygon_axis(
+                "[[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,0.0]]]", '["x", "y", "z"]'
+            ),
+            {"axis.polygon-position-arity"},
+            id="position-too-short",
+        ),
+        # A ring of three positions (closed): fewer than the four a ring needs.
+        pytest.param(
+            _polygon_axis("[[[0.0,0.0],[1.0,0.0],[0.0,0.0]]]"),
+            {"axis.polygon-ring-too-short"},
+            id="ring-too-short",
+        ),
+        # Four positions but the first and last differ: an unclosed ring.
+        pytest.param(
+            _polygon_axis("[[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,1.0]]]"),
+            {"axis.polygon-ring-not-closed"},
+            id="ring-not-closed",
+        ),
+        # A three-position unclosed ring trips both ring rules (both are reported).
+        pytest.param(
+            _polygon_axis("[[[0.0,0.0],[1.0,0.0],[1.0,1.0]]]"),
+            {"axis.polygon-ring-too-short", "axis.polygon-ring-not-closed"},
+            id="too-short-and-unclosed",
+        ),
+    ],
+)
+def test_polygon_ring_violation_is_reported(axis: Axis, codes: set[str]) -> None:
+    assert {i.code for i in _polygon_deep_issues(axis)} == codes
+
+
+@pytest.mark.parametrize(
+    "axis",
+    [
+        pytest.param(
+            _polygon_axis("[[[0.0,0.0],[1.0,0.0],[1.0,1.0],[0.0,0.0]]]"), id="2d"
+        ),
+        # A 3D polygon: coordinates ["x","y","z"] and three-component positions.
+        pytest.param(
+            _polygon_axis(
+                "[[[0.0,0.0,5.0],[1.0,0.0,5.0],[1.0,1.0,5.0],[0.0,0.0,5.0]]]",
+                '["x", "y", "z"]',
+            ),
+            id="3d",
+        ),
+    ],
+)
+def test_conformant_polygon_draws_no_deep_issue(axis: Axis) -> None:
+    assert _polygon_deep_issues(axis) == []
+
+
+def test_shape_invalid_polygon_reaches_no_deep_check() -> None:
+    # Shape gates the depth-3 reads: a value that is not a polygon array is a
+    # `composite-value-shape` issue and never reaches an arity or ring rule.
+    axis = _polygon_axis("[[0.0,0.0],[1.0,0.0]]")  # a bare ring, one level short
+
+    assert _polygon_deep_issues(axis) == []
+    assert [i.code for i in _composite_issues(axis)] == ["axis.composite-value-shape"]
+
+
+def test_polygon_position_arity_reports_expected_got_and_position() -> None:
+    # Arity points at the offending position (depth 3) and carries the counts.
+    axis = _polygon_axis("[[[0.0,0.0],[1.0,0.0,9.0],[1.0,1.0],[0.0,0.0]]]")
+
+    (issue,) = _polygon_deep_issues(axis)
+
+    assert isinstance(issue, AxisPolygonPositionArity)
+    assert (issue.expected, issue.got) == (2, 3)
+    assert issue.at == "/axes/composite/values/0/0/1"  # value 0, ring 0, position 1
+
+
+def test_polygon_ring_rule_points_at_the_ring() -> None:
+    # A ring rule points at the ring (depth 2), one level above a position.
+    axis = _polygon_axis("[[[0.0,0.0],[1.0,0.0],[0.0,0.0]]]")
+
+    (issue,) = _polygon_deep_issues(axis)
+
+    assert isinstance(issue, AxisPolygonRingTooShort)
+    assert issue.got == 3
+    assert issue.at == "/axes/composite/values/0/0"
+
+
+def test_polygon_deep_checks_are_gated_by_check_values() -> None:
+    # The depth-3 reads scan every vertex, so they sit behind `check_values`
+    # (ADR-0002) like the other value-scans, not in the default pass.
+    axis = _polygon_axis("[[[0.0,0.0],[1.0,0.0],[0.0,0.0]]]")
+    domain = Domain(axes={"composite": axis}, referencing=_REF)
+
+    assert [i for i in validate(domain) if i.code.startswith("axis.polygon-")] == []
+
+
 @pytest.mark.parametrize(
     ("axis", "expected", "got"),
     [
@@ -1445,6 +1565,17 @@ def _composite_issues(axis: Axis) -> list[Issue]:
     ]
 
 
+def _polygon_deep_issues(axis: Axis) -> list[Issue]:
+    """The ``axis.polygon-*`` depth-3 issues a one-axis domain's ``axis`` draws."""
+    domain = Domain(axes={"composite": axis}, referencing=_REF)
+
+    return [
+        issue
+        for issue in validate(domain, check_values=True)
+        if issue.code.startswith("axis.polygon-")
+    ]
+
+
 def _bounds_issues(axis: Axis, *, check_values: bool = True) -> list[AxisBoundsLength]:
     """The ``axis.bounds-length`` issues a one-axis domain's ``axis`` draws."""
     domain = Domain(axes={"a": axis}, referencing=_REF)
@@ -1541,6 +1672,9 @@ def _describe(issue: Issue) -> str:
             AxisNotMonotonic()
             | AxisCompositeValueShape()
             | AxisCompositeArity()
+            | AxisPolygonPositionArity()
+            | AxisPolygonRingTooShort()
+            | AxisPolygonRingNotClosed()
             | AxisBoundsLength()
             | AxisCoordinatesNotOmitted()
         ):
