@@ -124,6 +124,23 @@ class Axis(CovJSONStruct, frozen=True):
         ...
     ValueError: Axis `coordinates` must be non-empty
 
+    Omitting ``coordinates`` on a composite axis is likewise rejected: spec
+    6.1.1's default names the axis, nonsensical for a composite (ADR-0019):
+
+    >>> Axis(values=((1.0, 2.0),), data_type="tuple")
+    Traceback (most recent call last):
+        ...
+    ValueError: a 'tuple' axis requires `coordinates`
+
+    A ``"polygon"`` axis needs at least two coordinate identifiers, because a
+    GeoJSON position has two or more components (RFC 7946 3.1.1):
+
+    >>> ring = ((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 0.0))
+    >>> Axis(values=((ring,),), data_type="polygon", coordinates=("x",))
+    Traceback (most recent call last):
+        ...
+    ValueError: a 'polygon' axis requires at least 2 `coordinates`, got 1: ('x',)
+
     A composite axis must list its values: the regular form describes evenly
     spaced numbers, which can never be the tuples a ``"tuple"`` axis promises:
 
@@ -158,16 +175,12 @@ class Axis(CovJSONStruct, frozen=True):
             self.start is not None and self.stop is not None and self.num is not None
         )
 
-        # Exactly one numeric form: the value list XOR the full regular triple.
-        # O(1), so it runs on construction and on decode.
+        # Exactly one numeric form: `values` XOR the regular triple.
         if has_values == has_regular:
             msg = "Axis requires exactly one of `values` or `start`/`stop`/`num`"
             raise ValueError(msg)
 
-        # Spec 6.1.1: the `values` member is "a non-empty array of axis
-        # values". Together with the `num >= 1` check below, every axis has at
-        # least one coordinate, so `len(axis)` is never 0 and a valid Axis
-        # never evaluates falsy.
+        # Spec 6.1.1: `values`, when given, is a non-empty array.
         if self.values is not None and not self.values:
             msg = "Axis `values` must be non-empty"
             raise ValueError(msg)
@@ -176,37 +189,40 @@ class Axis(CovJSONStruct, frozen=True):
             msg = "Axis `num` must be a positive integer"
             raise ValueError(msg)
 
-        # Spec 6.1.1: "If the value of `num` is 1, then `start` and `stop` MUST
-        # have identical values." A single-coordinate regular axis is one point,
-        # so its bounds cannot differ. Local and O(1), so it belongs here rather
-        # than in validate(). Gated on the regular form actually being in use, so
-        # a value-listing axis carrying a stray `start`/`num` is not misdiagnosed
-        # here (the XOR check above owns that malformation).
+        # Spec 6.1.1: with `num` of 1, `start` and `stop` MUST be equal (regular
+        # form only; the XOR above owns a stray `start`/`num`).
         if has_regular and self.num == 1 and self.start != self.stop:
             msg = "Axis with `num` of 1 requires equal `start` and `stop`"
             raise ValueError(msg)
 
-        # Derived from two spec 6.1.1 MUSTs rather than stated by either: a
-        # 'tuple' axis value MUST be "an array of fixed size of primitive values"
-        # (a 'polygon' value, "a GeoJSON Polygon coordinate array"), while
-        # start/stop/num is "a compact notation for a regularly spaced numeric
-        # axis" and so yields only numbers. No value satisfies both, so the pair
-        # is unsatisfiable rather than merely odd. Named dataTypes only: the spec
-        # defines no value structure for a custom dataType (6.1.1 grants only
-        # "Custom values MAY be used"), so no MUST constrains its values and this
-        # rule cannot be derived for one. Belongs here rather than in validate()
-        # because the contradiction leaves the axis uninterpretable (ADR-0002,
-        # ADR-0018).
+        # A 'tuple'/'polygon' axis requires `values`: its values MUST be arrays,
+        # never the numbers the regular form yields (spec 6.1.1, ADR-0018).
         if self.data_type in ("tuple", "polygon") and self.values is None:
             msg = f"a {self.data_type!r} axis requires `values`"
             raise ValueError(msg)
 
-        # Spec 6.1.1: `coordinates`, when given, is a non-empty array. Applies to
-        # any axis: an empty coordinates array is uninterpretable in isolation,
-        # so it is rejected here rather than in validate() (ADR-0002), mirroring
-        # the `values` guard above.
+        # Spec 6.1.1: `coordinates`, when given, is a non-empty array (any axis).
         if self.coordinates is not None and not self.coordinates:
             msg = "Axis `coordinates` must be non-empty"
+            raise ValueError(msg)
+
+        # A composite axis must name its `coordinates` explicitly (ADR-0019).
+        if self.data_type in ("tuple", "polygon") and self.coordinates is None:
+            msg = f"a {self.data_type!r} axis requires `coordinates`"
+            raise ValueError(msg)
+
+        # A 'polygon' axis needs >= 2 coordinate identifiers (RFC 7946 3.1.1,
+        # ADR-0019).
+        if (
+            self.data_type == "polygon"
+            and self.coordinates is not None
+            and len(self.coordinates) < 2
+        ):
+            n = len(self.coordinates)
+            msg = (
+                f"a 'polygon' axis requires at least 2 `coordinates`, "
+                f"got {n}: {self.coordinates!r}"
+            )
             raise ValueError(msg)
 
     @property

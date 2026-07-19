@@ -637,10 +637,10 @@ def test_geometry_domain_without_a_composite_axis_is_rejected(domain_type: str) 
 def test_composite_axis_without_horizontal_coordinates_is_rejected(
     domain_type: str,
 ) -> None:
-    # Spec 6.1.1 defaults an omitted `coordinates` to a one-element array naming
-    # the axis, so this resolves to ("composite",), which names no x or y and
-    # cannot place a position. Previously the polygon builder guessed ("x", "y")
-    # and silently built geometry from positions 0 and 1 regardless.
+    # The geometry builders understand only x / y among `composite`'s
+    # coordinates; coordinates naming neither must be rejected by name rather
+    # than fail from inside shapely. validate() reports the same, but the bridge
+    # does not require a validated document.
     data_type = "tuple" if domain_type == "Trajectory" else "polygon"
     values = (
         ((1.0, 10.0), (2.0, 20.0))
@@ -649,7 +649,11 @@ def test_composite_axis_without_horizontal_coordinates_is_rejected(
     )
     cov = Coverage(
         domain=Domain(
-            axes={"composite": Axis(data_type=data_type, values=values)},
+            axes={
+                "composite": Axis(
+                    data_type=data_type, values=values, coordinates=("a", "b")
+                )
+            },
             domain_type=domain_type,
         ),
         ranges={},

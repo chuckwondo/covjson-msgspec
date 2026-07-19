@@ -1222,13 +1222,10 @@ def test_tuple_axis_arity_mismatch_is_reported() -> None:
     assert issues[0].at == "/axes/composite/values/0"
 
 
-def test_tuple_axis_without_coordinates_is_measured_against_the_default() -> None:
-    # Spec 6.1.1 defaults `coordinates` to a one-element array naming the axis,
-    # so a 3-tuple disagrees with that default exactly as it would with an
-    # explicit one-element array. #131 removed the load-time guard requiring
-    # `coordinates`; this is the rule that catches the real malformation, and it
-    # measures against the resolved identifiers rather than skipping the axis.
-    axis = Axis(values=((1.0, 2.0, 3.0),), data_type="tuple")
+def test_tuple_axis_surplus_arity_is_reported() -> None:
+    # validate()'s arity check compares each value's size to the coordinate
+    # identifier count: a 3-tuple against one identifier is `axis.composite-arity`.
+    axis = Axis(values=((1.0, 2.0, 3.0),), data_type="tuple", coordinates=("t",))
 
     issues = _composite_issues(axis)
 
@@ -1236,10 +1233,11 @@ def test_tuple_axis_without_coordinates_is_measured_against_the_default() -> Non
     assert (issues[0].expected, issues[0].got) == (1, 3)
 
 
-def test_tuple_axis_matching_the_default_is_silent() -> None:
-    # The #131 acceptance criterion: a legal one-tuple axis relying on the
-    # default loads and draws nothing.
-    assert _composite_issues(Axis(values=((1.0,), (2.0,)), data_type="tuple")) == []
+def test_tuple_axis_matching_arity_is_silent() -> None:
+    # A legal tuple axis whose values match its coordinate count draws nothing.
+    axis = Axis(values=((1.0,), (2.0,)), data_type="tuple", coordinates=("x",))
+
+    assert _composite_issues(axis) == []
 
 
 def test_tuple_axis_string_value_is_reported_as_shape_not_arity() -> None:
@@ -1526,18 +1524,11 @@ def test_stated_default_coordinates_is_reported(name: str, axis: Axis) -> None:
         ("x", Axis(values=(0.0, 1.0, 2.0), coordinates=("y",))),
         # `coordinates` omitted (the conformant form).
         ("x", Axis.listed((0.0, 1.0, 2.0))),
-        # A composite axis is out of scope even when `coordinates` equals its name:
-        # a tuple/polygon fixes its arity via `coordinates`, so a one-element value
-        # is an arity fault (#138), not a restated default the axis should omit.
+        # A tuple axis's one-element `coordinates` equal to the axis name is
+        # load-bearing (it fixes arity), not a restated default #137 flags;
+        # composites are excluded. A polygon's >= 2 identifiers can never equal
+        # the one-element default, so only tuple can exercise the exclusion.
         ("x", Axis(values=((0.0,), (1.0,)), data_type="tuple", coordinates=("x",))),
-        (
-            "x",
-            Axis(
-                values=(((0.0, 0.0), (1.0, 0.0), (0.0, 0.0)),),
-                data_type="polygon",
-                coordinates=("x",),
-            ),
-        ),
     ],
 )
 def test_non_default_or_omitted_coordinates_is_silent(name: str, axis: Axis) -> None:

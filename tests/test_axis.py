@@ -80,16 +80,42 @@ def test_regular_num_one_with_equal_start_stop_is_allowed() -> None:
 
 
 @pytest.mark.parametrize("data_type", ["tuple", "polygon"])
-def test_composite_axis_may_omit_coordinates(data_type: str) -> None:
-    # Spec 6.1.1 makes `coordinates` optional: "If missing, the member
-    # `coordinates` defaults to a one-element array of the axis identifier". No
-    # MUST ties it to a composite dataType, and the default is the sole repair,
-    # so the axis stays interpretable and construction is the wrong tier for the
-    # rule (ADR-0018). An arity that then disagrees with the default is
-    # validate()'s `axis.composite-arity`, not a load-time error.
-    axis = Axis(values=((1.0,),), data_type=data_type)
+def test_composite_axis_requires_coordinates(data_type: str) -> None:
+    # ADR-0019: a composite axis cannot rely on spec 6.1.1's default (it names
+    # the axis, keyed "composite", not a component), so omitting `coordinates`
+    # is rejected at construction, reversing ADR-0018.
+    pattern = f"a {data_type!r} axis requires `coordinates`"
 
-    assert axis.coordinates is None
+    with pytest.raises(ValueError, match=pattern):
+        Axis(values=((1.0, 2.0),), data_type=data_type)
+
+
+@pytest.mark.parametrize("data_type", ["tuple", "polygon"])
+def test_composite_axis_requires_coordinates_on_decode(data_type: str) -> None:
+    blob = b'{"dataType": "%s", "values": [[1.0, 2.0]]}' % data_type.encode()
+    pattern = f"a {data_type!r} axis requires `coordinates`"
+
+    with pytest.raises(msgspec.ValidationError, match=pattern):
+        msgspec.json.decode(blob, type=Axis)
+
+
+def test_polygon_axis_requires_at_least_two_coordinates() -> None:
+    # RFC 7946 3.1.1: a GeoJSON position has >= 2 components, so a polygon needs
+    # >= 2 coordinate identifiers; a single one declares impossible 1-D positions
+    # that a self-consistent 1-D polygon would slip past validate() (ADR-0019).
+    with pytest.raises(ValueError, match=r"at least 2 `coordinates`, got 1"):
+        Axis(values=((((0.0, 0.0),),),), data_type="polygon", coordinates=("x",))
+
+
+def test_polygon_axis_accepts_three_or_more_coordinates() -> None:
+    # The floor is a minimum, so a 3-D polygon (x, y, z) constructs.
+    axis = Axis(
+        values=((((0.0, 0.0, 5.0),),),),
+        data_type="polygon",
+        coordinates=("x", "y", "z"),
+    )
+
+    assert axis.coordinates == ("x", "y", "z")
 
 
 @pytest.mark.parametrize("data_type", ["tuple", "polygon"])
