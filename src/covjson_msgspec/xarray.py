@@ -37,7 +37,6 @@ from __future__ import annotations
 # and mypy strict guards them, so those rules never fire on the user-facing
 # surface.
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportMissingTypeStubs=false
-import contextlib
 import math
 from collections.abc import Mapping
 from datetime import datetime
@@ -792,16 +791,18 @@ def _parse_times(column: list[Any], calendar: str) -> npt.NDArray[Any]:
     Returns
     -------
     numpy.ndarray
-        A ``datetime64[ns]`` array for standard calendars in range, otherwise an
-        object array of cftime datetimes.
+        For a standard calendar, a ``datetime64`` array: ``[ns]`` when the whole
+        column fits numpy's nanosecond window, else the wider ``[us]`` (which
+        holds any Gregorian year). For a non-standard calendar, an object array
+        of cftime datetimes.
     """
     import numpy as np
 
-    # This bridge classifies by calendar + container range (standard calendar in
-    # numpy's datetime64[ns] window, else cftime), not via temporal.resolve().
-    # The two are different functions with different codomains: resolve has no
-    # cftime arm and cannot see the calendar, so it is deliberately not the
-    # decider here. See ADR-0015.
+    # This bridge classifies by calendar + container range (a standard calendar
+    # stays datetime64, at the resolution that fits it; a non-standard calendar
+    # goes to cftime), not via temporal.resolve(). The two are different
+    # functions with different codomains: resolve has no cftime arm and cannot
+    # see the calendar, so it is deliberately not the decider here. See ADR-0015.
     normalized = calendar.rsplit("/", 1)[-1].lower()
     # ISO 8601 may carry a trailing "Z"; numpy treats naive times as UTC.
     cleaned = [
@@ -809,14 +810,69 @@ def _parse_times(column: list[Any], calendar: str) -> npt.NDArray[Any]:
     ]
 
     if normalized in STANDARD_CALENDARS:
-        with contextlib.suppress(ValueError, OverflowError):
-            return np.array(cleaned, dtype="datetime64[ns]")
+        # Parse to microseconds first: datetime64[us] holds any Gregorian year,
+        # so a spec-valid far-past/future date is never int64-wrapped the way a
+        # direct datetime64[ns] parse silently would (numpy#9956). Narrow to the
+        # finer ns resolution only when the whole column fits its window; else
+        # keep [us], which xarray preserves (the >= 2025.01.2 floor). A standard
+        # date outside the ns window is a resolution/range matter, not a calendar
+        # one, so it stays a native datetime64 rather than falling back to cftime.
+        wide = np.array(cleaned, dtype="datetime64[us]")
+
+        return wide.astype("datetime64[ns]") if _fits_ns_window(wide) else wide
 
     parsed = [
         None if value is None else _to_cftime(value, normalized) for value in cleaned
     ]
 
     return np.array(parsed)
+
+
+def _fits_ns_window(times: npt.NDArray[Any]) -> bool:
+    """Whether every non-``NaT`` value fits numpy's ``datetime64[ns]`` window.
+
+    numpy's nanosecond datetime spans roughly 1677-09-21 to 2262-04-11; a value
+    outside it int64-*wraps* on conversion (numpy#9956) rather than raising, so
+    `_parse_times` tests the range explicitly before narrowing a wider array to
+    ``ns``. The bounds are taken one second inside the true limits so the test is
+    safe against sub-second rounding: a date in the first or last second of the
+    ~585-year window is treated as out-of-range and kept at the wider resolution,
+    a negligible and always-faithful loss.
+
+    Parameters
+    ----------
+    times
+        A ``datetime64`` array wide enough not to have already overflowed (e.g.
+        ``datetime64[us]``). ``NaT`` entries are ignored.
+
+    Returns
+    -------
+    bool
+        ``True`` when every non-``NaT`` value lies within the ``ns`` window, so
+        the array narrows to ``datetime64[ns]`` losslessly; else ``False``.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> ok = np.array(["2020-01-15", "2020-06-01"], dtype="datetime64[us]")
+    >>> _fits_ns_window(ok)
+    True
+    >>> out = np.array(["2020-01-15", "2300-01-15"], dtype="datetime64[us]")
+    >>> _fits_ns_window(out)
+    False
+    >>> _fits_ns_window(np.array(["NaT", "2020-01-15"], dtype="datetime64[us]"))
+    True
+    """
+    import numpy as np
+
+    # One second inside numpy's true ns limits (1677-09-21T00:12:43.145224193 /
+    # 2262-04-11T23:47:16.854775807), rounded conservatively so no out-of-range
+    # value slips through into an int64-wrapping ns conversion.
+    lo = np.datetime64("1677-09-21T00:12:44", "us")
+    hi = np.datetime64("2262-04-11T23:47:16", "us")
+    finite = times[~np.isnat(times)]
+
+    return bool(np.all((lo <= finite) & (finite <= hi)))
 
 
 def _to_cftime(iso: str, calendar: str) -> Any:

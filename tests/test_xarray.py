@@ -139,6 +139,81 @@ def test_temporal_non_standard_calendar_uses_cftime() -> None:
     assert t0.calendar == "360_day"
 
 
+@pytest.mark.parametrize(
+    ("edge_value", "expected_unit"),
+    [
+        ("1677-11-01T00:00:00Z", "datetime64[ns]"),  # just inside the lower ns bound
+        ("2262-03-01T00:00:00Z", "datetime64[ns]"),  # just inside the upper ns bound
+        ("2262-06-01T00:00:00Z", "datetime64[us]"),  # just outside, same year
+        ("2300-01-15T00:00:00Z", "datetime64[us]"),  # well outside
+    ],
+)
+def test_temporal_standard_calendar_datetime64_unit_tracks_ns_window(
+    edge_value: str, expected_unit: str
+) -> None:
+    # A standard-calendar time uses datetime64[ns] when the whole column fits
+    # numpy's window and widens to [us] otherwise, a faithful native datetime
+    # either way, never cftime and never an int64 wrap. The edge value is paired
+    # with an in-range anchor, so an out-of-range value widening the column is
+    # exercised too.
+    t_values = ("2020-01-15T00:00:00Z", edge_value)
+    cov = Coverage(
+        domain=Domain.point_series(
+            x=Axis.listed((1.0,)),
+            y=Axis.listed((2.0,)),
+            t=Axis.listed(t_values),
+            referencing=(
+                ReferenceSystemConnection(
+                    coordinates=("t",),
+                    system=ReferenceSystem.temporal(calendar="Gregorian"),
+                ),
+            ),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float", values=(1.0, 2.0), shape=(2,), axis_names=("t",)
+            )
+        },
+    )
+    ds = to_xarray(cov)
+
+    assert ds["t"].dtype == np.dtype(expected_unit)
+    assert str(ds["t"].values[1]).startswith(edge_value[:4])  # year kept, no wrap
+
+
+def test_temporal_out_of_ns_range_round_trips_faithfully() -> None:
+    # A spec-valid Gregorian date outside numpy's ns window must stay faithful
+    # through to_xarray and back through from_xarray, not int64-wrap to a wrong
+    # in-range date.
+    t_values = ("2020-01-15T00:00:00Z", "2300-01-15T00:00:00Z")
+    cov = Coverage(
+        domain=Domain.point_series(
+            x=Axis.listed((1.0,)),
+            y=Axis.listed((2.0,)),
+            t=Axis.listed(t_values),
+            referencing=(
+                ReferenceSystemConnection(
+                    coordinates=("t",),
+                    system=ReferenceSystem.temporal(calendar="Gregorian"),
+                ),
+            ),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float", values=(1.0, 2.0), shape=(2,), axis_names=("t",)
+            )
+        },
+    )
+    ds = to_xarray(cov)
+
+    assert ds["t"].dtype == np.dtype("datetime64[us]")
+    assert [str(v)[:4] for v in ds["t"].values] == ["2020", "2300"]
+
+    back = from_xarray(ds)
+    assert isinstance(back.domain, Domain)
+    assert back.domain.axes["t"].values == t_values
+
+
 def test_geographic_referencing_sets_cf_attrs_and_grid_mapping() -> None:
     cov = Coverage(
         domain=Domain.grid(
