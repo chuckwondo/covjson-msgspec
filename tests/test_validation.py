@@ -50,6 +50,7 @@ from covjson_msgspec.validation import (
     CoverageRangeShapeMismatch,
     CoverageRangeWithoutParameter,
     DomainAxisNotSingle,
+    DomainCompositeCoordinates,
     DomainCompositeDataType,
     DomainExtraAxisNotSingle,
     DomainMissingAxis,
@@ -123,6 +124,63 @@ def test_composite_data_type_mismatch() -> None:
     codes = {i.code for i in validate(domain)}
 
     assert "domain.composite-data-type" in codes
+
+
+def test_composite_coordinates_mismatch() -> None:
+    # A Trajectory's composite identifiers must be ("t","x","y","z") or
+    # ("t","x","y"); ("x","y") is a well-formed tuple axis that is still wrong.
+    composite = Axis(values=((0.0, 1.0),), data_type="tuple", coordinates=("x", "y"))
+    domain = Domain(
+        axes={"composite": composite}, domain_type="Trajectory", referencing=_REF
+    )
+    (issue,) = [
+        i for i in validate(domain) if isinstance(i, DomainCompositeCoordinates)
+    ]
+
+    assert issue.code == "domain.composite-coordinates"
+    assert issue.at == "/axes/composite"
+    assert issue.severity is Severity.ERROR
+    assert issue.actual == ("x", "y")
+    assert issue.expected == (("t", "x", "y", "z"), ("t", "x", "y"))
+
+
+@pytest.mark.parametrize(
+    ("domain_type", "coordinates"),
+    [
+        ("Trajectory", ("t", "x", "y", "z")),
+        ("Trajectory", ("t", "x", "y")),
+        ("MultiPoint", ("x", "y", "z")),
+        ("MultiPoint", ("x", "y")),
+        ("Section", ("t", "x", "y")),
+    ],
+)
+def test_composite_coordinates_conformant_alternatives_not_reported(
+    domain_type: str, coordinates: tuple[str, ...]
+) -> None:
+    # Every ordering the spec permits for a type (both of Trajectory's, both of
+    # MultiPoint's) must pass. A single-tuple rule would falsely flag the longer
+    # forms.
+    composite = Axis(
+        values=(tuple(float(i) for i in range(len(coordinates))),),
+        data_type="tuple",
+        coordinates=coordinates,
+    )
+    domain = Domain(axes={"composite": composite}, domain_type=domain_type)
+    codes = {i.code for i in validate(domain)}
+
+    assert "domain.composite-coordinates" not in codes
+
+
+def test_composite_coordinates_gated_on_data_type() -> None:
+    # A primitive "composite" axis is the wrong dataType for a Polygon, so it
+    # draws the dataType finding. The identifier check is gated on the dataType
+    # already matching, so it stays silent rather than piling a second,
+    # consequential finding on the same axis.
+    domain = Domain(axes={"composite": Axis.listed((1.0, 2.0))}, domain_type="Polygon")
+    codes = {i.code for i in validate(domain)}
+
+    assert "domain.composite-data-type" in codes
+    assert "domain.composite-coordinates" not in codes
 
 
 def test_surplus_multi_valued_axis_is_an_error() -> None:
@@ -1654,6 +1712,7 @@ def _describe(issue: Issue) -> str:
             DomainMissingAxis()
             | DomainAxisNotSingle()
             | DomainCompositeDataType()
+            | DomainCompositeCoordinates()
             | DomainExtraAxisNotSingle()
             | DomainMissingReferencing()
             | DomainMissingDomainType()

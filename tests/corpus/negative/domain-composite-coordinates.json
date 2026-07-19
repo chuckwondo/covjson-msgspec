@@ -1,0 +1,17 @@
+{
+  "type": "Domain",
+  "axes": {
+    "composite": {
+      "values": [
+        [0.0, 0.0],
+        [1.0, 1.0]
+      ],
+      "dataType": "tuple",
+      "coordinates": ["x", "y"]
+    }
+  },
+  "domainType": "Trajectory",
+  "referencing": [
+    { "coordinates": ["x", "y"], "system": { "type": "GeographicCRS" } }
+  ]
+}

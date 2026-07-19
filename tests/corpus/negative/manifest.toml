@@ -23,6 +23,10 @@ file = "composite-data-type.json"
 issues = [{ code = "domain.composite-data-type", severity = "error" }]
 
 [[case]]
+file = "domain-composite-coordinates.json"
+issues = [{ code = "domain.composite-coordinates", severity = "error" }]
+
+[[case]]
 file = "parameter-group-unknown-member.json"
 issues = [{ code = "parameter-group.unknown-member", severity = "error" }]
 

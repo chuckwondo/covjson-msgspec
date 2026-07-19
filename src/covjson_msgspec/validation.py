@@ -208,6 +208,29 @@ class DomainCompositeDataType(_Issue, frozen=True, tag="domain.composite-data-ty
         return f"{self.domain_type} domain requires a {self.expected!r} composite axis"
 
 
+class DomainCompositeCoordinates(
+    _Issue, frozen=True, tag="domain.composite-coordinates"
+):
+    """The ``composite`` axis's coordinate identifiers are wrong for the type.
+
+    The Common Domain Types spec fixes each composite type's coordinate
+    identifiers (Section is ``["t","x","y"]``), offering alternatives for some
+    (Trajectory is ``["t","x","y","z"]`` or ``["t","x","y"]``). ``expected``
+    carries every allowed ordering; ``actual`` echoes what was found.
+    """
+
+    domain_type: str
+    expected: tuple[tuple[str, ...], ...]
+    actual: tuple[str, ...]
+
+    def __str__(self) -> str:
+        allowed = " or ".join(str(list(option)) for option in self.expected)
+        return (
+            f"{self.domain_type} domain composite axis requires coordinate "
+            f"identifiers {allowed}, but got {list(self.actual)}"
+        )
+
+
 class DomainExtraAxisNotSingle(_Issue, frozen=True, tag="domain.extra-axis-not-single"):
     """A surplus axis outside the domain type's set is multi-valued (MUST be single)."""
 
@@ -739,6 +762,7 @@ Issue = (
     DomainMissingAxis
     | DomainAxisNotSingle
     | DomainCompositeDataType
+    | DomainCompositeCoordinates
     | DomainExtraAxisNotSingle
     | DomainMissingReferencing
     | DomainMissingDomainType
@@ -836,18 +860,22 @@ class DomainTypeRule(msgspec.Struct, frozen=True):
         Axis names that, when present, MUST carry exactly one coordinate value.
     composite_data_type
         If set, the ``"composite"`` axis MUST declare this ``dataType``.
+    allowed_composite_coordinates
+        If set, the ``"composite"`` axis's coordinate identifiers MUST be one of
+        these orderings. A tuple of orderings, not a single one, because the spec
+        offers alternatives for some types (Trajectory is ``["t","x","y","z"]``
+        or ``["t","x","y"]``). Listed in spec order, longer form first.
     """
 
     required_axes: tuple[str, ...] = ()
     optional_axes: tuple[str, ...] = ()
     single_valued_axes: tuple[str, ...] = ()
     composite_data_type: Literal["tuple", "polygon"] | None = None
+    allowed_composite_coordinates: tuple[tuple[str, ...], ...] | None = None
 
 
 # Derived from the Common Domain Types specification (linked in the module
-# docstring). The composite axis's coordinate identifiers (e.g. ["t","x","y"])
-# are part of the spec but not yet enforced here. Override or extend by mutating
-# this dict.
+# docstring). Override or extend by mutating this dict.
 DOMAIN_TYPE_RULES: dict[str, DomainTypeRule] = {
     DomainType.GRID: DomainTypeRule(
         required_axes=("x", "y"),
@@ -871,46 +899,54 @@ DOMAIN_TYPE_RULES: dict[str, DomainTypeRule] = {
     DomainType.MULTI_POINT_SERIES: DomainTypeRule(
         required_axes=("composite", "t"),
         composite_data_type="tuple",
+        allowed_composite_coordinates=(("x", "y", "z"), ("x", "y")),
     ),
     DomainType.MULTI_POINT: DomainTypeRule(
         required_axes=("composite",),
         optional_axes=("t",),
         single_valued_axes=("t",),
         composite_data_type="tuple",
+        allowed_composite_coordinates=(("x", "y", "z"), ("x", "y")),
     ),
     DomainType.TRAJECTORY: DomainTypeRule(
         required_axes=("composite",),
         optional_axes=("z",),
         single_valued_axes=("z",),
         composite_data_type="tuple",
+        allowed_composite_coordinates=(("t", "x", "y", "z"), ("t", "x", "y")),
     ),
     DomainType.SECTION: DomainTypeRule(
         required_axes=("composite", "z"),
         composite_data_type="tuple",
+        allowed_composite_coordinates=(("t", "x", "y"),),
     ),
     DomainType.POLYGON: DomainTypeRule(
         required_axes=("composite",),
         optional_axes=("z", "t"),
         single_valued_axes=("composite", "z", "t"),
         composite_data_type="polygon",
+        allowed_composite_coordinates=(("x", "y"),),
     ),
     DomainType.POLYGON_SERIES: DomainTypeRule(
         required_axes=("composite", "t"),
         optional_axes=("z",),
         single_valued_axes=("composite", "z"),
         composite_data_type="polygon",
+        allowed_composite_coordinates=(("x", "y"),),
     ),
     DomainType.MULTI_POLYGON: DomainTypeRule(
         required_axes=("composite",),
         optional_axes=("z", "t"),
         single_valued_axes=("z", "t"),
         composite_data_type="polygon",
+        allowed_composite_coordinates=(("x", "y"),),
     ),
     DomainType.MULTI_POLYGON_SERIES: DomainTypeRule(
         required_axes=("composite", "t"),
         optional_axes=("z",),
         single_valued_axes=("z",),
         composite_data_type="polygon",
+        allowed_composite_coordinates=(("x", "y"),),
     ),
 }
 
@@ -1342,6 +1378,77 @@ def _composite_data_type_issue(
     return None
 
 
+def _composite_coordinates_issue(
+    domain: Domain, domain_type: str, rule: DomainTypeRule, path: tuple[str | int, ...]
+) -> Issue | None:
+    """Return the ``domain.composite-coordinates`` issue, or ``None`` if conformant.
+
+    At most one finding: when the rule fixes the ``composite`` axis's coordinate
+    identifiers and the axis resolves to an ordering outside that set. Gated on
+    the ``dataType`` already matching (`_composite_data_type_issue` owns that
+    check), so a wrong-``dataType`` axis draws only the one root-cause finding,
+    not a redundant identifier one. Resolves the identifiers via
+    `coordinate_identifiers`, the single place §6.1.1's default is applied.
+
+    Parameters
+    ----------
+    domain
+        The domain whose ``composite`` axis is checked.
+    domain_type
+        The (known) domain type, interpolated into the message.
+    rule
+        The axis constraints for ``domain_type`` from `DOMAIN_TYPE_RULES`.
+    path
+        The reference-token path to ``domain``, built via `_ptr` for the issue.
+
+    Returns
+    -------
+    Issue or None
+        The single composite-coordinates issue, or ``None`` when conformant.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain
+    >>> rule = DOMAIN_TYPE_RULES["Trajectory"]  # wants ("t","x","y","z"/"t","x","y")
+    >>> composite = Axis(
+    ...     values=((0.0, 1.0),), data_type="tuple", coordinates=("x", "y")
+    ... )
+    >>> dom = Domain(axes={"composite": composite}, domain_type="Trajectory")
+    >>> issue = _composite_coordinates_issue(dom, "Trajectory", rule, ())
+    >>> issue.code == "domain.composite-coordinates"
+    True
+
+    A conformant longer-form Trajectory ``("t","x","y","z")`` is not reported:
+
+    >>> composite = Axis(
+    ...     values=((0.0, 1.0, 2.0, 3.0),),
+    ...     data_type="tuple",
+    ...     coordinates=("t", "x", "y", "z"),
+    ... )
+    >>> dom = Domain(axes={"composite": composite}, domain_type="Trajectory")
+    >>> _composite_coordinates_issue(dom, "Trajectory", rule, ()) is None
+    True
+    """
+    composite = domain.axes.get("composite")
+
+    if (
+        rule.allowed_composite_coordinates is not None
+        and composite is not None
+        and composite.data_type == rule.composite_data_type
+    ):
+        actual = coordinate_identifiers(composite, "composite")
+
+        if actual not in rule.allowed_composite_coordinates:
+            return DomainCompositeCoordinates(
+                domain_type=domain_type,
+                expected=rule.allowed_composite_coordinates,
+                actual=actual,
+                at=_ptr(path, "axes", "composite"),
+            )
+
+    return None
+
+
 def _unexpected_axis_issues(
     domain: Domain, domain_type: str, rule: DomainTypeRule, path: tuple[str | int, ...]
 ) -> Iterator[Issue]:
@@ -1409,11 +1516,12 @@ def _domain_issues(
 ) -> Iterator[Issue]:
     """Yield every axis-rule violation for a domain of a known type.
 
-    The composition of the four per-rule generators, all error-severity, in
+    The composition of the per-rule generators, all error-severity, in
     document/check order: a missing required axis, a single-valued axis that
     carries more than one value, a ``composite`` axis with the wrong
-    ``dataType``, and a surplus multi-valued axis. A surplus single-valued axis
-    is spec-conformant and yields nothing.
+    ``dataType``, a ``composite`` axis with wrong coordinate identifiers, and a
+    surplus multi-valued axis. A surplus single-valued axis is spec-conformant
+    and yields nothing.
 
     Parameters
     ----------
@@ -1441,12 +1549,14 @@ def _domain_issues(
     ... ]
     True
     """
-    composite = _composite_data_type_issue(domain, domain_type, rule, path)
+    composite_type = _composite_data_type_issue(domain, domain_type, rule, path)
+    composite_coords = _composite_coordinates_issue(domain, domain_type, rule, path)
 
     return chain(
         _missing_axis_issues(domain, domain_type, rule, path),
         _non_single_axis_issues(domain, domain_type, rule, path),
-        () if composite is None else (composite,),
+        () if composite_type is None else (composite_type,),
+        () if composite_coords is None else (composite_coords,),
         _unexpected_axis_issues(domain, domain_type, rule, path),
     )
 
