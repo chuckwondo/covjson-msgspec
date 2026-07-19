@@ -299,9 +299,8 @@ class AxisCompositeArity(_Issue, frozen=True, tag="axis.composite-arity"):
     identifiers and silently drop every surplus component.
 
     The identifier count is the *resolved* one
-    (`~covjson_msgspec._bridging.coordinate_identifiers`): an axis omitting
-    ``coordinates`` defaults to a one-element array naming itself, so its tuples
-    must be 1-tuples.
+    (`~covjson_msgspec._bridging.coordinate_identifiers`), which a composite axis
+    always supplies explicitly (ADR-0019).
 
     ``"polygon"`` is deliberately outside this rule: its ``coordinates`` give "the
     order of coordinates" *within* each GeoJSON position, so a polygon value's
@@ -443,14 +442,14 @@ class AxisCoordinatesNotOmitted(
     types, which are excluded for two different reasons. A ``"polygon"`` value is a
     GeoJSON coordinate array whose positions hold at least two components, so its
     ``coordinates`` structurally cannot be the one-element default: a
-    single-identifier polygon is an arity fault, not a restated default. A
+    single-identifier polygon cannot be constructed at all (ADR-0019). A
     ``"tuple"`` is subtler, since a one-wide tuple could carry a one-element
     ``coordinates``; §6.1.1 leaves it ambiguous whether a composite axis's
     ``coordinates`` is required (its size defines the tuple width) or defaultable
-    like a primitive's. This rule reads it as required, so a composite axis has no
-    default case to restate and is excluded. A ``primitive`` axis and a
-    custom-``dataType`` axis both can carry a one-element ``coordinates``, and
-    §6.1.1 states the default generally, so both are in scope.
+    like a primitive's. ADR-0019 settles it as required at construction, so a
+    composite axis has no default case to restate and is excluded. A
+    ``primitive`` axis and a custom-``dataType`` axis both can carry a one-element
+    ``coordinates``, and §6.1.1 states the default generally, so both are in scope.
 
     Neither decode nor `~covjson_msgspec.axis.Axis` construction can catch it: the
     identifier is the ``axes`` key, not a field on the axis, so an axis alone does
@@ -1985,10 +1984,8 @@ def _axis_composite_issues(
     Examples
     --------
     >>> from covjson_msgspec import Axis, Domain
-    >>> dom = Domain(
-    ...     axes={"composite": Axis(values=((1.0, 2.0),), data_type="tuple")},
-    ...     domain_type="Trajectory",
-    ... )
+    >>> axis = Axis(values=((1.0, 2.0),), data_type="tuple", coordinates=("x",))
+    >>> dom = Domain(axes={"composite": axis}, domain_type="Trajectory")
     >>> [issue.code for issue in _axis_composite_issues(dom, ())]
     ['axis.composite-arity']
 
@@ -2017,8 +2014,8 @@ def _tuple_axis_issues(
     meaningful size, and a ``str`` would otherwise pass an arity check by its
     character count (``len("abc") == 3``).
 
-    The identifier count is the resolved one, so an axis omitting ``coordinates``
-    is measured against 6.1.1's one-element default rather than skipped.
+    A ``"tuple"`` axis always carries ``coordinates`` (ADR-0019 requires it at
+    construction), so the identifier count is exactly that array's length.
 
     Parameters
     ----------
@@ -3027,7 +3024,7 @@ def _validate_tiled_ndarray(
       ``tiled-ndarray.tile-shape-not-positive``) not exceeding the corresponding
       ``shape`` element (else ``tiled-ndarray.tile-shape-too-large``); and
     * the ``urlTemplate`` must contain a variable for each axis whose
-      ``tileShape`` element is non-null -- the subdivided axes whose per-tile
+      ``tileShape`` element is non-null: the subdivided axes whose per-tile
       ordinals the template interpolates (else
       ``tiled-ndarray.url-template-missing-variable``); and
     * conversely, the ``urlTemplate`` must not reference a variable that names no
@@ -3870,8 +3867,8 @@ def _member_domain_type_issues(
 
     # The member's own declared type: its inline domain's domainType if it sets
     # one, else its coverage-level domainType (pre-inheritance, via
-    # `effective_domain_type`). Comparing the declared type -- not just the
-    # coverage-level member -- means a type declared on the inline domain that
+    # `effective_domain_type`). Comparing the declared type (not just the
+    # coverage-level member) means a type declared on the inline domain that
     # conflicts with the collection is caught too.
     declared_type = coverage.effective_domain_type
 

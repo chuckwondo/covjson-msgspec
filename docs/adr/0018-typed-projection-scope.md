@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted
+Accepted, except the composite-`coordinates` sub-decision in "Why this tightens
+decode where ADR-0017 loosened it" below, which is superseded by ADR-0019: a
+composite axis must supply `coordinates` at construction. The rest stands.
 
 ## Context
 

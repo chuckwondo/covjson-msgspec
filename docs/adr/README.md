@@ -104,6 +104,10 @@ CLAUDE.md.
   only where it recovers a guarantee nothing else enforces, so neither `Axis` nor
   `NdArray` gains a `refine()`; the three ADR-0004 instances differ by rule, and
   the "name the repair" test places a check at construction or in `validate()`
+- [ADR-0019](0019-composite-coordinates-required.md): a `tuple`/`polygon` axis
+  must supply `coordinates` at construction (tuple ≥1, polygon ≥2) because the
+  default (the axis's kind-name `"composite"`) names no real coordinate; it fits
+  only primitive/custom axes
 
 Some decisions are recorded in ADRs that land with their implementation rather
 than here; see the issue tracker for the in-flight set.

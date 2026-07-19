@@ -214,10 +214,13 @@ Two rules we enforce are not stated that plainly, and it is worth being precise
 about where each comes from. A composite axis must list its `values`: that one
 the spec *entails* rather than states, because a `tuple` value MUST be an array
 while the `start` / `stop` / `num` notation yields only numbers, so nothing could
-satisfy both. A composite axis must supply `coordinates`: that one the spec does
-**not** support at all, since §6.1.1 gives `coordinates` a default ("a one-element
-array of the axis identifier") when it is missing. That guard is over-strict and
-is tracked in [#131](https://github.com/chuckwondo/covjson-msgspec/issues/131).
+satisfy both. A composite axis must supply `coordinates`: §6.1.1 defaults a
+missing `coordinates` to "a one-element array of the axis identifier", but a
+composite axis is keyed `"composite"`, so the default resolves to
+`("composite",)`, the kind rather than any component. It names nothing
+usable, so a composite must name its coordinates explicitly, and omission is
+rejected at construction (see
+[ADR-0019](adr/0019-composite-coordinates-required.md)).
 
 All three forms map to one permissive struct, because the forms share no `"type"`
 discriminator and msgspec cannot decode an untagged union of structs:
@@ -237,7 +240,7 @@ class Axis(CovJSONStruct, frozen=True):
         # exactly one of values / start-stop-num, non-empty values, and
         # num == 1 implies start == stop (all stated by 6.1.1); a composite
         # axis lists its values (entailed by 6.1.1, not stated); a composite
-        # axis supplies coordinates (neither; see #131).
+        # axis supplies coordinates (inferred; see ADR-0019).
         ...
 ```
 

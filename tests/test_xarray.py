@@ -303,7 +303,11 @@ def test_malformed_composite_axis_raises_a_clean_error() -> None:
     # so it rejects the same input here with a clear message.
     cov = Coverage(
         domain=Domain(
-            axes={"composite": Axis(values=(1.0, 2.0), data_type="tuple")},
+            axes={
+                "composite": Axis(
+                    values=(1.0, 2.0), data_type="tuple", coordinates=("x",)
+                )
+            },
             domain_type="Trajectory",
         ),
         ranges={

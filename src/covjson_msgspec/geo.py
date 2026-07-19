@@ -562,11 +562,10 @@ def _horizontal_indices(
 ) -> tuple[int, int, int | None]:
     """Locate the ``x`` / ``y`` (and optional ``z``) components in ``coords``.
 
-    Spec 6.1.1 defaults an axis's ``coordinates`` to a one-element array naming
-    the axis, so an omitted ``coordinates`` resolves to ``("composite",)``, which
-    names no horizontal component and cannot place a position. Rather than guess
-    at ``("x", "y")``, that is reported as the error it is: the document has not
-    said which components its positions carry.
+    A composite axis names its position components in ``coordinates`` (ADR-0019
+    requires them), but the geometry builders understand only ``x`` / ``y``:
+    coordinates naming neither cannot place a position. Rather than guess at
+    ``("x", "y")``, that is reported as the error it is.
 
     Parameters
     ----------
@@ -593,10 +592,9 @@ def _horizontal_indices(
     >>> _horizontal_indices(("t", "x", "y"), "Trajectory", "LineString")
     (1, 2, None)
 
-    An omitted ``coordinates`` resolves to the axis's own name, which places
-    nothing:
+    Coordinates naming neither ``x`` nor ``y`` place nothing:
 
-    >>> _horizontal_indices(("composite",), "Trajectory", "LineString")
+    >>> _horizontal_indices(("t", "a", "b"), "Trajectory", "LineString")
     Traceback (most recent call last):
         ...
     ValueError: a Trajectory needs x and y coordinates to build a LineString; ...
