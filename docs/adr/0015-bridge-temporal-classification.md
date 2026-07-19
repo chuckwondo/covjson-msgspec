@@ -42,7 +42,7 @@ time out"), not a shared decision derived in three places.
 |------|-----------------------|--------------------------------------------------|
 | `resolve` (`temporal.py`) | `Moment` / `Unrepresentable` / `Malformed` | `Malformed`, then `Unrepresentable` (a valid form) |
 | `maybe_datetime` (`_bridging.py`) | `DatetimeIndex` / raw strings | parsed to a `Timestamp`, then raw-string fallback |
-| `_parse_times` (`xarray.py`) | `datetime64[ns]` / cftime object array | parsed to `datetime64`, then cftime |
+| `_parse_times` (`xarray.py`) | `datetime64` (`ns`, or `us` outside the ns window) / cftime object array | parsed to `datetime64[ns]`, then `datetime64[us]` |
 
 Because the codomains differ, `resolve` cannot serve as the decider. That single
 fact manifests as three concrete blockers:
@@ -96,16 +96,19 @@ drift risk on a three-line, well-commented one-liner for no behavioral gain.
   (a contributor who "fixes" a bridge to reject naive input trips it), not a
   bug. `validate(check_values=True)` remains the strict verdict for callers who
   want one.
-- One pre-existing correctness bug in the xarray bridge stays open, out of this
-  decision's scope and filed separately as #109: `_parse_times` guards the
-  `datetime64[ns]` conversion with `suppress(ValueError, OverflowError)`,
-  intending to fall through to cftime when a value does not fit. But numpy
-  int64-overflow-*wraps* an out-of-range value instead of raising, so a
-  spec-valid standard-calendar date outside numpy's ns window (~1677 to 2262) is
-  silently corrupted to a wrong in-range date rather than routed to cftime. This
-  is orthogonal to the routing decision here: `resolve` would classify such a
-  value as a `Moment` (it is inside `datetime`'s `1..9999`) and could not
-  prevent the wrap either.
+- The xarray standard-calendar path narrows to `datetime64[ns]` only when the
+  whole column fits numpy's ns window (~1677 to 2262), and otherwise keeps the
+  wider `datetime64[us]`, which holds any Gregorian year. cftime stays reserved
+  for calendars numpy cannot represent (`360_day` and the like), not for standard
+  dates that merely exceed the ns window: that is a resolution matter, not a
+  calendar one. This resolves #109, where the earlier `suppress(ValueError,
+  OverflowError)` guard was a no-op: numpy int64-*wraps* an out-of-range value
+  instead of raising (numpy#9956), silently corrupting such a date to a wrong
+  in-range one. Preserving a non-ns `datetime64` requires xarray >= 2025.01.2
+  (earlier releases coerce it back to ns, raising `OutOfBoundsDatetime`), which
+  is the bridge's floor. The routing decision here was never implicated:
+  `resolve` would classify such a value as a `Moment` and could not prevent the
+  wrap either.
 - Revisit gate: a concrete need for one classifier of record across the bridges
   (a caller-facing guarantee that, say, `to_pandas` and `to_datetime` never
   disagree) would reopen this, most likely via the injected `parse_time=` seam

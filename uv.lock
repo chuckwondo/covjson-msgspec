@@ -438,7 +438,7 @@ requires-dist = [
     { name = "pandas", marker = "extra == 'geo'", specifier = ">=2.0" },
     { name = "pandas", marker = "extra == 'pandas'", specifier = ">=2.0" },
     { name = "shapely", marker = "extra == 'geo'", specifier = ">=2.0" },
-    { name = "xarray", marker = "extra == 'xarray'", specifier = ">=2024.10" },
+    { name = "xarray", marker = "extra == 'xarray'", specifier = ">=2025.1.2" },
 ]
 provides-extras = ["numpy", "xarray", "pandas", "geo", "fastapi", "all"]
 

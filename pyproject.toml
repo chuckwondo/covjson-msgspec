@@ -51,9 +51,13 @@ Issues     = "https://github.com/chuckwondo/covjson-msgspec/issues"
 [project.optional-dependencies]
 # numpy 1.24 has cp311 wheels; the all-extras resolution pins it here via xarray.
 numpy = [ "numpy>=1.24" ]
-# xarray>=2024.10 first ships xarray.DataTree, used by the collection bridge.
-# cftime 1.6.2 is the first release with a cp311 wheel (1.6.0/1.6.1 have none).
-xarray = [ "xarray>=2024.10", "numpy>=1.24", "cftime>=1.6.2" ]
+# xarray>=2025.01.2 is the first release to PRESERVE a non-nanosecond datetime64
+# instead of coercing it to ns; the temporal bridge needs it so a standard-calendar
+# date outside numpy's ns window (~1677-2262) stays faithful rather than int64-
+# wrapping (numpy#9956; #109). It also ships xarray.DataTree (the earlier 2024.10
+# floor reason), which it subsumes. cftime 1.6.2 is the first release with a cp311
+# wheel (1.6.0/1.6.1 have none).
+xarray = [ "xarray>=2025.01.2", "numpy>=1.24", "cftime>=1.6.2" ]
 # pandas 2.0 is the modern floor (1.x is EOL); the all-extras resolution pulls
 # 2.1 via xarray, so 2.0 is a true lower bound rather than the tested version.
 pandas = [ "pandas>=2.0", "numpy>=1.24" ]
