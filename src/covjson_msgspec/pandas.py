@@ -219,7 +219,7 @@ def _coverage_to_pandas(coverage: Coverage) -> pd.DataFrame:
     `_collection_to_pandas`. It sorts the domain's axes into roles via
     `_axis_layout`, then builds one column per composite component, per scalar
     axis, and per parameter range (each broadcast to the shared grid by
-    `~covjson_msgspec._bridging.broadcast` / `range_column`), and indexes them
+    `broadcast` / `range_column`), and indexes them
     with `_index`. The coverage's ``domain_type`` and ``id`` ride along in
     ``frame.attrs``.
 
@@ -369,10 +369,10 @@ def _axis_layout(domain: Domain, temporal: set[str]) -> _AxisLayout:
     Parameters
     ----------
     domain
-        The domain whose `~Domain.axes` are classified.
+        The domain whose [`axes`][covjson_msgspec.Domain.axes] are classified.
     temporal
         Coordinate identifiers to parse as datetimes (from
-        `~covjson_msgspec._bridging.temporal_coordinates`).
+        `temporal_coordinates`).
 
     Returns
     -------
@@ -440,10 +440,10 @@ def _axis_layout(domain: Domain, temporal: set[str]) -> _AxisLayout:
 def _index(layout: _AxisLayout) -> pd.Index[Any]:
     """Build the frame index from a layout's varying dims.
 
-    No varying axis gives a length-1 `~pandas.RangeIndex` (one row); a single dim
-    gives a flat `~pandas.Index`; two or more give a `~pandas.MultiIndex` over
-    their Cartesian product, in ``dims`` order (matching the row-major ravel that
-    `~covjson_msgspec._bridging.broadcast` uses for the columns).
+    No varying axis gives a length-1 [`RangeIndex`][pandas.RangeIndex] (one row); a
+    single dim gives a flat [`Index`][pandas.Index]; two or more give a
+    [`MultiIndex`][pandas.MultiIndex] over their Cartesian product, in ``dims`` order
+    (matching the row-major ravel that `broadcast` uses for the columns).
 
     Parameters
     ----------

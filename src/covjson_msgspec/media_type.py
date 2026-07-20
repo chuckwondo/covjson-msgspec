@@ -11,8 +11,8 @@ two HTTP boundaries, while staying free of any web-framework dependency:
 `encode_response` produces the body and content type to send, `decode_response`
 checks an incoming content type before decoding, and `is_coverage_json_media_type`
 is the predicate both inbound checks share. The ``[fastapi]`` ``Response`` adapter
-(`~covjson_msgspec.fastapi.CovJSONResponse`) builds on these; a ``[litestar]``
-adapter remains deferred.
+([`CovJSONResponse`][covjson_msgspec.fastapi.CovJSONResponse]) builds on these; a
+``[litestar]`` adapter remains deferred.
 
 Spec: [Media Type and File Extension][spec-media-type]. The optional ``profile``
 parameter follows [RFC 6906][rfc6906], the JSON encoding rules (always UTF-8, no

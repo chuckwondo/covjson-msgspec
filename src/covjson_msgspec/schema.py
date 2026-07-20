@@ -1,13 +1,14 @@
 """Generate OpenAPI-compatible JSON Schema for the CoverageJSON types.
 
 FastAPI builds its OpenAPI documentation from the types a route declares, but it
-cannot introspect msgspec structs, so a `~covjson_msgspec.fastapi.CovJSONResponse`
-endpoint serves correctly on the wire yet appears schema-less in Swagger / Redoc.
-This module bridges that gap: `component_schemas` turns the CoverageJSON model
-types into OpenAPI ``components.schemas`` entries via msgspec's own schema
-generator, and `schema_ref` produces the matching ``$ref`` a route response points
-at. Both are framework-agnostic (msgspec only); the thin FastAPI wiring that
-consumes them lives in `covjson_msgspec.fastapi`, behind the ``[fastapi]`` extra.
+cannot introspect msgspec structs, so a
+[`CovJSONResponse`][covjson_msgspec.fastapi.CovJSONResponse] endpoint serves correctly
+on the wire yet appears schema-less in Swagger / Redoc.  This module bridges that gap:
+`component_schemas` turns the CoverageJSON model types into OpenAPI
+``components.schemas`` entries via msgspec's own schema generator, and `schema_ref`
+produces the matching ``$ref`` a route response points at. Both are framework-agnostic
+(msgspec only); the thin FastAPI wiring that consumes them lives in
+`covjson_msgspec.fastapi`, behind the ``[fastapi]`` extra.
 
 Two properties make the output drop cleanly into a host application:
 

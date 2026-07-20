@@ -93,8 +93,6 @@ Code:
   ruff N815 is intentionally not applied.
 - Put blank lines around block statements (if / for / while / with / try / def /
   class).
-- Link the CoverageJSON spec from docstrings and comments where it teaches the
-  wire format; centralize the spec and RFC links in the module docstring.
 - Prefer colons, parentheses, or a shorter sentence to em-dashes; write a needed
   one as a double hyphen (`--`), never the Unicode character. A definition list
   uses a colon.
@@ -105,6 +103,30 @@ Docstrings and doctests:
   byte blobs via implicit string concatenation.
 - Multi-line JSON in docstrings uses `indent=2` with short arrays kept inline. Do
   not reformat verbatim `msgspec.json.format(indent=2)` output.
+
+Documentation:
+
+The docs site renders through mkdocstrings + griffe as Markdown, not
+reStructuredText (see [ADR-0014](docs/adr/0014-documentation-toolchain.md)), so
+docstrings and the hand-written pages share one set of conventions.
+
+- Cross-reference an API symbol as `` [`name`][covjson_msgspec.public.path] ``:
+  the display is the short `name`, and the target is its canonical public
+  `__all__` path (`covjson_msgspec.validate`, not the internal
+  `covjson_msgspec.validation.validate`). Do not use reStructuredText idiom;
+  `` `~mod.name` `` renders as dead literal text, and a trailing `::` renders as
+  a stray `::`.
+- A target with no rendered anchor renders as plain inline code, not a link: a
+  private member, a no-inventory external (`geopandas`, `fastapi`; only the
+  numpy, xarray, pandas, and typing inventories are loaded), or an enum member
+  (link its enum class instead).
+- Link the CoverageJSON spec from docstrings and comments where it teaches the
+  wire format; centralize the spec and RFC links in the module docstring.
+- For syntax this does not spell out (admonitions, cross-reference forms, the
+  reference-page `:::` stubs), see the
+  [mkdocstrings](https://mkdocstrings.github.io/) docs (Material for MkDocs and
+  mkdocs-autorefs too); for the reasoning behind a rule,
+  [Conventions, explained](docs/design/index.md#conventions-explained).
 
 Tests:
 

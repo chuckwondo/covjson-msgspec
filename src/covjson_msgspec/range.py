@@ -7,7 +7,7 @@ retrieves those tiles and stitches them back into a single inline `NdArray`.
 
 ``NdArray.values`` is a flat tuple of ``float | int | str | None`` (``None``
 marks missing data). The exact element type within that union depends on the
-``dataType`` field; use `~covjson_msgspec.validation.validate` with
+``dataType`` field; use [`validate`][covjson_msgspec.validate] with
 ``check_values=True`` to *report* element-vs-``dataType`` inconsistencies after
 decoding, or `NdArray.values_as` to *project* the values to a precise element
 type fail-fast (the consumer counterpart).
@@ -73,7 +73,7 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
     value. msgspec enforces the ``float | int | str`` union on decode, so nested
     arrays and booleans are rejected; element-vs-``dataType`` consistency is a
     cross-cutting check handled by opt-in
-    `~covjson_msgspec.validation.validate` (``check_values=True``). Shape
+    [`validate`][covjson_msgspec.validate] (``check_values=True``). Shape
     consistency (the ``values`` count vs. ``shape``, and ``shape`` vs.
     ``axisNames`` rank) is likewise deferred to `validate`: a mismatch is
     inconsistent but still loadable, not a decode error.
@@ -152,9 +152,9 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
 
         A nonconforming value raises `msgspec.ValidationError` (the same error a
         bare decode raises for a bad value, so catch that rather than
-        `~covjson_msgspec.validation.CovJSONValidationError`). This is a
+        [`CovJSONValidationError`][covjson_msgspec.CovJSONValidationError]). This is a
         fail-fast edge effect, distinct from
-        `~covjson_msgspec.validation.validate` (``check_values=True``), which
+        [`validate`][covjson_msgspec.validate] (``check_values=True``), which
         instead *reports* every mismatch as a ``range.value-type-mismatch``
         issue; the two compose (inspect with ``validate``, consume with
         ``values_as``). To project without knowing the ``dataType`` ahead of
@@ -424,9 +424,9 @@ class TileSet(CovJSONStruct, frozen=True):
 class TileFailure(FetchFailure, frozen=True, kw_only=True):
     """A tile that failed to fetch or decode during best-effort assembly.
 
-    Extends `FetchFailure` (the URL, `~covjson_msgspec.FailureKind`, and message)
-    with ``offsets``, the tile's start index along *each* axis of the full array
-    (one entry per axis, ``0`` on axes the tile set does not subdivide). Collected
+    Extends `FetchFailure` (the URL, [`FailureKind`][covjson_msgspec.FailureKind], and
+    message) with ``offsets``, the tile's start index along *each* axis of the full
+    array (one entry per axis, ``0`` on axes the tile set does not subdivide). Collected
     by `TiledNdArray.assemble` when a best-effort strategy tolerates the failure;
     see `AssembleReport`.
 
@@ -454,12 +454,13 @@ class TileFailure(FetchFailure, frozen=True, kw_only=True):
 class AssembleReport(msgspec.Struct, frozen=True):
     """A tiled assembly's array plus any tiles a best-effort strategy tolerated.
 
-    Returned by `TiledNdArray.assemble` and `~TiledNdArray.assemble_async`.
-    ``array`` holds every tile that loaded, with ``None`` at positions whose tile
-    failed under a collecting strategy (a still-valid `NdArray`); ``failures``
-    reports those failed tiles. Under the default `~covjson_msgspec.fail_fast`
-    strategy ``failures`` is empty -- the first failed tile raises a
-    `~covjson_msgspec.FetchError` instead of being collected.
+    Returned by `TiledNdArray.assemble` and
+    [`assemble_async`][covjson_msgspec.TiledNdArray.assemble_async].  ``array`` holds
+    every tile that loaded, with ``None`` at positions whose tile failed under a
+    collecting strategy (a still-valid `NdArray`); ``failures`` reports those failed
+    tiles. Under the default [`fail_fast`][covjson_msgspec.fail_fast] strategy
+    ``failures`` is empty -- the first failed tile raises a
+    [`FetchError`][covjson_msgspec.FetchError] instead of being collected.
 
     Attributes
     ----------
@@ -545,10 +546,11 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         alongside any tiles a best-effort strategy tolerated.
 
         How a failed tile is handled is the ``strategy``. The default
-        `~covjson_msgspec.fail_fast` aborts on the first failure, raising a
-        `~covjson_msgspec.FetchError` chained from the underlying exception; a
-        collecting strategy (`~covjson_msgspec.collect_all`, ...) instead returns
-        the tiles that loaded, with ``None`` holes and the failures reported.
+        [`fail_fast`][covjson_msgspec.fail_fast] aborts on the first failure, raising a
+        [`FetchError`][covjson_msgspec.FetchError] chained from the underlying
+        exception; a collecting strategy ([`collect_all`][covjson_msgspec.collect_all],
+        ...) instead returns the tiles that loaded, with ``None`` holes and the failures
+        reported.
 
         Parameters
         ----------
@@ -562,11 +564,12 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
             chosen, and the first listed wins a tie.
         strategy
             How to respond to a tile that fails to fetch or decode. The default
-            `~covjson_msgspec.fail_fast` aborts on the first failure; a collecting
-            strategy (`~covjson_msgspec.collect_all`,
-            `~covjson_msgspec.halt_on_unrecoverable`, `~covjson_msgspec.stop_after`,
-            or any `~covjson_msgspec.FailureStrategy`) reports failures instead of
-            halting.
+            [`fail_fast`][covjson_msgspec.fail_fast] aborts on the first failure; a
+            collecting strategy ([`collect_all`][covjson_msgspec.collect_all],
+            [`halt_on_unrecoverable`][covjson_msgspec.halt_on_unrecoverable],
+            [`stop_after`][covjson_msgspec.stop_after], or any
+            [`FailureStrategy`][covjson_msgspec.FailureStrategy]) reports failures
+            instead of halting.
 
         Returns
         -------
@@ -584,8 +587,9 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
             If there are no tile sets, or if ``tileset`` is out of range.
         FetchError
             When the ``strategy`` halts on a failure (the default
-            `~covjson_msgspec.fail_fast` halts on the first), chained from the
-            underlying fetch or `~covjson_msgspec.ReferencedDocumentError` decode
+            [`fail_fast`][covjson_msgspec.fail_fast] halts on the first), chained from
+            the underlying fetch or
+            [`ReferencedDocumentError`][covjson_msgspec.ReferencedDocumentError] decode
             exception.
 
         Examples
@@ -653,8 +657,8 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         differs. A tile set is typically dozens or hundreds of independent tiles,
         so fetching them concurrently via `asyncio.gather` is the main win. Every
         tile is fetched before the strategy is applied (concurrency comes before
-        early-abort), so even the default `~covjson_msgspec.fail_fast` fetches the
-        whole batch before raising on the first failure.
+        early-abort), so even the default [`fail_fast`][covjson_msgspec.fail_fast]
+        fetches the whole batch before raising on the first failure.
 
         Parameters
         ----------
@@ -683,8 +687,9 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
             If there are no tile sets, or if ``tileset`` is out of range.
         FetchError
             When the ``strategy`` halts on a failure (the default
-            `~covjson_msgspec.fail_fast` halts on the first), chained from the
-            underlying fetch or `~covjson_msgspec.ReferencedDocumentError` decode
+            [`fail_fast`][covjson_msgspec.fail_fast] halts on the first), chained from
+            the underlying fetch or
+            [`ReferencedDocumentError`][covjson_msgspec.ReferencedDocumentError] decode
             exception.
 
         Examples
@@ -1054,7 +1059,7 @@ def _tile_failure(
     """Build a `TileFailure` for a tile that failed to fetch or decode.
 
     Adapts a ``(url, offsets)`` layout item, the raised exception, and its
-    classified `~covjson_msgspec.FailureKind` into the failure value that
+    classified [`FailureKind`][covjson_msgspec.FailureKind] into the failure value that
     best-effort assembly collects. Passed to the best-effort ``collect`` helpers
     as the per-tile failure builder.
 

@@ -9,8 +9,8 @@ optional dependency.
 
 A few helpers here read a spec-defined fact off the model rather than serve a
 bridge specifically (`coordinate_systems`, `temporal_coordinates`,
-`coordinate_identifiers`); `~covjson_msgspec.validation` shares those, so that
-each fact has one home rather than one per consumer.
+`coordinate_identifiers`); [`validation`][covjson_msgspec.validation] shares those,
+so that each fact has one home rather than one per consumer.
 """
 
 from __future__ import annotations
@@ -117,8 +117,8 @@ def range_column(
     Parameters
     ----------
     range_
-        The inline range whose `~NdArray.axis_names` say which dims it varies
-        over (a subset of ``dims``, possibly in a different order).
+        The inline range whose [`axis_names`][covjson_msgspec.NdArray.axis_names] say
+        which dims it varies over (a subset of ``dims``, possibly in a different order).
     dims
         The canonical dimension order shared by every column in the frame.
     sizes
@@ -186,7 +186,7 @@ def broadcast(
     canonical (``dims``) order over its ``present`` axes, with any absent axes
     represented by trailing size-1 dimensions. Inserting a length-1 axis for
     each absent dim and broadcasting to the full sizes repeats the data along
-    the missing axes without copying until the final `~numpy.ndarray.ravel`.
+    the missing axes without copying until the final [`ravel`][numpy.ndarray.ravel].
 
     Parameters
     ----------
@@ -242,8 +242,8 @@ def is_standard_calendar(rs: TemporalRS) -> bool:
     `STANDARD_CALENDARS`, so both a bare ``"Gregorian"`` and a URI like
     ``".../calendars/Gregorian"`` are recognized. A non-standard calendar (e.g.
     ``"360_day"``) has no ``datetime64`` representation, and the stdlib
-    `~covjson_msgspec.temporal.resolve` understands only the Gregorian forms, so
-    callers leave those coordinates as ISO strings and skip datetime comparison.
+    [`resolve`][covjson_msgspec.temporal.resolve] understands only the Gregorian forms,
+    so callers leave those coordinates as ISO strings and skip datetime comparison.
 
     Parameters
     ----------
@@ -278,14 +278,14 @@ def coordinate_systems(domain: Domain) -> dict[str, ResolvedReferenceSystem]:
     more coordinates to a system) into a flat ``coordinate -> system`` lookup, so
     a caller can ask "which system governs ``t``?" in O(1). Each system is
     projected to its typed
-    `~covjson_msgspec.referencing.ResolvedReferenceSystem` variant (via
-    `~covjson_msgspec.referencing.ReferenceSystem.refine`), so callers dispatch on
+    [`ResolvedReferenceSystem`][covjson_msgspec.ResolvedReferenceSystem] variant (via
+    [`refine`][covjson_msgspec.ReferenceSystem.refine]), so callers dispatch on
     a precise kind.
 
     Parameters
     ----------
     domain
-        The domain whose `~Domain.referencing` is indexed.
+        The domain whose [`referencing`][covjson_msgspec.Domain.referencing] is indexed.
 
     Returns
     -------
@@ -321,8 +321,9 @@ def temporal_coordinates(domain: Domain) -> set[str]:
     The bridges convert time axes to real datetimes only when their calendar is
     one pandas / numpy can parse (see `STANDARD_CALENDARS`); an exotic calendar
     (e.g. ``"360_day"``) has no datetime64 representation, so those coordinates
-    stay as ISO strings. This scans the domain's `~Domain.referencing` and
-    returns the coordinate identifiers safe to parse.
+    stay as ISO strings. This scans the domain's
+    [`referencing`][covjson_msgspec.Domain.referencing] and returns the coordinate
+    identifiers safe to parse.
 
     The calendar is matched on its final path segment, lower-cased, so both a
     bare ``"Gregorian"`` and a URI like ``".../calendars/Gregorian"`` are
@@ -391,17 +392,17 @@ def coordinate_identifiers(axis: Axis, axis_name: str) -> tuple[str, ...]:
     Spec 6.1.1 makes ``coordinates`` optional: "If missing, the member
     ``"coordinates"`` defaults to a one-element array of the axis identifier and
     MUST NOT be included for that default case." The identifier lives in the
-    `~covjson_msgspec.domain.Domain.axes` mapping key rather than on the axis, so
+    [`axes`][covjson_msgspec.Domain.axes] mapping key rather than on the axis, so
     only a caller holding both can apply the default, which is why this takes
     ``axis_name`` alongside. It is the one place the default is applied: the
-    bridges and `~covjson_msgspec.validation.validate` all read it from here.
+    bridges and [`validate`][covjson_msgspec.validate] all read it from here.
 
     Parameters
     ----------
     axis
         The axis whose coordinate identifiers are wanted.
     axis_name
-        The axis's identifier: its key in `~covjson_msgspec.domain.Domain.axes`.
+        The axis's identifier: its key in [`axes`][covjson_msgspec.Domain.axes].
 
     Returns
     -------
@@ -435,7 +436,7 @@ def composite_columns(axis: Axis, axis_name: str) -> tuple[tuple[str, list[Any]]
     dataframe/array bridges lay each component out as its own column. Spec 6.1.1
     requires every value to be a tuple whose size matches the coordinate
     identifier count (`coordinate_identifiers`), and
-    `~covjson_msgspec.validation.validate` reports a violation as
+    [`validate`][covjson_msgspec.validate] reports a violation as
     ``axis.composite-value-shape`` / ``axis.composite-arity``. The bridges do not
     require a validated document, so the same malformation is rejected here with
     one clean `ValueError` rather than an index or typing failure surfacing from
@@ -447,7 +448,7 @@ def composite_columns(axis: Axis, axis_name: str) -> tuple[tuple[str, list[Any]]
     axis
         The ``"tuple"`` axis to transpose.
     axis_name
-        The axis's identifier: its key in `~covjson_msgspec.domain.Domain.axes`,
+        The axis's identifier: its key in [`axes`][covjson_msgspec.Domain.axes],
         used to resolve the coordinate default and to name the error.
 
     Returns
@@ -518,8 +519,8 @@ def maybe_datetime(values: list[Any], is_temporal: bool) -> Any:
     Returns
     -------
     pandas.DatetimeIndex or list
-        A `~pandas.DatetimeIndex` when ``is_temporal`` and parsing succeeds;
-        otherwise ``values`` unchanged. Parsing that raises (a malformed time
+        A [`DatetimeIndex`][pandas.DatetimeIndex] when ``is_temporal`` and parsing
+        succeeds; otherwise ``values`` unchanged. Parsing that raises (a malformed time
         string) also falls back to ``values`` rather than propagating.
 
     Examples

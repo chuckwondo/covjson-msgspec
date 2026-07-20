@@ -71,9 +71,9 @@ _RANGE_DECODER: Final[msgspec.json.Decoder[NdArray | TiledNdArray]] = (
 class ReferenceFailure(FetchFailure, frozen=True, kw_only=True):
     """A domain or range reference that failed to fetch or decode.
 
-    Extends `FetchFailure` (the URL, `~covjson_msgspec.FailureKind`, and message)
-    with where in the coverage the reference sat: ``slot`` is ``"domain"`` for a
-    coverage's domain or the range key for a range, and ``coverage_index`` is the
+    Extends `FetchFailure` (the URL, [`FailureKind`][covjson_msgspec.FailureKind], and
+    message) with where in the coverage the reference sat: ``slot`` is ``"domain"`` for
+    a coverage's domain or the range key for a range, and ``coverage_index`` is the
     member's position in a `CoverageCollection` (``0`` for a lone `Coverage`).
     Collected by `resolve_references` when a best-effort strategy tolerates the
     failure; see `ResolveReport`.
@@ -113,17 +113,18 @@ class ReferenceFailure(FetchFailure, frozen=True, kw_only=True):
 class ResolveReport(msgspec.Struct, Generic[_CovT], frozen=True):
     """A resolution's (partial) value plus any references a strategy tolerated.
 
-    Returned by `resolve_references` and `~resolve_references_async`. ``value`` is
+    Returned by `resolve_references` and
+    [`resolve_references_async`][covjson_msgspec.resolve_references_async]. ``value`` is
     a new `Coverage` or `CoverageCollection` of the same type as the input, with
     every successfully fetched URL reference inlined; a reference that failed
     under a collecting strategy keeps its original URL string (still a legal
     document), and ``failures`` reports it. Under the default
-    `~covjson_msgspec.fail_fast` strategy ``failures`` is empty -- the first
-    failed reference raises a `~covjson_msgspec.FetchError` instead of being
-    collected.
+    [`fail_fast`][covjson_msgspec.fail_fast] strategy ``failures`` is empty: the first
+    failed reference raises a [`FetchError`][covjson_msgspec.FetchError] instead of
+    being collected.
 
-    Like `~covjson_msgspec.AssembleReport`, this is a plain value carrier, not a
-    CoverageJSON wire type.
+    Like [`AssembleReport`][covjson_msgspec.AssembleReport], this is a plain value
+    carrier, not a CoverageJSON wire type.
 
     Attributes
     ----------
@@ -132,7 +133,7 @@ class ResolveReport(msgspec.Struct, Generic[_CovT], frozen=True):
         unresolved references remain URL strings.
     failures
         The references that failed, one `ReferenceFailure` each (empty under
-        `~covjson_msgspec.fail_fast`).
+        [`fail_fast`][covjson_msgspec.fail_fast]).
     """
 
     value: _CovT
@@ -158,15 +159,15 @@ def resolve_references(
     inlined as that tiled array, not assembled from its tiles.
 
     How a failed reference is handled is the ``strategy``. The default
-    `~covjson_msgspec.fail_fast` aborts on the first failure, raising a
-    `~covjson_msgspec.FetchError` chained from the underlying exception; a
-    collecting strategy (`~covjson_msgspec.collect_all`, ...) instead leaves each
-    failed reference as its URL string in ``report.value`` and reports it in
+    [`fail_fast`][covjson_msgspec.fail_fast] aborts on the first failure, raising a
+    [`FetchError`][covjson_msgspec.FetchError] chained from the underlying exception; a
+    collecting strategy ([`collect_all`][covjson_msgspec.collect_all], ...) instead
+    leaves each failed reference as its URL string in ``report.value`` and reports it in
     ``report.failures``.
 
     References are fetched **per site**, not deduplicated: a URL used by several
     collection members is fetched once per member. All caching is the fetcher's
-    to own (see `covjson_msgspec._fetch`), so wrap it to fetch each URL once::
+    to own (see `covjson_msgspec._fetch`), so wrap it to fetch each URL once:
 
         from functools import lru_cache
 
@@ -185,10 +186,11 @@ def resolve_references(
         (and any caching, auth, or retries) lives in this callable.
     strategy
         How to respond to a reference that fails to fetch or decode. The default
-        `~covjson_msgspec.fail_fast` aborts on the first failure; a collecting
-        strategy (`~covjson_msgspec.collect_all`,
-        `~covjson_msgspec.halt_on_unrecoverable`, `~covjson_msgspec.stop_after`,
-        or any `~covjson_msgspec.FailureStrategy`) reports failures instead.
+        [`fail_fast`][covjson_msgspec.fail_fast] aborts on the first failure; a
+        collecting strategy ([`collect_all`][covjson_msgspec.collect_all],
+        [`halt_on_unrecoverable`][covjson_msgspec.halt_on_unrecoverable],
+        [`stop_after`][covjson_msgspec.stop_after], or any
+        [`FailureStrategy`][covjson_msgspec.FailureStrategy]) reports failures instead.
 
     Returns
     -------
@@ -202,8 +204,9 @@ def resolve_references(
     ------
     FetchError
         When the ``strategy`` halts on a failure (the default
-        `~covjson_msgspec.fail_fast` halts on the first), chained from the
-        underlying fetch or `~covjson_msgspec.ReferencedDocumentError` decode
+        [`fail_fast`][covjson_msgspec.fail_fast] halts on the first), chained from the
+        underlying fetch or
+        [`ReferencedDocumentError`][covjson_msgspec.ReferencedDocumentError] decode
         exception.
 
     Examples
@@ -299,15 +302,16 @@ async def resolve_references_async(
     ------
     FetchError
         When the ``strategy`` halts on a failure (the default
-        `~covjson_msgspec.fail_fast` halts on the first), chained from the
-        underlying fetch or `~covjson_msgspec.ReferencedDocumentError` decode
+        [`fail_fast`][covjson_msgspec.fail_fast] halts on the first), chained from the
+        underlying fetch or
+        [`ReferencedDocumentError`][covjson_msgspec.ReferencedDocumentError] decode
         exception.
 
     Notes
     -----
     There is no built-in concurrency cap: the unbounded fan-out is left to the
     injected `AsyncFetch`, which owns all I/O policy. To bound it, wrap the fetcher
-    in a semaphore::
+    in a semaphore:
 
         sem = asyncio.Semaphore(8)
 
@@ -571,7 +575,7 @@ def _reference_failure(
     """Build a `ReferenceFailure` for a reference that failed to fetch or decode.
 
     Adapts a `_RefSite`, the raised exception, and its classified
-    `~covjson_msgspec.FailureKind` into the failure value that best-effort
+    [`FailureKind`][covjson_msgspec.FailureKind] into the failure value that best-effort
     resolution collects. Passed to the best-effort ``collect`` helpers as the
     per-reference failure builder. ``slot`` is derived from the site's ``key``
     (``"domain"`` for the domain, else the range key).

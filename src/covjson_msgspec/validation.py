@@ -19,8 +19,8 @@ a caller sees every error and warning at once. `Issue` is a closed union of one
 frozen struct per finding kind (`DomainMissingAxis`, `NdArrayValueCount`, ...),
 each carrying its substitution values as typed fields, a human message via
 ``str(issue)``, a stable string ``code``, and a JSON Pointer ``at``. Match on the
-concrete variant (``match`` / `~typing.assert_never` for exhaustiveness, or
-``isinstance`` to read a variant's typed payload) and use ``code`` for stringly
+concrete variant (``match`` / [`assert_never`][typing.assert_never] for exhaustiveness,
+or ``isinstance`` to read a variant's typed payload) and use ``code`` for stringly
 work (aggregation, logging, the wire tag).
 
 A ``code`` is ``<category>.<key>``, and the category names the object whose rule
@@ -125,8 +125,8 @@ class _Issue(
     Consumers have two matching styles, and the split is the whole point:
 
     * Reach for the **type** (``match`` / ``isinstance``) for anything the type
-      checker should verify: exhaustiveness via `~typing.assert_never`, reading
-      a variant's typed payload (``issue.code == ...`` does *not* narrow the
+      checker should verify: exhaustiveness via [`assert_never`][typing.assert_never],
+      reading a variant's typed payload (``issue.code == ...`` does *not* narrow the
       type), and refactor-safety.
     * Reach for **`code`** only for stringly work that leaves the type system:
       aggregating (``Counter(i.code for i in issues)``), logging, the wire tag,
@@ -291,8 +291,8 @@ class AxisCompositeValueShape(_Issue, frozen=True, tag="axis.composite-value-sha
     GeoJSON Polygon coordinate array". A value that is not an array at all
     violates either MUST, so this is an error (per ADR-0002).
 
-    Decode cannot catch it: `~covjson_msgspec.axis.AxisValue` is one union serving
-    primitive and composite axes alike, so nothing in the type ties a value's
+    Decode cannot catch it: [`AxisValue`][covjson_msgspec.axis.AxisValue] is one union
+    serving primitive and composite axes alike, so nothing in the type ties a value's
     shape to the axis's ``dataType``. A custom dataType is never reported: 6.1.1
     grants only "Custom values MAY be used" and defines no value structure for
     one, so no MUST constrains it.
@@ -322,7 +322,7 @@ class AxisCompositeArity(_Issue, frozen=True, tag="axis.composite-arity"):
     identifiers and silently drop every surplus component.
 
     The identifier count is the *resolved* one
-    (`~covjson_msgspec._bridging.coordinate_identifiers`), which a composite axis
+    (`coordinate_identifiers`), which a composite axis
     always supplies explicitly (ADR-0019).
 
     ``"polygon"`` is deliberately outside this rule: its ``coordinates`` give "the
@@ -356,7 +356,7 @@ class AxisPolygonPositionArity(_Issue, frozen=True, tag="axis.polygon-position-a
     Left unreported, the geo bridge indexes each position by coordinate name, so a
     position shorter than the identifiers raises an ``IndexError`` and a longer one
     silently drops the surplus components. The identifier count is the *resolved*
-    one (`~covjson_msgspec._bridging.coordinate_identifiers`).
+    one (`coordinate_identifiers`).
     """
 
     axis: str
@@ -456,7 +456,7 @@ class AxisCoordinatesNotOmitted(
     An axis's ``coordinates`` member names the coordinate identifiers for its
     values. Spec 6.1.1 (Axis Objects) makes it optional: when absent it defaults to
     a one-element array holding the axis's own identifier (its key in the
-    `~covjson_msgspec.domain.Domain.axes` mapping), and MUST NOT be written out for
+    [`axes`][covjson_msgspec.Domain.axes] mapping), and MUST NOT be written out for
     that default case. So an axis at key ``"x"`` may write ``coordinates: ["y"]`` or
     omit the member, but ``coordinates: ["x"]`` restates the default and is
     forbidden. That is a MUST NOT, so this is an error (per ADR-0002).
@@ -474,7 +474,7 @@ class AxisCoordinatesNotOmitted(
     ``primitive`` axis and a custom-``dataType`` axis both can carry a one-element
     ``coordinates``, and §6.1.1 states the default generally, so both are in scope.
 
-    Neither decode nor `~covjson_msgspec.axis.Axis` construction can catch it: the
+    Neither decode nor [`Axis`][covjson_msgspec.Axis] construction can catch it: the
     identifier is the ``axes`` key, not a field on the axis, so an axis alone does
     not know its own name. The builders do not see the key either, so ``encode`` can
     emit the violation; consistent with the permissive core, the library reports it
@@ -496,7 +496,7 @@ class TemporalMissingCalendar(_Issue, frozen=True, tag="temporal.missing-calenda
     Spec 5.2: a temporal RS object MUST have a ``calendar`` member
     (``"Gregorian"`` or a URI), so this is an error (per ADR-0002). Decode stays
     permissive: a temporal system missing ``calendar`` still loads and refines
-    to `~covjson_msgspec.referencing.OpaqueRS`, and this check reports it.
+    to [`OpaqueRS`][covjson_msgspec.OpaqueRS], and this check reports it.
     """
 
     def __str__(self) -> str:
@@ -511,7 +511,7 @@ class IdentifierMissingTargetConcept(
     Spec 5.3: an identifier RS object MUST have a ``targetConcept`` member, so
     this is an error (per ADR-0002). Decode stays permissive: an identifier
     system missing ``targetConcept`` still loads and refines to
-    `~covjson_msgspec.referencing.OpaqueRS`, and this check reports it.
+    [`OpaqueRS`][covjson_msgspec.OpaqueRS], and this check reports it.
     """
 
     def __str__(self) -> str:
@@ -755,7 +755,7 @@ class I18nEmpty(_Issue, frozen=True, tag="i18n.empty"):
 # The closed set of validation findings. `validate` returns a ``list[Issue]``;
 # a consumer matches on the concrete variant (`match` / `assert_never` for
 # exhaustiveness, or `isinstance` to read a variant's typed payload) and uses
-# `~_Issue.code` only for stringly work (aggregation, logging, the wire tag).
+# `code` only for stringly work (aggregation, logging, the wire tag).
 # The union is a msgspec tagged union keyed on ``code``, so a report encodes to
 # JSON and decodes back to these exact types.
 Issue = (
@@ -1741,9 +1741,9 @@ def _reference_system_issues(
 
     First the required-member MUSTs (Spec 5.2 / 5.3), then the i18n checks
     (Spec 2), in wire order. The required-member rule is shared with
-    `~covjson_msgspec.referencing.ReferenceSystem.refine` via
-    `~covjson_msgspec._reference_invariants.missing_required_member`, so a system
-    that refines to `~covjson_msgspec.referencing.OpaqueRS` for a missing required
+    [`refine`][covjson_msgspec.ReferenceSystem.refine] via
+    `missing_required_member`, so a system
+    that refines to [`OpaqueRS`][covjson_msgspec.OpaqueRS] for a missing required
     member is exactly the one reported here.
 
     Parameters
@@ -1961,10 +1961,10 @@ def _resolved_temporal_axes(
     """Resolve each standard-calendar temporal axis's values once.
 
     For every coordinate governed by a standard-calendar
-    `~covjson_msgspec.referencing.TemporalRS` (found in ``systems``) that names an
+    [`TemporalRS`][covjson_msgspec.TemporalRS] (found in ``systems``) that names an
     axis in ``domain``, each of the axis's ``coordinate_values`` is classified by
-    `~covjson_msgspec.temporal.resolve`, keeping ``None`` for a non-string value so
-    the result stays index-aligned with the axis. Computed once per domain and
+    [`resolve`][covjson_msgspec.temporal.resolve], keeping ``None`` for a non-string
+    value so the result stays index-aligned with the axis. Computed once per domain and
     shared by both temporal value-scans (`_temporal_form_issues` and the default
     monotonic check), so a temporal string is parsed once, not twice.
 
@@ -1974,14 +1974,14 @@ def _resolved_temporal_axes(
         The domain whose temporal axes are resolved.
     systems
         The coordinate-to-system index, from
-        `~covjson_msgspec._bridging.coordinate_systems`.
+        `coordinate_systems`.
 
     Returns
     -------
     dict
         Each standard-calendar temporal coordinate mapped to its resolved values
-        (a `~covjson_msgspec.temporal.TemporalResult` per string, ``None`` per
-        non-string), index-aligned with the axis.
+        (a [`TemporalResult`][covjson_msgspec.temporal.TemporalResult] per string,
+        ``None`` per non-string), index-aligned with the axis.
 
     Examples
     --------
@@ -2018,11 +2018,11 @@ def _temporal_form_issues(
 
     ``resolved`` (from `_resolved_temporal_axes`) maps each standard-calendar
     temporal coordinate to its values already classified by
-    `~covjson_msgspec.temporal.resolve`, index-aligned with ``None`` for a
+    [`resolve`][covjson_msgspec.temporal.resolve], index-aligned with ``None`` for a
     non-string value. Each value that resolved to
-    `~covjson_msgspec.temporal.Malformed` should have used one of the recommended
-    Gregorian lexical forms, so it is reported (a warning, per ADR-0002, since
-    Spec 5.2 makes this a SHOULD); a valid but unrepresentable value (an expanded
+    [`Malformed`][covjson_msgspec.temporal.Malformed] should have used one of the
+    recommended Gregorian lexical forms, so it is reported (a warning, per ADR-0002,
+    since Spec 5.2 makes this a SHOULD); a valid but unrepresentable value (an expanded
     year, a leap second) is a legal form and is left alone. This is a
     value-scanning check, gated behind ``validate(check_values=True)``.
 
@@ -2130,7 +2130,7 @@ def _tuple_axis_issues(
     Parameters
     ----------
     name
-        The axis's identifier: its key in `~covjson_msgspec.domain.Domain.axes`.
+        The axis's identifier: its key in [`axes`][covjson_msgspec.Domain.axes].
     axis
         The composite axis to scan.
     path
@@ -2173,8 +2173,8 @@ def _polygon_axis_issues(
     never reaches the depth-3 rules (`_polygon_ring_issues`), so those only ever see
     a value whose rings and positions are non-empty arrays.
 
-    Only the outermost level is annotated (`~covjson_msgspec.axis.AxisValue` is
-    ``tuple[Any, ...]``, its interior deliberately ``Any``), so a decoded polygon
+    Only the outermost level is annotated ([`AxisValue`][covjson_msgspec.axis.AxisValue]
+    is ``tuple[Any, ...]``, its interior deliberately ``Any``), so a decoded polygon
     arrives as a tuple of *lists* of lists. Rings and positions are therefore
     tested against both sequence types, while the value itself is tested against
     the ``tuple`` its annotation promises.
@@ -2182,7 +2182,7 @@ def _polygon_axis_issues(
     Parameters
     ----------
     name
-        The axis's identifier: its key in `~covjson_msgspec.domain.Domain.axes`.
+        The axis's identifier: its key in [`axes`][covjson_msgspec.Domain.axes].
     axis
         The composite axis to scan.
     path
@@ -2252,7 +2252,7 @@ def _polygon_ring_issues(
         The resolved coordinate identifier count each position must match.
     ring
         One linear ring: a non-empty sequence of position sequences. Typed
-        ``object`` because the polygon interior is `~typing.Any`.
+        ``object`` because the polygon interior is [`Any`][typing.Any].
     ring_path
         The reference tokens to this ring; the ring issues point here and each
         position issue appends its index, both via `_ptr`.
@@ -2300,10 +2300,10 @@ def _is_polygon_array(value: AxisValue) -> TypeGuard[tuple[Any, ...]]:
     """Whether ``value`` is a GeoJSON Polygon coordinate array: rings of positions.
 
     Only the outermost level is annotated
-    (`~covjson_msgspec.axis.AxisValue` is ``tuple[Any, ...]``), so a decoded
+    ([`AxisValue`][covjson_msgspec.axis.AxisValue] is ``tuple[Any, ...]``), so a decoded
     polygon is a tuple of *lists* of lists: the value is held to the ``tuple`` its
     annotation promises, while the rings beneath it are widened to ``object`` and
-    narrowed by `_is_position_array` rather than left as `~typing.Any`.
+    narrowed by `_is_position_array` rather than left as [`Any`][typing.Any].
 
     The array must be non-empty: a polygon with no rings is not a GeoJSON Polygon
     (RFC 7946), and it reaches shapely as an unpack error rather than a clean one.
@@ -2319,10 +2319,10 @@ def _is_polygon_array(value: AxisValue) -> TypeGuard[tuple[Any, ...]]:
     Returns
     -------
     bool
-        True (a `~typing.TypeGuard` narrowing ``value`` to ``tuple``) when it is a
-        non-empty array whose every element is a ring. The guard narrows only the
-        positive case: `~typing.TypeIs` would be unsound, since an empty ``()`` is
-        a ``tuple`` this returns False for.
+        True (a [`TypeGuard`][typing.TypeGuard] narrowing ``value`` to ``tuple``) when
+        it is a non-empty array whose every element is a ring. The guard narrows only
+        the positive case: [`TypeIs`][typing.TypeIs] would be unsound, since an empty
+        ``()`` is a ``tuple`` this returns False for.
 
     Examples
     --------
@@ -2360,7 +2360,7 @@ def _is_position_array(ring: object) -> bool:
     ----------
     ring
         A candidate linear ring, from a polygon axis value's interior. Typed
-        ``object`` because that interior is `~typing.Any`: it may be any decoded
+        ``object`` because that interior is [`Any`][typing.Any]: it may be any decoded
         JSON value, and narrowing it here beats propagating the ``Any``.
 
     Returns
@@ -2445,7 +2445,7 @@ def _axis_coordinates_issues(
 
     Spec 6.1.1 defaults a missing ``coordinates`` to a one-element array of the
     axis identifier and forbids writing that default out, so an axis whose
-    ``coordinates`` equals ``(name,)`` (its own `~covjson_msgspec.domain.Domain.axes`
+    ``coordinates`` equals ``(name,)`` (its own [`axes`][covjson_msgspec.Domain.axes]
     key) is reported. The comparison is O(1) per axis, so like `_axis_bounds_issues`
     its caller runs it unconditionally, not under ``check_values``. An axis omitting
     ``coordinates`` (the conformant form) has ``coordinates`` of ``None`` and is
@@ -2520,7 +2520,7 @@ def _axis_monotonic_issues(
         The axis-ordering policy; ``None`` uses the default (`require_monotonic`).
     systems
         The coordinate-to-system index, from
-        `~covjson_msgspec._bridging.coordinate_systems`.
+        `coordinate_systems`.
     resolved
         The per-coordinate resolved temporal values, from `_resolved_temporal_axes`.
 
@@ -2625,9 +2625,9 @@ def require_monotonic(*, strict: bool = False) -> AxisOrderChecker:
     The returned checker fires only for axes whose reference system defines a
     natural ordering: numeric axes under a geographic, projected, or vertical CRS
     (compared by value), and time axes under a standard-calendar
-    `~covjson_msgspec.referencing.TemporalRS` (compared as resolved instants, via
-    `~covjson_msgspec.temporal.resolve`). An axis under an identifier system, a
-    non-standard calendar, or no system is left alone (a categorical or unordered
+    [`TemporalRS`][covjson_msgspec.TemporalRS] (compared as resolved instants, via
+    [`resolve`][covjson_msgspec.temporal.resolve]). An axis under an identifier system,
+    a non-standard calendar, or no system is left alone (a categorical or unordered
     axis has no ordering to violate).
 
     By default the check is non-strict: only a genuine direction reversal is a
@@ -2790,15 +2790,15 @@ def _ordering_kind(
     systems the default check treats as ordered, and of what kind:
 
     * a geographic, projected, or vertical CRS orders its values numerically;
-    * a standard-calendar `~covjson_msgspec.referencing.TemporalRS` orders its
-      values as instants in time (`~covjson_msgspec._bridging.is_standard_calendar`);
+    * a standard-calendar [`TemporalRS`][covjson_msgspec.TemporalRS] orders its
+      values as instants in time (`is_standard_calendar`);
     * an identifier system (categorical / coded), a non-standard-calendar temporal
       system, and an axis with no system in scope (``None``) define no ordering.
 
     The ``match`` is exhaustive over the
-    `~covjson_msgspec.referencing.ResolvedReferenceSystem` union (closed with
-    `~typing.assert_never`), so adding a reference-system variant forces a decision
-    here rather than silently falling through to "unordered".
+    [`ResolvedReferenceSystem`][covjson_msgspec.ResolvedReferenceSystem] union (closed
+    with [`assert_never`][typing.assert_never]), so adding a reference-system variant
+    forces a decision here rather than silently falling through to "unordered".
 
     Parameters
     ----------
@@ -2838,15 +2838,15 @@ def _temporal_keys_from_resolved(
 ) -> list[tuple[int, Any]] | None:
     """The ``(index, instant)`` pairs for a time axis's resolved moments, or None.
 
-    Each `~covjson_msgspec.temporal.Moment` in ``results`` contributes its
-    `~datetime.datetime`, keyed by original position. A
-    `~covjson_msgspec.temporal.Malformed` value (owned by the
-    ``temporal.lexical-form`` check), an `~covjson_msgspec.temporal.Unrepresentable`
-    one (a legal form with no ``datetime``), and a ``None`` (a non-string value)
-    are skipped, so a reversal hinging on such a value between two moments is not
-    caught here.
+    Each [`Moment`][covjson_msgspec.temporal.Moment] in ``results`` contributes its
+    [`datetime`][datetime.datetime], keyed by original position. A
+    [`Malformed`][covjson_msgspec.temporal.Malformed] value (owned by the
+    ``temporal.lexical-form`` check), an
+    [`Unrepresentable`][covjson_msgspec.temporal.Unrepresentable] one (a legal form with
+    no ``datetime``), and a ``None`` (a non-string value) are skipped, so a reversal
+    hinging on such a value between two moments is not caught here.
 
-    `~covjson_msgspec.temporal.Moment.when` is timezone-aware only at second
+    [`when`][covjson_msgspec.temporal.Moment.when] is timezone-aware only at second
     precision, so a naive and an aware instant are not comparable; when the
     resolved moments mix awareness, ``None`` is returned so the caller declines to
     order the axis rather than fabricate a zone.
@@ -2855,7 +2855,8 @@ def _temporal_keys_from_resolved(
     ----------
     results
         A primitive time axis's values, already classified by
-        `~covjson_msgspec.temporal.resolve` (index-aligned, ``None`` per non-string).
+        [`resolve`][covjson_msgspec.temporal.resolve] (index-aligned, ``None`` per
+        non-string).
 
     Returns
     -------
@@ -3125,7 +3126,7 @@ def _validate_tiled_ndarray(
 
     Several rules from the TiledNdArray spec, all error-severity (``tileShape``
     rank-matching ``shape`` is a separate hard structural error raised in
-    `~covjson_msgspec.range.TiledNdArray.__post_init__`, so each ``tileShape``
+    `__post_init__`, so each ``tileShape``
     here already aligns with ``shape``):
 
     * ``shape`` and ``axisNames`` must have the same length, as for `NdArray`
@@ -3668,8 +3669,8 @@ def _validate_parameter_groups(
     Parameters
     ----------
     coverage
-        The coverage whose `~covjson_msgspec.coverage.Coverage.parameter_groups`
-        are checked.
+        The coverage whose
+        [`parameter_groups`][covjson_msgspec.Coverage.parameter_groups] are checked.
     parameters
         The coverage's parameters (the set of valid member keys).
     path
@@ -3712,7 +3713,7 @@ def _validate_ranges(
     Parameters
     ----------
     coverage
-        The coverage whose `~covjson_msgspec.coverage.Coverage.ranges` are checked.
+        The coverage whose [`ranges`][covjson_msgspec.Coverage.ranges] are checked.
     domain
         The coverage's domain; the range-vs-domain check runs only when it is an
         inline `Domain` (a URL reference is unfetched yet spec-valid).

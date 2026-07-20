@@ -1,6 +1,6 @@
 """Internal reader for CoverageJSON i18n language maps.
 
-The counterpart to the public `~covjson_msgspec.i18n.i18n` builder: where that
+The counterpart to the public [`i18n`][covjson_msgspec.i18n.i18n] builder: where that
 assembles a language map, `display` collapses one back to a single string for
 presentation. Kept private (a leaf module, imported by `xarray` and `_repr`)
 because its only callers are internal display paths; promote it to public API
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
 
 def display(i18n: I18n | None) -> str:
-    """Pick one display string from an `~covjson_msgspec.i18n.I18n` language map.
+    """Pick one display string from an [`I18n`][covjson_msgspec.i18n.I18n] language map.
 
     Collapses a language map to a single string, preferring English (``"en"``),
     then the undetermined tag (``"und"``), then any remaining value. ``None`` or
