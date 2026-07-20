@@ -241,6 +241,13 @@ def to_datetime(value: str) -> datetime | None:
     `Unrepresentable` valid form or a `Malformed` string). A caller that needs to
     tell those apart, or wants the detected `Precision`, uses `resolve` instead.
 
+    This is also the faithful path for a ``±hh:mm`` offset: the result keeps the
+    offset (it is timezone-aware), whereas the export bridges (`to_xarray`,
+    `to_pandas`) flatten a standard-calendar offset to naive-UTC. So when the zone
+    matters, resolve the (Gregorian) axis values with this rather than reading the
+    tz off a bridge's output. This parses the Gregorian forms only, so it does not
+    serve a non-standard calendar (its cftime path handles those).
+
     Parameters
     ----------
     value
@@ -262,6 +269,13 @@ def to_datetime(value: str) -> datetime | None:
     True
     >>> to_datetime("2010-13-99") is None
     True
+
+    An offset is preserved, so a whole axis keeps its zone where a bridge would
+    flatten it:
+
+    >>> [to_datetime(v).isoformat() for v in ("2020-01-15T00:00:00+05:00",
+    ...                                       "2020-01-15T00:00:00-08:00")]
+    ['2020-01-15T00:00:00+05:00', '2020-01-15T00:00:00-08:00']
     """
     result = resolve(value)
 

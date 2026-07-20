@@ -524,12 +524,15 @@ def maybe_datetime(values: list[Any], is_temporal: bool) -> Any:
 
     Examples
     --------
-    A trailing ``"Z"`` is stripped so the result is tz-naive (matching the
-    xarray bridge, which treats naive times as UTC):
+    A trailing ``"Z"`` is stripped and a ``±hh:mm`` offset is applied, so the
+    result is always tz-naive UTC (matching the xarray bridge, which treats naive
+    times as UTC):
 
     >>> parsed = maybe_datetime(["2020-01-01T00:00:00Z"], True)
     >>> list(parsed)
     [Timestamp('2020-01-01 00:00:00')]
+    >>> list(maybe_datetime(["2020-01-01T00:00:00+05:00"], True))
+    [Timestamp('2019-12-31 19:00:00')]
 
     Non-temporal values pass straight through:
 
@@ -553,6 +556,12 @@ def maybe_datetime(values: list[Any], is_temporal: bool) -> Any:
     ]
 
     try:
-        return pd.to_datetime(cleaned)
-    except (ValueError, TypeError):  # pragma: no cover - malformed time strings
+        # ``utc=True`` applies any ``±hh:mm`` offset (a Spec 5.2 form) and yields a
+        # UTC-aware index; ``tz_localize(None)`` then drops the zone to naive-UTC,
+        # the same flatten the xarray bridge performs. ``format="ISO8601"`` also
+        # lets a single axis mix naive and offset values without pandas raising on
+        # the inferred format (it would otherwise fall through to the raw strings).
+        return pd.to_datetime(cleaned, format="ISO8601", utc=True).tz_localize(None)
+    except (ValueError, TypeError):
+        # A malformed time string: leave the values raw rather than propagating.
         return values

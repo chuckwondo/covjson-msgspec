@@ -38,8 +38,9 @@ from __future__ import annotations
 # surface.
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportMissingTypeStubs=false
 import math
+import re
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from itertools import pairwise
 from typing import TYPE_CHECKING, Any, Literal, NoReturn
 
@@ -777,8 +778,10 @@ def _parse_times(column: list[Any], calendar: str) -> npt.NDArray[Any]:
     A standard-calendar column is parsed to ``datetime64[ns]`` when it fits
     numpy's nanosecond range; a non-standard calendar (or dates outside that
     range) falls back to an object array of cftime datetimes (`_to_cftime`). A
-    trailing ``"Z"`` is stripped first (numpy treats naive times as UTC), and
-    ``None`` entries are preserved.
+    trailing ``"Z"`` is stripped first (numpy treats naive times as UTC) and
+    ``None`` entries are preserved. On a standard calendar a ``±hh:mm`` offset is
+    applied and the value flattened to naive-UTC; the cftime path drops it instead
+    (`_to_cftime`).
 
     Parameters
     ----------
@@ -817,7 +820,17 @@ def _parse_times(column: list[Any], calendar: str) -> npt.NDArray[Any]:
         # keep [us], which xarray preserves (the >= 2025.01.2 floor). A standard
         # date outside the ns window is a resolution/range matter, not a calendar
         # one, so it stays a native datetime64 rather than falling back to cftime.
-        wide = np.array(cleaned, dtype="datetime64[us]")
+        #
+        # A ``±hh:mm`` offset (a Spec 5.2 form) is folded to naive-UTC here, before
+        # numpy sees it (`_fold_offset`): numpy has no timezone type, so it would
+        # both warn and (correctly) flatten. Doing the flatten ourselves yields the
+        # identical result while emitting no warning and mutating no global state
+        # (`warnings.catch_warnings()` edits a process-global filter and is not
+        # thread-safe). Only offset-bearing values pay the per-value cost; a
+        # common all-``Z`` / naive axis stays a single vectorized parse. See
+        # ADR-0015.
+        utc = [None if value is None else _fold_offset(value) for value in cleaned]
+        wide = np.array(utc, dtype="datetime64[us]")
 
         return wide.astype("datetime64[ns]") if _fits_ns_window(wide) else wide
 
@@ -826,6 +839,47 @@ def _parse_times(column: list[Any], calendar: str) -> npt.NDArray[Any]:
     ]
 
     return np.array(parsed)
+
+
+# A trailing ``±hh:mm`` (or colon-less ``±hhmm``) UTC offset on an ISO 8601 value.
+_UTC_OFFSET = re.compile(r"[+-]\d{2}:?\d{2}$")
+
+
+def _fold_offset(value: str) -> str:
+    """Fold a trailing ``±hh:mm`` UTC offset into a naive-UTC ISO 8601 string.
+
+    A value carrying a numeric offset (a Spec 5.2 form, e.g. ``+05:00``) is
+    converted to the equivalent UTC instant with its zone dropped, so the
+    standard-calendar path can hand numpy a naive string. numpy has no timezone
+    type and would otherwise warn while performing this same flatten; folding it
+    here keeps the result identical, emits no warning, and mutates no global
+    warning state. A value with no offset (already ``Z``-stripped, naive, or a
+    reduced form) is returned unchanged, so only offset-bearing values pay the
+    per-value ``fromisoformat`` cost.
+
+    Parameters
+    ----------
+    value
+        An ISO 8601 datetime string (already stripped of any trailing ``"Z"``).
+
+    Returns
+    -------
+    str
+        The naive-UTC ISO 8601 string for an offset value, else ``value`` as-is.
+
+    Examples
+    --------
+    >>> _fold_offset("2020-01-15T00:00:00+05:00")
+    '2020-01-14T19:00:00'
+    >>> _fold_offset("2020-01-15T00:00:00")
+    '2020-01-15T00:00:00'
+    """
+    if _UTC_OFFSET.search(value):
+        aware = datetime.fromisoformat(value)
+
+        return aware.astimezone(UTC).replace(tzinfo=None).isoformat()
+
+    return value
 
 
 def _fits_ns_window(times: npt.NDArray[Any]) -> bool:
@@ -880,6 +934,14 @@ def _to_cftime(iso: str, calendar: str) -> Any:
 
     Used by `_parse_times` for non-standard calendars (e.g. ``"360_day"``,
     ``"noleap"``) that numpy's ``datetime64`` cannot represent.
+
+    A ``±hh:mm`` offset is dropped, keeping the wall-clock fields. cftime could
+    do the arithmetic, but a non-standard calendar has no civil UTC for an offset
+    to reference: the idealized ones (``360_day`` and the like) are model time,
+    and ``julian`` covers eras that predate civil offsets, so an offset here is
+    ill-defined input rather than data to preserve. Applying it would fabricate a
+    shift the calendar does not define, so it is dropped. (The standard-calendar
+    path, by contrast, flattens an offset to naive-UTC, a real instant.)
 
     Parameters
     ----------

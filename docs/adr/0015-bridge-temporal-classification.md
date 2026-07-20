@@ -65,9 +65,9 @@ is the classifier of record, flagging exactly the naive, no-designator strings
 the bridges swallow. That disagreement is confined to non-spec input (Spec 5.2's
 SHOULD requires a `Z` or `±hh:mm` designator, so a naive time is not a spec
 form). Spec-compliant values are accepted by both paths; they differ only in the
-tz-awareness of the *result* (the bridges strip `Z` to naive-UTC), a deliberate
-representation choice [ADR-0008] already documents, not a classification
-disagreement.
+tz-awareness of the *result* (the bridges strip `Z` and flatten a `±hh:mm` offset
+to naive-UTC), a deliberate representation choice [ADR-0008] already documents,
+not a classification disagreement.
 
 ## Alternatives considered
 
@@ -109,6 +109,33 @@ drift risk on a three-line, well-commented one-liner for no behavioral gain.
   is the bridge's floor. The routing decision here was never implicated:
   `resolve` would classify such a value as a `Moment` and could not prevent the
   wrap either.
+- A `±hh:mm` offset (a Spec 5.2 form) flattens to naive-UTC in both bridges: the
+  xarray path folds the offset to naive-UTC before parsing (`_fold_offset`), so
+  numpy (which has no timezone type) never sees a zone, and the pandas path parses
+  with `utc=True` then `tz_localize(None)`. This extends the `Z` / naive rule to
+  the offset case, so the two bridges agree and only `resolve` / `to_datetime`
+  keeps an offset tz-aware (a `Moment` at second precision, [ADR-0008]).
+  Previously the pandas path returned a tz-aware `Timestamp` for an offset,
+  silently disagreeing with xarray's naive-UTC result; a mixed naive+offset axis
+  also made pandas raise and fall back to raw strings. Both are pinned by
+  regression tests. This resolves #153.
+- The xarray fold converts each offset value with `datetime.fromisoformat`, and
+  only offset-bearing values: a common all-`Z` / naive axis stays a single
+  vectorized parse. It deliberately does not suppress numpy's warning with
+  `warnings.catch_warnings()`, whose filter edit is process-global and not
+  thread-safe. If a large, mostly-offset axis ever makes the per-value conversion
+  a bottleneck, the vectorized alternative is to route the standard-calendar parse
+  through pandas' `to_datetime(..., format="ISO8601", utc=True).tz_localize(None)`
+  (xarray already depends on pandas), which applies offsets in one C call. That is
+  deferred because it would raise the bridge's pandas floor to `pandas>=3.0`: 3.0
+  is the first release whose `to_datetime` widens an out-of-`ns` date to
+  `datetime64[us]` rather than raising `OutOfBoundsDatetime` (verified: the whole
+  2.x line raises, through the final 2.3.3), whereas the current numpy
+  `datetime64[us]` construction
+  holds any Gregorian year on every supported numpy. The declared floor today is
+  `pandas>=2.0` (pandas / geo extras; the xarray bridge gets pandas transitively
+  via xarray), so pandas 3.0 would be a real narrowing, gated on a verified
+  `lowest-direct` leg.
 - Revisit gate: a concrete need for one classifier of record across the bridges
   (a caller-facing guarantee that, say, `to_pandas` and `to_datetime` never
   disagree) would reopen this, most likely via the injected `parse_time=` seam
