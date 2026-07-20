@@ -267,7 +267,7 @@ def to_geojson(
 def _coverage_to_geopandas(
     coverage: Coverage, trajectory_as: TrajectoryAs
 ) -> gpd.GeoDataFrame:
-    """Convert a single `Coverage` to a `~geopandas.GeoDataFrame` (per-coverage core).
+    """Convert a single `Coverage` to a `GeoDataFrame` (per-coverage core).
 
     The workhorse behind `to_geopandas` for one coverage, and the per-member step
     of `_collection_to_geopandas`. It dispatches on the coverage's effective
@@ -336,7 +336,7 @@ def _collection_to_geopandas(
     referencing (which tags temporal axes and sets the CRS), then each is
     converted by `_coverage_to_geopandas`. Each member gets a leading
     ``coverage`` column (its ``id``, falling back to its position): a plain
-    column, not an index level, so it survives `~geopandas.GeoDataFrame.to_json`
+    column, not an index level, so it survives `to_json`
     into each feature's properties. The members are concatenated as plain frames,
     then geometry is rebuilt once with the shared CRS (a collection's members
     share referencing, so it is uniform).
@@ -393,7 +393,7 @@ def _point_frame(
 
     The default builder for every point-like domain (Point, PointSeries,
     VerticalProfile, MultiPoint, a Trajectory in ``"points"`` mode, and a Grid
-    degenerately). It reuses the tidy `~covjson_msgspec.pandas.to_pandas` frame
+    degenerately). It reuses the tidy [`to_pandas`][covjson_msgspec.to_pandas] frame
     (where ``x`` / ``y`` are always columns), promotes any index levels
     (``t`` / ``z`` / composite position) to columns so they survive
     ``to_json``, drops the bare composite position level (its components already
@@ -496,7 +496,7 @@ def _require_composite_axis(
     """Return the ``composite`` axis, or raise if it is absent or the wrong shape.
 
     The geometry builders read the ``composite`` axis's values as positions or
-    rings, which only a composite axis holds.  `~covjson_msgspec.validation.validate`
+    rings, which only a composite axis holds.  [`validate`][covjson_msgspec.validate]
     reports the same malformations as ``domain.missing-axis`` and
     ``domain.composite-data-type``, but the bridges do not require a validated
     document, so without this an unvalidated one reaches shapely and fails from
@@ -571,7 +571,7 @@ def _horizontal_indices(
     ----------
     coords
         The resolved coordinate identifiers, from
-        `~covjson_msgspec._bridging.coordinate_identifiers`.
+        `coordinate_identifiers`.
     domain_type
         The effective domain type, for the message.
     geometry
@@ -802,16 +802,16 @@ def _crs(domain: Domain) -> str | None:
     """Pick the horizontal CRS tag for the result frame from a domain's referencing.
 
     Scans the domain's reference-system connections for the first horizontal
-    system: a `~covjson_msgspec.referencing.GeographicCRS` resolves via
+    system: a [`GeographicCRS`][covjson_msgspec.GeographicCRS] resolves via
     `_geographic_crs` (honoring a usable ``id``, else the lon/lat default), and a
-    `~covjson_msgspec.referencing.ProjectedCRS` contributes its ``id`` (an
+    [`ProjectedCRS`][covjson_msgspec.ProjectedCRS] contributes its ``id`` (an
     EPSG / OGC CRS URI) directly. Vertical / temporal / identifier systems (and a
     projected system with no ``id``) supply no horizontal CRS.
 
     Parameters
     ----------
     domain
-        The domain whose `~Domain.referencing` is scanned.
+        The domain whose [`referencing`][covjson_msgspec.Domain.referencing] is scanned.
 
     Returns
     -------
@@ -860,7 +860,7 @@ def _geographic_crs(crs_id: str | None) -> str:
     """Resolve a geographic system's ``id`` to a CRS string, defaulting to lon/lat.
 
     Honors ``crs_id`` when pyproj can resolve it (mirroring the
-    `~covjson_msgspec.referencing.ProjectedCRS` branch of `_crs`); otherwise (no
+    [`ProjectedCRS`][covjson_msgspec.ProjectedCRS] branch of `_crs`); otherwise (no
     ``id``, or an unresolvable placeholder like ``"crs"``) falls back to
     `_DEFAULT_GEOGRAPHIC_CRS` (``OGC:CRS84``). CRS84 is lon/lat, matching how the
     bridge lays out ``x`` / ``y`` geometry; ``EPSG:4326`` names the same datum in

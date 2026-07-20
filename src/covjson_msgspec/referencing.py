@@ -10,16 +10,18 @@ concerns:
   with an open ``type_`` and the union of every kind's members as optionals. It
   decodes any reference system in one pass, so a document carrying a custom type
   still loads (custom *members* drop, per ADR-0012).
-- `~ReferenceSystem.refine` is the opt-in *typed* projection: it returns a clean
-  per-kind variant (`GeographicCRS`, `TemporalRS`, ... or `OpaqueRS` for a custom
-  or malformed one) so callers ``match`` on a precise shape rather than a
+- [`refine`][covjson_msgspec.ReferenceSystem.refine] is the opt-in *typed* projection:
+  it returns a clean per-kind variant (`GeographicCRS`, `TemporalRS`, ... or `OpaqueRS`
+  for a custom or malformed one) so callers ``match`` on a precise shape rather than a
   grab-bag of optionals.
 
 A `ReferenceSystemConnection` ties a set of coordinate identifiers to the system
 that references them. Construction goes through the `ReferenceSystem` builders
-(`~ReferenceSystem.temporal`, ...), which pair each ``type`` with its members.
+([`temporal`][covjson_msgspec.ReferenceSystem.temporal], ...), which pair each ``type``
+with its members.
 
-Spec: [Reference system objects](https://github.com/covjson/specification/blob/master/spec.md#5-reference-system-objects),
+Spec:
+[Reference system objects](https://github.com/covjson/specification/blob/master/spec.md#5-reference-system-objects),
 [Custom types](https://github.com/covjson/specification/blob/master/spec.md#72-custom-types).
 """
 
@@ -222,9 +224,10 @@ variants that callers ``match`` on (ideally with a ``case _: assert_never(rs)``
 arm, so a future variant forces every reader to update).
 
 This is a projection *output*, not a decode target: decode a reference system into
-`ReferenceSystem` (or a whole `~covjson_msgspec.coverage.Coverage`) and call
-`~ReferenceSystem.refine`. Decoding into ``ResolvedReferenceSystem`` itself raises,
-because the union mixes tagged variants with the untagged `OpaqueRS`.
+`ReferenceSystem` (or a whole [`Coverage`][covjson_msgspec.Coverage]) and call
+[`refine`][covjson_msgspec.ReferenceSystem.refine]. Decoding into
+``ResolvedReferenceSystem`` itself raises, because the union mixes tagged variants with
+the untagged `OpaqueRS`.
 """
 
 
@@ -397,8 +400,8 @@ class ReferenceSystemConnection(CovJSONStruct, frozen=True):
     """Connects a set of coordinate identifiers to their reference system.
 
     This object has no ``type`` member of its own. ``system`` is the permissive
-    `ReferenceSystem` core; call `~ReferenceSystem.refine` on it for a precise
-    typed variant.
+    `ReferenceSystem` core; call [`refine`][covjson_msgspec.ReferenceSystem.refine] on
+    it for a precise typed variant.
 
     Examples
     --------

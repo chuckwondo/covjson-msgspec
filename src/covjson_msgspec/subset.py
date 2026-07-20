@@ -2,7 +2,7 @@
 
 Both narrow a `Coverage` to a sub-region along named axes, returning a new
 coverage (the model is immutable). The semantics follow xarray's
-`~xarray.Dataset.isel` / `~xarray.Dataset.sel`:
+[`isel`][xarray.Dataset.isel] / [`sel`][xarray.Dataset.sel]:
 
 * an **integer** indexer selects a single position and *drops* that axis from the
   ranges (the coordinate is kept as a single-value domain axis, like an xarray
@@ -15,7 +15,7 @@ delegating to `isel`.
 
 Only individual axes (a Grid's ``x`` / ``y`` / ``z`` / ``t``, and the like) are
 supported. Subsetting a composite (``"tuple"`` / ``"polygon"``) axis, and
-subsetting along an axis stored as a `~covjson_msgspec.range.TiledNdArray` or a
+subsetting along an axis stored as a [`TiledNdArray`][covjson_msgspec.TiledNdArray] or a
 URL reference, are not supported yet and raise.
 """
 
@@ -61,7 +61,7 @@ def isel(
     ----------
     coverage
         The coverage to subset. Its domain must be inline (not a URL reference)
-        and its selected ranges must be inline `~covjson_msgspec.range.NdArray`
+        and its selected ranges must be inline [`NdArray`][covjson_msgspec.NdArray]
         values.
     indexers
         A mapping of axis name to an integer position or a `slice` of positions.
@@ -80,7 +80,7 @@ def isel(
         If the domain is a URL reference, an indexer names an unknown axis, the
         same axis is given both positionally and as a keyword, or a selected
         axis carries a ``bounds`` array whose length is not twice the axis
-        length (spec 6.1.1; `~covjson_msgspec.validate` reports it as
+        length (spec 6.1.1; [`validate`][covjson_msgspec.validate] reports it as
         ``axis.bounds-length``).
     IndexError
         If an integer indexer is out of bounds for its axis, or a slice
@@ -451,10 +451,11 @@ def _resolve_indexer(axis: Axis, indexer: Indexer) -> _AxisSelection:
 def _select_axis(name: str, axis: Axis, selection: _AxisSelection) -> Axis:
     """Build the value-listing axis holding an axis's selected coordinates.
 
-    The selected coordinate values (and matching cell `~Axis.bounds`, if any) are
-    materialized into a listed axis, preserving the source axis's
-    `~Axis.coordinates`. A subset of a regular axis becomes listed since the
-    selection need not stay evenly spaced.
+    The selected coordinate values (and matching cell
+    [`bounds`][covjson_msgspec.Axis.bounds], if any) are materialized into a listed
+    axis, preserving the source axis's
+    [`coordinates`][covjson_msgspec.Axis.coordinates]. A subset of a regular axis
+    becomes listed since the selection need not stay evenly spaced.
 
     Parameters
     ----------
@@ -476,7 +477,7 @@ def _select_axis(name: str, axis: Axis, selection: _AxisSelection) -> Axis:
     ValueError
         If ``axis`` carries a ``bounds`` array whose length is not twice the
         axis length (spec 6.1.1). ``decode`` is permissive, so a malformed
-        ``bounds`` reaches here; `~covjson_msgspec.validate` reports it as
+        ``bounds`` reaches here; [`validate`][covjson_msgspec.validate] reports it as
         ``axis.bounds-length`` but does not repair it.
 
     Examples
@@ -524,10 +525,10 @@ def _subset_range(
     """Take the selected slab of one range, dropping integer-indexed axes.
 
     The selection is applied only along the axes this range actually varies over
-    (its `~NdArray.axis_names`); other selected axes do not touch it. The new
-    row-major values are gathered by walking the cartesian product of the
-    selected positions per axis, and axes selected by a scalar integer (their
-    `~_AxisSelection.keep_dim` is False) are dropped from ``shape`` /
+    (its [`axis_names`][covjson_msgspec.NdArray.axis_names]); other selected axes do not
+    touch it. The new row-major values are gathered by walking the cartesian product of
+    the selected positions per axis, and axes selected by a scalar integer (their
+    `keep_dim` is False) are dropped from ``shape`` /
     ``axis_names``.
 
     Parameters

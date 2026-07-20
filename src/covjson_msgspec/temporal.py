@@ -71,7 +71,8 @@ class Moment(msgspec.Struct, frozen=True):
     when
         The point in time, filled to the start of the period for the reduced
         forms. It is timezone-aware exactly when the source carried a ``Z`` /
-        offset (i.e., `~Precision.SECOND`); the date and reduced forms are naive.
+        offset (i.e., [`SECOND`][covjson_msgspec.temporal.Precision]); the date and
+        reduced forms are naive.
     precision
         How much of ``when`` the source string actually specified.
     """
@@ -168,8 +169,8 @@ def resolve(value: str) -> TemporalResult:
     >>> resolve("2010-13-99")
     Malformed(value='2010-13-99')
 
-    Consumers match on the concrete type, with `~typing.assert_never` making the
-    match exhaustive:
+    Consumers match on the concrete type, with [`assert_never`][typing.assert_never]
+    making the match exhaustive:
 
     >>> from typing import assert_never
     >>> def describe(value: str) -> str:

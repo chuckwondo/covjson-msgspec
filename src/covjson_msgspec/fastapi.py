@@ -9,7 +9,7 @@ type (``application/prs.coverage+json``, spec section 10) rather than the generi
 ``[fastapi]`` extra and is imported here, so importing the rest of the package
 never requires FastAPI.
 
-Return an instance directly from a handler so FastAPI sends it unchanged::
+Return an instance directly from a handler so FastAPI sends it unchanged:
 
     from covjson_msgspec.fastapi import CovJSONResponse
 
@@ -18,12 +18,13 @@ Return an instance directly from a handler so FastAPI sends it unchanged::
         return CovJSONResponse(build_coverage())
 
 An optional ``profile`` advertises one or more RFC 6906 profile URIs via the
-content type's ``profile`` parameter (reusing `~covjson_msgspec.media_type.media_type`).
+content type's ``profile`` parameter (reusing
+[`media_type`][covjson_msgspec.media_type.media_type]).
 
 To also document such an endpoint in OpenAPI (so it shows a response schema in
 Swagger / Redoc), register the CoverageJSON component schemas on the app with
 `add_openapi_schemas` and point the route's response at one with
-`~covjson_msgspec.schema.schema_ref`: FastAPI cannot introspect msgspec types, so
+[`schema_ref`][covjson_msgspec.schema_ref]: FastAPI cannot introspect msgspec types, so
 the schema is injected rather than inferred. See `add_openapi_schemas` for the
 full recipe.
 
@@ -60,10 +61,11 @@ class CovJSONResponse(Response):
     """A FastAPI response that encodes CoverageJSON with the right media type.
 
     Overrides just the two seams a `Response` subclass needs: the ``media_type``
-    class attribute (which `~fastapi.Response.init_headers` turns into the
+    class attribute (which `init_headers` turns into the
     ``Content-Type`` header) and `render` (which turns the returned document into
     the body bytes, via the core `encode`). An optional ``profile`` sets a more
-    specific content type built by `~covjson_msgspec.media_type.media_type`.
+    specific content type built by
+    [`media_type`][covjson_msgspec.media_type.media_type].
 
     Examples
     --------
@@ -155,17 +157,17 @@ class CovJSONResponse(Response):
 def add_openapi_schemas(app: FastAPI) -> None:
     """Register the CoverageJSON component schemas on a FastAPI app's OpenAPI.
 
-    Merges `~covjson_msgspec.schema.component_schemas` into the app's generated
-    OpenAPI ``components.schemas`` so a `CovJSONResponse` endpoint can be fully
-    described in Swagger / Redoc. Wraps the app's existing ``openapi`` callable
+    Merges [`component_schemas`][covjson_msgspec.component_schemas] into the app's
+    generated OpenAPI ``components.schemas`` so a `CovJSONResponse` endpoint can be
+    fully described in Swagger / Redoc. Wraps the app's existing ``openapi`` callable
     rather than rebuilding the document, so any other customization is preserved;
     the wrapper runs on every ``app.openapi()`` call and merges in place, so it is
     order-independent (before or after the schema is first built) and idempotent.
 
     Point a route's response at a registered component with
-    `~covjson_msgspec.schema.schema_ref` and the CoverageJSON media type. Declaring
-    ``response_class=Response`` (the plain base) lets ``responses`` be the sole
-    source of the documented schema. A FastAPI response class carries the media
+    [`schema_ref`][covjson_msgspec.schema_ref] and the CoverageJSON media type.
+    Declaring ``response_class=Response`` (the plain base) lets ``responses`` be the
+    sole source of the documented schema. A FastAPI response class carries the media
     type and byte rendering, not a data schema, so using `CovJSONResponse` here
     leaves its raw-body placeholder, ``{"type": "string"}``, which FastAPI *merges
     with* (rather than replaces) our ``$ref``. Under OpenAPI 3.1 the sibling
@@ -173,7 +175,7 @@ def add_openapi_schemas(app: FastAPI) -> None:
     ``Coverage`` *and* a string: an unsatisfiable schema that a validating client or
     code generator would reject. The base `Response` contributes no placeholder, so
     the ``$ref`` stands alone. The handler still returns a `CovJSONResponse`, so the
-    response on the wire is unchanged::
+    response on the wire is unchanged:
 
         from fastapi import Response
         from covjson_msgspec import Coverage

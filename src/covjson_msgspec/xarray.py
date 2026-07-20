@@ -546,7 +546,7 @@ def from_datatree(
 
 
 def _require_datatree() -> None:
-    """Ensure xarray (with `~xarray.DataTree`) is importable, else raise.
+    """Ensure xarray (with [`DataTree`][xarray.DataTree]) is importable, else raise.
 
     The collection bridge needs `xarray.DataTree`, which arrived in
     xarray 2024.10. This raises a `ModuleNotFoundError` with an install / upgrade
@@ -556,7 +556,7 @@ def _require_datatree() -> None:
     Raises
     ------
     ModuleNotFoundError
-        If xarray is not installed, or predates `~xarray.DataTree`.
+        If xarray is not installed, or predates [`DataTree`][xarray.DataTree].
     """
     try:
         import xarray as xr
@@ -617,7 +617,7 @@ def _build_variables(
 def _geographic_roles(domain: Domain) -> dict[str, str]:
     """Map a geographic system's coordinates to longitude / latitude / height.
 
-    A `~covjson_msgspec.referencing.GeographicCRS` lists its coordinates in the
+    A [`GeographicCRS`][covjson_msgspec.GeographicCRS] lists its coordinates in the
     CoverageJSON order (`_GEOGRAPHIC_ROLES`: longitude, latitude, then optional
     height), so position determines role. The result tells `_coordinate` which CF
     ``standard_name`` / ``units`` to attach to each horizontal coordinate.
@@ -663,10 +663,10 @@ def _build_coords(
     Parameters
     ----------
     domain
-        The domain whose `~Domain.axes` become coordinates.
+        The domain whose [`axes`][covjson_msgspec.Domain.axes] become coordinates.
     systems
         Coordinate-to-system lookup from
-        `~covjson_msgspec._bridging.coordinate_systems`.
+        `coordinate_systems`.
     geo_roles
         Coordinate-to-geographic-role lookup from `_geographic_roles`.
 
@@ -735,7 +735,7 @@ def _coordinate(
         The coordinate's values.
     systems, geo_roles
         The lookups from
-        `~covjson_msgspec._bridging.coordinate_systems` / `_geographic_roles`.
+        `coordinate_systems` / `_geographic_roles`.
     scalar
         Whether this is a single-valued axis to collapse to a scalar coordinate.
 
@@ -788,7 +788,7 @@ def _parse_times(column: list[Any], calendar: str) -> npt.NDArray[Any]:
     column
         The coordinate's raw time values (ISO 8601 strings, or ``None``).
     calendar
-        The `~covjson_msgspec.referencing.TemporalRS` calendar (a bare name or a
+        The [`TemporalRS`][covjson_msgspec.TemporalRS] calendar (a bare name or a
         URI whose final segment names the calendar).
 
     Returns
@@ -978,7 +978,7 @@ def _to_cftime(iso: str, calendar: str) -> Any:
 
 
 def _vertical_attrs(system: VerticalCRS) -> dict[str, str]:
-    """Infer CF vertical attributes from a `~covjson_msgspec.referencing.VerticalCRS`.
+    """Infer CF vertical attributes from a [`VerticalCRS`][covjson_msgspec.VerticalCRS].
 
     CoverageJSON does not say whether a vertical axis points up or down, so this
     sniffs the system's ``id`` (the only member a vertical CRS carries, per
@@ -1026,7 +1026,8 @@ def _crs_coordinate(domain: Domain) -> _Variable | None:
     Parameters
     ----------
     domain
-        The domain whose `~Domain.referencing` is scanned for a horizontal CRS.
+        The domain whose [`referencing`][covjson_msgspec.Domain.referencing] is scanned
+        for a horizontal CRS.
 
     Returns
     -------
@@ -1067,7 +1068,7 @@ def _data_variable(
     """Build a data-variable `_Variable` from one parameter range.
 
     The range's ``axisNames`` become the variable's dims and its values the data
-    (`~covjson_msgspec.range.NdArray.to_numpy`); CF attributes come from the
+    ([`to_numpy`][covjson_msgspec.NdArray.to_numpy]); CF attributes come from the
     matching parameter via `_variable_attrs`.
 
     Parameters
@@ -1075,7 +1076,7 @@ def _data_variable(
     key
         The range key (also used to find its parameter).
     range_
-        The range; must be an inline `~covjson_msgspec.range.NdArray`.
+        The range; must be an inline [`NdArray`][covjson_msgspec.NdArray].
     parameters
         The coverage's parameters, or ``None`` when undescribed.
 
@@ -1087,7 +1088,7 @@ def _data_variable(
     Raises
     ------
     ValueError
-        If ``range_`` is not an inline `~covjson_msgspec.range.NdArray`.
+        If ``range_`` is not an inline [`NdArray`][covjson_msgspec.NdArray].
     """
     array = require_inline_ndarray(key, range_, "xarray")
     parameter = parameters.get(key) if parameters is not None else None
@@ -1174,11 +1175,12 @@ def _standard_name(identifier: str | None) -> str | None:
 
 
 def _unit_symbol(unit: Unit) -> str | None:
-    """Extract a CF ``units`` string from a `~covjson_msgspec.parameter.Unit`.
+    """Extract a CF ``units`` string from a [`Unit`][covjson_msgspec.Unit].
 
-    A unit's ``symbol`` is either a bare string or a `~covjson_msgspec.parameter`
-    ``Symbol`` object (a value plus a type URI); this returns the string in either
-    case, or ``None`` when the unit has only a label.
+    A unit's ``symbol`` is either a bare string or a
+    [`parameter`][covjson_msgspec.parameter] ``Symbol`` object (a value plus a type
+    URI); this returns the string in either case, or ``None`` when the unit has only a
+    label.
 
     Parameters
     ----------
@@ -1237,8 +1239,8 @@ def _flag_meaning(label: I18n) -> str:
     """Turn a category label into a single CF ``flag_meanings`` token.
 
     CF ``flag_meanings`` is a whitespace-delimited list, so each meaning must be
-    one token; this takes the display label (`~covjson_msgspec.i18n.display`) and
-    joins its words with underscores.
+    one token; this takes the display label ([`display`][covjson_msgspec.i18n.display])
+    and joins its words with underscores.
 
     Parameters
     ----------
@@ -1517,7 +1519,7 @@ def _build_axes(
 
 
 def _axis_from_coord(coord: xr.DataArray, compact_regular: bool) -> Axis:
-    """Build a primitive `~covjson_msgspec.axis.Axis` from a 1-D coordinate.
+    """Build a primitive [`Axis`][covjson_msgspec.Axis] from a 1-D coordinate.
 
     A time coordinate becomes a listed axis of ISO strings (`_time_to_iso`). A
     numeric coordinate becomes a compact regular axis (start / stop / num) when
@@ -1717,7 +1719,7 @@ def _calendar(coord: xr.DataArray) -> str:
     A cftime coordinate carries its calendar on each element; a numpy
     ``datetime64`` coordinate has none, so it is reported as the standard
     ``"Gregorian"`` calendar for the rebuilt
-    `~covjson_msgspec.referencing.TemporalRS`.
+    [`TemporalRS`][covjson_msgspec.TemporalRS].
 
     Parameters
     ----------
@@ -1748,8 +1750,8 @@ def _build_referencing(
     Emits up to three connections: a horizontal system over ``(x, y)`` (its class
     and ``id`` recovered from the CF ``crs`` grid-mapping variable when present,
     written by `_crs_coordinate`; geographic by default), a
-    `~covjson_msgspec.referencing.VerticalCRS` over ``z``, and a
-    `~covjson_msgspec.referencing.TemporalRS` over ``t`` (its calendar from
+    [`VerticalCRS`][covjson_msgspec.VerticalCRS] over ``z``, and a
+    [`TemporalRS`][covjson_msgspec.TemporalRS] over ``t`` (its calendar from
     `_calendar`). A role that is absent contributes no connection.
 
     Parameters
@@ -1876,7 +1878,8 @@ def _is_grid_mapping(variable: xr.DataArray) -> bool:
 
 
 def _parameter_from_variable(name: str, variable: xr.DataArray) -> Parameter | None:
-    """Build a CoverageJSON `~covjson_msgspec.parameter.Parameter` from a data variable.
+    """Build a CoverageJSON [`Parameter`][covjson_msgspec.Parameter] from a data
+    variable.
 
     Inverts `_variable_attrs`: CF ``flag_values`` / ``flag_meanings`` yield a
     categorical parameter, a ``units`` attribute yields a continuous parameter,
@@ -1932,9 +1935,9 @@ def _build_ranges(
 ) -> tuple[dict[str, Range], dict[str, Parameter]]:
     """Build a coverage's ranges and parameters from a dataset's data variables.
 
-    Each data variable becomes an `~covjson_msgspec.range.NdArray` range, its dims
+    Each data variable becomes an [`NdArray`][covjson_msgspec.NdArray] range, its dims
     remapped to CoverageJSON axis keys via ``dim_to_key``, and (when its CF
-    attributes describe one) a `~covjson_msgspec.parameter.Parameter` via
+    attributes describe one) a [`Parameter`][covjson_msgspec.Parameter] via
     `_parameter_from_variable`. Grid-mapping containers (`_is_grid_mapping`) and CF
     bounds variables (``*_bnds`` / ``*_bounds``) are skipped: they hold no
     measurements.
