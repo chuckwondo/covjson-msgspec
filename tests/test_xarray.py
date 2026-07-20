@@ -1,5 +1,6 @@
 """Behavioral tests for the xarray bridge (to_xarray / from_xarray)."""
 
+import warnings
 from collections.abc import Mapping
 
 import numpy as np
@@ -212,6 +213,46 @@ def test_temporal_out_of_ns_range_round_trips_faithfully() -> None:
     back = from_xarray(ds)
     assert isinstance(back.domain, Domain)
     assert back.domain.axes["t"].values == t_values
+
+
+def test_temporal_offset_flattens_to_naive_utc_without_warning() -> None:
+    # A ±hh:mm offset (a Spec 5.2 form) is applied and flattened to naive-UTC,
+    # the same result the Z / naive path produces (ADR-0015). numpy has no
+    # timezone type, so it announces the flatten with a UserWarning; the bridge
+    # suppresses it, so none leaks. The axis also mixes a Z and an offset value
+    # to show a single column carries both.
+    t_values = ("2020-01-15T00:00:00Z", "2020-01-15T00:00:00+05:00")
+    cov = Coverage(
+        domain=Domain.point_series(
+            x=Axis.listed((1.0,)),
+            y=Axis.listed((2.0,)),
+            t=Axis.listed(t_values),
+            referencing=(
+                ReferenceSystemConnection(
+                    coordinates=("t",),
+                    system=ReferenceSystem.temporal(calendar="Gregorian"),
+                ),
+            ),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float", values=(1.0, 2.0), shape=(2,), axis_names=("t",)
+            )
+        },
+    )
+
+    # Assert on any UserWarning, not just numpy's current wording: the production
+    # filter keys on that exact message, so pinning the test to the same string
+    # would let the warning silently leak again if numpy ever rewords it.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+        ds = to_xarray(cov)
+
+    # +05:00 at 00:00 is 19:00 the previous day in UTC; the Z value is unchanged.
+    assert [str(v) for v in ds["t"].values] == [
+        "2020-01-15T00:00:00.000000000",
+        "2020-01-14T19:00:00.000000000",
+    ]
 
 
 def test_geographic_referencing_sets_cf_attrs_and_grid_mapping() -> None:

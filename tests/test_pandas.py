@@ -131,6 +131,54 @@ def test_naive_time_divergence_bridge_parses_but_resolve_rejects() -> None:
     assert df.index[0] == pd.Timestamp("2020-01-01T00:00:00")
 
 
+@pytest.mark.parametrize(
+    ("t_values", "expected"),
+    [
+        # A ±hh:mm offset (a Spec 5.2 form) is applied and flattened to naive-UTC
+        # (+05:00 -> 19:00 the previous day, -08:00 -> 08:00 the same day),
+        # matching the xarray bridge (ADR-0015): tz-naive, not a tz-aware
+        # Timestamp.
+        (
+            ("2020-01-15T00:00:00+05:00", "2020-01-15T00:00:00-08:00"),
+            ("2020-01-14T19:00:00", "2020-01-15T08:00:00"),
+        ),
+        # A single axis may mix a naive and an offset value; format="ISO8601"
+        # parses both rather than raising on the inferred format and falling back
+        # to raw strings.
+        (
+            ("2020-01-15T00:00:00", "2020-01-15T00:00:00+05:00"),
+            ("2020-01-15T00:00:00", "2020-01-14T19:00:00"),
+        ),
+    ],
+)
+def test_offset_time_axis_flattens_to_naive_utc(
+    t_values: tuple[str, str], expected: tuple[str, str]
+) -> None:
+    cov = Coverage(
+        domain=Domain.point_series(
+            x=Axis.listed((1.0,)),
+            y=Axis.listed((2.0,)),
+            t=Axis.listed(t_values),
+            referencing=(
+                ReferenceSystemConnection(
+                    coordinates=("t",),
+                    system=ReferenceSystem.temporal(calendar="Gregorian"),
+                ),
+            ),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float", values=(1.0, 2.0), shape=(2,), axis_names=("t",)
+            )
+        },
+    )
+    df = to_pandas(cov)
+
+    assert isinstance(df.index, pd.DatetimeIndex)
+    assert df.index.tz is None
+    assert list(df.index) == [pd.Timestamp(moment) for moment in expected]
+
+
 def test_non_standard_calendar_time_stays_strings() -> None:
     cov = Coverage(
         domain=Domain.point_series(
@@ -153,6 +201,35 @@ def test_non_standard_calendar_time_stays_strings() -> None:
     df = to_pandas(cov)
 
     assert df.index.tolist() == ["2020-01-01", "2020-01-30"]
+
+
+def test_malformed_time_falls_back_to_raw_strings() -> None:
+    # The bridge is permissive (it does not validate), so a malformed value on a
+    # standard-calendar temporal axis makes pandas raise; maybe_datetime catches
+    # that and returns the raw strings rather than propagating, leaving a plain
+    # (non-datetime) index.
+    cov = Coverage(
+        domain=Domain.point_series(
+            x=Axis.listed((1.0,)),
+            y=Axis.listed((2.0,)),
+            t=Axis.listed(("2020-01-15T00:00:00Z", "2010-13-99")),
+            referencing=(
+                ReferenceSystemConnection(
+                    coordinates=("t",),
+                    system=ReferenceSystem.temporal(calendar="Gregorian"),
+                ),
+            ),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float", values=(1.0, 2.0), shape=(2,), axis_names=("t",)
+            )
+        },
+    )
+    df = to_pandas(cov)
+
+    assert not isinstance(df.index, pd.DatetimeIndex)
+    assert df.index.tolist() == ["2020-01-15T00:00:00Z", "2010-13-99"]
 
 
 def test_vertical_profile_indexed_by_z() -> None:
