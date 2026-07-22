@@ -45,6 +45,7 @@ from __future__ import annotations
 # explicitly typed and mypy strict guards them, so those rules never fire on the
 # user-facing surface.
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false
+from collections.abc import Set
 from typing import TYPE_CHECKING, Any, cast
 
 from covjson_msgspec._bridging import (
@@ -357,7 +358,7 @@ class _AxisLayout:
         self.composite_columns: list[tuple[str, str, Any]] = []
 
 
-def _axis_layout(domain: Domain, temporal: set[str]) -> _AxisLayout:
+def _axis_layout(domain: Domain, temporal: Set[str]) -> _AxisLayout:
     """Sort a domain's axes into the `_AxisLayout` roles a frame gives them.
 
     Each axis lands in exactly one role: a composite (``tuple``) axis becomes one

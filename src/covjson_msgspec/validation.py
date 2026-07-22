@@ -1436,7 +1436,7 @@ def _composite_coordinates_issue(
         and composite is not None
         and composite.data_type == rule.composite_data_type
     ):
-        actual = coordinate_identifiers(composite, "composite")
+        actual = tuple(coordinate_identifiers(composite, "composite"))
 
         if actual not in rule.allowed_composite_coordinates:
             return DomainCompositeCoordinates(

@@ -30,7 +30,7 @@ Spec: [ranges object][spec-ranges] (a range may be a URL string) and
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from typing import Final, Generic, NamedTuple, TypeVar, cast
 
 import msgspec
@@ -261,7 +261,7 @@ def resolve_references(
     payloads, failures = collect(sites, fetch_one, _reference_failure, strategy)
     resolved = {(site.coverage_index, site.key): doc for site, doc in payloads}
 
-    return ResolveReport(value=_rebuild(obj, resolved), failures=failures)
+    return ResolveReport(value=_rebuild(obj, resolved), failures=tuple(failures))
 
 
 async def resolve_references_async(
@@ -357,7 +357,7 @@ async def resolve_references_async(
     )
     resolved = {(site.coverage_index, site.key): doc for site, doc in payloads}
 
-    return ResolveReport(value=_rebuild(obj, resolved), failures=failures)
+    return ResolveReport(value=_rebuild(obj, resolved), failures=tuple(failures))
 
 
 class _RefSite(NamedTuple):
@@ -384,7 +384,7 @@ class _RefSite(NamedTuple):
 _Resolved = Mapping[tuple[int, str | None], Domain | NdArray | TiledNdArray]
 
 
-def _coverages(obj: Coverage | CoverageCollection) -> tuple[Coverage, ...]:
+def _coverages(obj: Coverage | CoverageCollection) -> Sequence[Coverage]:
     """The coverages to walk: the value itself, or every collection member.
 
     Examples
@@ -435,7 +435,7 @@ def _url_slots(coverage: Coverage) -> Iterator[tuple[str | None, str]]:
             yield key, value
 
 
-def _reference_sites(obj: Coverage | CoverageCollection) -> tuple[_RefSite, ...]:
+def _reference_sites(obj: Coverage | CoverageCollection) -> Sequence[_RefSite]:
     """Every URL-reference site of the value, tagged with its member index.
 
     Walks the coverage (or each collection member) via `_url_slots`, pairing each
@@ -450,7 +450,7 @@ def _reference_sites(obj: Coverage | CoverageCollection) -> tuple[_RefSite, ...]
 
     Returns
     -------
-    tuple of _RefSite
+    sequence of _RefSite
         One entry per URL reference, in member-then-(domain-before-ranges) order.
 
     Examples

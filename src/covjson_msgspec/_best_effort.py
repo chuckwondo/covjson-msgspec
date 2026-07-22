@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Sequence
 from enum import StrEnum
 from typing import Generic, TypeAlias, TypeVar
 
@@ -121,10 +121,10 @@ _F = TypeVar("_F", bound=FetchFailure)
 #: collected so far and the new one, it returns a `Verdict`. It is generic in the
 #: `FetchFailure` subtype, so a consumer can write a strategy over its own failure
 #: type; the canned strategies below work for any subtype.
-FailureStrategy: TypeAlias = Callable[[tuple[_F, ...], _F], Verdict]
+FailureStrategy: TypeAlias = Callable[[Sequence[_F], _F], Verdict]
 
 
-def fail_fast(sofar: tuple[FetchFailure, ...], failure: FetchFailure) -> Verdict:
+def fail_fast(sofar: Sequence[FetchFailure], failure: FetchFailure) -> Verdict:
     """Halt on the first failure: the default, all-or-nothing behavior.
 
     Returns `Verdict.HALT` unconditionally, so the first failed fetch aborts the
@@ -153,7 +153,7 @@ def fail_fast(sofar: tuple[FetchFailure, ...], failure: FetchFailure) -> Verdict
     return Verdict.HALT
 
 
-def collect_all(sofar: tuple[FetchFailure, ...], failure: FetchFailure) -> Verdict:
+def collect_all(sofar: Sequence[FetchFailure], failure: FetchFailure) -> Verdict:
     """Tolerate every failure: assemble whatever loaded, reporting the rest.
 
     Never halts, so the batch always runs to completion and the failures are
@@ -182,7 +182,7 @@ def collect_all(sofar: tuple[FetchFailure, ...], failure: FetchFailure) -> Verdi
 
 
 def halt_on_unrecoverable(
-    sofar: tuple[FetchFailure, ...], failure: FetchFailure
+    sofar: Sequence[FetchFailure], failure: FetchFailure
 ) -> Verdict:
     """Tolerate transient failures, but halt on an unrecoverable one.
 
@@ -256,7 +256,7 @@ def stop_after(limit: int) -> FailureStrategy[FetchFailure]:
         msg = f"stop_after(limit) requires limit >= 1, got {limit}"
         raise ValueError(msg)
 
-    def strategy(sofar: tuple[FetchFailure, ...], failure: FetchFailure) -> Verdict:
+    def strategy(sofar: Sequence[FetchFailure], failure: FetchFailure) -> Verdict:
         return Verdict.HALT if len(sofar) + 1 >= limit else Verdict.COLLECT
 
     return strategy
@@ -295,7 +295,7 @@ def collect(
     fetch_one: Callable[[_C], _P],
     make_failure: Callable[[_C, Exception, FailureKind], _F],
     strategy: FailureStrategy[_F],
-) -> tuple[list[_P], tuple[_F, ...]]:
+) -> tuple[Sequence[_P], Sequence[_F]]:
     """Fetch each item in turn, folding a strategy over the failures.
 
     Lazily fetches one item at a time: each is fetched via ``fetch_one`` and, on
@@ -335,7 +335,7 @@ def collect(
     ...     ["a", "b", "c"], store.__getitem__, make, collect_all
     ... )
     >>> payloads
-    [1, 3]
+    (1, 3)
     >>> [failure.url for failure in failures]
     ['b']
     """
@@ -355,7 +355,7 @@ async def collect_async(
     fetch_one: Callable[[_C], Awaitable[_P]],
     make_failure: Callable[[_C, Exception, FailureKind], _F],
     strategy: FailureStrategy[_F],
-) -> tuple[list[_P], tuple[_F, ...]]:
+) -> tuple[Sequence[_P], Sequence[_F]]:
     """Concurrently fetch every item, folding a strategy over the failures.
 
     The awaitable counterpart of `collect`. It launches all fetches at once (via
@@ -400,7 +400,7 @@ async def collect_async(
     ...     )
     >>> payloads, failures = asyncio.run(main())
     >>> payloads
-    [1, 3]
+    (1, 3)
     >>> [failure.url for failure in failures]
     ['b']
     """
@@ -571,7 +571,7 @@ def _to_outcome(
 def _fold_outcomes(
     outcomes: Iterable[_Ok[_P] | _Failed[_F]],
     strategy: FailureStrategy[_F],
-) -> tuple[list[_P], tuple[_F, ...]]:
+) -> tuple[Sequence[_P], Sequence[_F]]:
     """Fold a strategy over a stream of outcomes, halting where it says to.
 
     Accumulates the successful payloads and the failures; for each failure the
@@ -604,7 +604,7 @@ def _fold_outcomes(
     >>> outcomes = [_Ok(1), _Failed(failure, ValueError("x")), _Ok(3)]
     >>> successes, failures = _fold_outcomes(outcomes, collect_all)
     >>> successes
-    [1, 3]
+    (1, 3)
     >>> [item.url for item in failures]
     ['u']
     """
@@ -621,4 +621,4 @@ def _fold_outcomes(
             if verdict is Verdict.HALT:
                 raise FetchError(tuple(failures)) from outcome.exc
 
-    return successes, tuple(failures)
+    return tuple(successes), tuple(failures)

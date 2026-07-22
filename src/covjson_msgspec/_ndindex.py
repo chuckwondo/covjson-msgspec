@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 
-def strides(shape: tuple[int, ...]) -> tuple[int, ...]:
+def strides(shape: Sequence[int]) -> Sequence[int]:
     """Return the row-major (C-order) flat-index strides for ``shape``.
 
     Stride ``i`` is the flat-index step for a one-unit move along axis ``i``: the
@@ -25,7 +25,7 @@ def strides(shape: tuple[int, ...]) -> tuple[int, ...]:
 
     Returns
     -------
-    tuple of int
+    sequence of int
         One stride per axis (empty for a 0-dimensional shape).
 
     Examples
@@ -46,7 +46,7 @@ def strides(shape: tuple[int, ...]) -> tuple[int, ...]:
     return tuple(out)
 
 
-def ravel_index(index: Sequence[int], strides: tuple[int, ...]) -> int:
+def ravel_index(index: Sequence[int], strides: Sequence[int]) -> int:
     """Return the flat row-major offset of a multi-dimensional ``index``.
 
     The dot product of ``index`` with ``strides`` (typically from `strides`):

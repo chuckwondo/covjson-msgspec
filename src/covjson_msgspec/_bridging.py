@@ -15,7 +15,8 @@ so that each fact has one home rather than one per consumer.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, cast
+from collections.abc import Mapping, Sequence, Set
+from typing import TYPE_CHECKING, Any
 
 from covjson_msgspec.axis import Axis
 from covjson_msgspec.coverage import Range
@@ -103,8 +104,8 @@ def require_inline_ndarray(key: str, range_: Range, target: str) -> NdArray:
 
 def range_column(
     range_: NdArray,
-    dims: list[str],
-    sizes: dict[str, int],
+    dims: Sequence[str],
+    sizes: Mapping[str, int],
 ) -> npt.NDArray[Any]:
     """Lay a range's values over the canonical ``dims`` grid as a flat column.
 
@@ -176,9 +177,9 @@ def range_column(
 
 def broadcast(
     data: Any,
-    present: tuple[str, ...] | list[str],
-    dims: list[str],
-    sizes: dict[str, int],
+    present: Sequence[str],
+    dims: Sequence[str],
+    sizes: Mapping[str, int],
 ) -> npt.NDArray[Any]:
     """Broadcast ``data`` (varying only over ``present``) to the full ``dims`` grid.
 
@@ -271,7 +272,7 @@ def is_standard_calendar(rs: TemporalRS) -> bool:
     return rs.calendar.rsplit("/", 1)[-1].lower() in STANDARD_CALENDARS
 
 
-def coordinate_systems(domain: Domain) -> dict[str, ResolvedReferenceSystem]:
+def coordinate_systems(domain: Domain) -> Mapping[str, ResolvedReferenceSystem]:
     """Index a domain's referencing by coordinate identifier.
 
     Flattens the domain's reference-system connections (each of which ties one or
@@ -289,7 +290,7 @@ def coordinate_systems(domain: Domain) -> dict[str, ResolvedReferenceSystem]:
 
     Returns
     -------
-    dict
+    mapping
         Each coordinate identifier mapped to its governing system's typed variant.
 
     Examples
@@ -315,7 +316,7 @@ def coordinate_systems(domain: Domain) -> dict[str, ResolvedReferenceSystem]:
     }
 
 
-def temporal_coordinates(domain: Domain) -> set[str]:
+def temporal_coordinates(domain: Domain) -> Set[str]:
     """The coordinate identifiers governed by a standard-calendar temporal system.
 
     The bridges convert time axes to real datetimes only when their calendar is
@@ -376,17 +377,16 @@ def temporal_coordinates(domain: Domain) -> set[str]:
     []
     """
 
-    coordinates: set[str] = set()
+    return frozenset(
+        coordinate
+        for connection in domain.referencing
+        if isinstance(system := connection.system.refine(), TemporalRS)
+        and is_standard_calendar(system)
+        for coordinate in connection.coordinates
+    )
 
-    for connection in domain.referencing:
-        system = connection.system.refine()
-        if isinstance(system, TemporalRS) and is_standard_calendar(system):
-            coordinates.update(connection.coordinates)
 
-    return coordinates
-
-
-def coordinate_identifiers(axis: Axis, axis_name: str) -> tuple[str, ...]:
+def coordinate_identifiers(axis: Axis, axis_name: str) -> Sequence[str]:
     """The coordinate identifiers an axis carries, with spec 6.1.1's default applied.
 
     Spec 6.1.1 makes ``coordinates`` optional: "If missing, the member
@@ -406,7 +406,7 @@ def coordinate_identifiers(axis: Axis, axis_name: str) -> tuple[str, ...]:
 
     Returns
     -------
-    tuple of str
+    sequence of str
         ``axis.coordinates`` when present, else the one-element default naming
         the axis itself.
 
@@ -429,7 +429,9 @@ def coordinate_identifiers(axis: Axis, axis_name: str) -> tuple[str, ...]:
     return axis.coordinates if axis.coordinates is not None else (axis_name,)
 
 
-def composite_columns(axis: Axis, axis_name: str) -> tuple[tuple[str, list[Any]], ...]:
+def composite_columns(
+    axis: Axis, axis_name: str
+) -> Sequence[tuple[str, Sequence[Any]]]:
     """Transpose a ``"tuple"`` axis's values into one column per coordinate.
 
     A composite ``"tuple"`` axis stores one tuple (a position) per row; the
@@ -453,7 +455,7 @@ def composite_columns(axis: Axis, axis_name: str) -> tuple[tuple[str, list[Any]]
 
     Returns
     -------
-    tuple of (str, list)
+    sequence of (str, sequence)
         One ``(identifier, column)`` pair per coordinate, in identifier order;
         each column holds that component across the axis's positions.
 
@@ -468,7 +470,7 @@ def composite_columns(axis: Axis, axis_name: str) -> tuple[tuple[str, list[Any]]
     >>> from covjson_msgspec import Axis
     >>> axis = Axis.tuple_([(1.0, 10.0), (2.0, 20.0)], coordinates=("x", "y"))
     >>> composite_columns(axis, "composite")
-    (('x', [1.0, 2.0]), ('y', [10.0, 20.0]))
+    (('x', (1.0, 2.0)), ('y', (10.0, 20.0)))
 
     A value that is not a matching tuple is rejected with a clean message rather
     than left to fail inside the bridge:
@@ -483,6 +485,7 @@ def composite_columns(axis: Axis, axis_name: str) -> tuple[tuple[str, list[Any]]
     components = coordinate_identifiers(axis, axis_name)
     expected = len(components)
     rows = axis.values or ()
+    positions: list[tuple[Any, ...]] = []
 
     for index, row in enumerate(rows):
         if not isinstance(row, tuple) or len(row) != expected:
@@ -492,15 +495,15 @@ def composite_columns(axis: Axis, axis_name: str) -> tuple[tuple[str, list[Any]]
             )
             raise ValueError(msg)
 
-    positions = cast("tuple[tuple[Any, ...], ...]", rows)
+        positions.append(row)
 
     return tuple(
-        (component, [row[index] for row in positions])
+        (component, tuple(row[index] for row in positions))
         for index, component in enumerate(components)
     )
 
 
-def maybe_datetime(values: list[Any], is_temporal: bool) -> Any:
+def maybe_datetime(values: Sequence[Any], is_temporal: bool) -> Any:
     """Parse ``values`` to pandas datetimes when ``is_temporal``, else pass through.
 
     Paired with `temporal_coordinates`: a caller decides per axis whether its
@@ -518,7 +521,7 @@ def maybe_datetime(values: list[Any], is_temporal: bool) -> Any:
 
     Returns
     -------
-    pandas.DatetimeIndex or list
+    pandas.DatetimeIndex or sequence
         A [`DatetimeIndex`][pandas.DatetimeIndex] when ``is_temporal`` and parsing
         succeeds; otherwise ``values`` unchanged. Parsing that raises (a malformed time
         string) also falls back to ``values`` rather than propagating.

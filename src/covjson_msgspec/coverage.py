@@ -19,7 +19,7 @@ Spec: [Coverage][spec-coverage] and [CoverageCollection][spec-collection] object
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Final, Literal
 
 import msgspec
@@ -244,7 +244,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
 
     def to_geojson(
         self, *, trajectory_as: Literal["points", "linestring"] = "points"
-    ) -> dict[str, Any]:
+    ) -> Mapping[str, Any]:
         """Convert this coverage to a GeoJSON ``FeatureCollection`` mapping.
 
         Requires the ``geo`` extra. Thin delegate to
@@ -253,7 +253,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
 
         Returns
         -------
-        dict
+        mapping
             A GeoJSON ``FeatureCollection`` as a plain mapping.
         """
         from covjson_msgspec.geo import to_geojson
@@ -439,7 +439,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
     # JSON-LD @context (spec section 8); see `JsonLdContext`.
     context: JsonLdContext | UnsetType = msgspec.field(name="@context", default=UNSET)
 
-    def resolved_coverages(self) -> tuple[Coverage, ...]:
+    def resolved_coverages(self) -> Sequence[Coverage]:
         """Return the member coverages with collection-level fields inherited.
 
         For each member, any of ``domain_type`` / ``parameters`` /
@@ -450,7 +450,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
 
         Returns
         -------
-        tuple of Coverage
+        sequence of Coverage
             The member coverages with inheritance applied.
         """
         return tuple(self._resolve(coverage) for coverage in self.coverages)
@@ -576,7 +576,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
 
     def to_geojson(
         self, *, trajectory_as: Literal["points", "linestring"] = "points"
-    ) -> dict[str, Any]:
+    ) -> Mapping[str, Any]:
         """Convert this collection to a GeoJSON ``FeatureCollection`` mapping.
 
         Requires the ``geo`` extra. Thin delegate to
@@ -587,7 +587,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
 
         Returns
         -------
-        dict
+        mapping
             A GeoJSON ``FeatureCollection`` as a plain mapping.
         """
         from covjson_msgspec.geo import to_geojson

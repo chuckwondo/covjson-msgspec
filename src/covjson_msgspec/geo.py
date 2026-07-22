@@ -49,6 +49,7 @@ from __future__ import annotations
 import contextlib
 import json
 import warnings
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from covjson_msgspec._bridging import (
@@ -197,7 +198,7 @@ def to_geojson(
     obj: Coverage | CoverageCollection,
     *,
     trajectory_as: TrajectoryAs = "points",
-) -> dict[str, Any]:
+) -> Mapping[str, Any]:
     """Convert a `Coverage` or `CoverageCollection` to a GeoJSON mapping.
 
     Requires the ``geo`` extra. Thin wrapper over `to_geopandas`: each coverage
@@ -216,7 +217,7 @@ def to_geojson(
 
     Returns
     -------
-    dict
+    mapping
         A GeoJSON ``FeatureCollection`` as a plain (JSON-compatible) mapping.
 
     Raises
@@ -558,7 +559,7 @@ def _require_composite_axis(
 
 
 def _horizontal_indices(
-    coords: tuple[str, ...], domain_type: str, geometry: str
+    coords: Sequence[str], domain_type: str, geometry: str
 ) -> tuple[int, int, int | None]:
     """Locate the ``x`` / ``y`` (and optional ``z``) components in ``coords``.
 
