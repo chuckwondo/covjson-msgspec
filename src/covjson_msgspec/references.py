@@ -18,7 +18,7 @@ Failures are handled by a pluggable best-effort ``strategy`` (see
 whole resolution, but a collecting strategy leaves each failed reference as its
 URL string and reports it, returning a `ResolveReport`. References are fetched per
 site (not deduplicated), so a caller who shares one URL across many collection
-members and wants to fetch it once wraps the fetcher in a cache -- all caching is
+members and wants to fetch it once wraps the fetcher in a cache: all caching is
 the fetcher's to own.
 
 Spec: [ranges object][spec-ranges] (a range may be a URL string) and
@@ -476,8 +476,8 @@ def _rebuild(obj: _CovT, resolved: _Resolved) -> _CovT:
 
     Replaces each URL-string ``domain`` and range with the matching document from
     ``resolved`` (keyed by ``(coverage_index, key)``; ``key`` is ``None`` for the
-    domain). A slot absent from ``resolved`` -- one whose fetch failed under a
-    collecting strategy -- keeps its URL string. Shared by the sync and async
+    domain). A slot absent from ``resolved`` (one whose fetch failed under a
+    collecting strategy) keeps its URL string. Shared by the sync and async
     drivers. A range URL pointing to a `TiledNdArray` is inlined as that tiled
     array (its tiles are not assembled).
 
@@ -525,7 +525,7 @@ def _rebuild_coverage(index: int, coverage: Coverage, resolved: _Resolved) -> Co
 
     Looks each URL slot up in ``resolved`` by ``(index, key)`` (a ``None`` key for
     the domain); an inline slot, or one whose fetch failed (absent from
-    ``resolved``), is left as is -- so a failed reference stays its URL string.
+    ``resolved``), is left as is, so a failed reference stays its URL string.
     The coverage is returned unchanged (same instance) when nothing is inlined,
     mirroring `CoverageCollection.resolved_coverages`.
 

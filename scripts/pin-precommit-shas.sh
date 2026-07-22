@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 #
-# pin-precommit-shas.sh -- re-pin every .pre-commit-config.yaml hook `rev:` to
+# pin-precommit-shas.sh: re-pin every .pre-commit-config.yaml hook `rev:` to
 # the commit SHA of its release tag, keeping the tag in a trailing comment:
 #
 #     rev: v6.0.0                ->  rev: 3e8a87...2c8c # v6.0.0
 #     rev: 9257c6...09a9 # v1.2  ->  rev: 9257c6...09a9 # v1.2   (refreshed)
 #
 # WHY: a mutable tag can be silently repointed if a hook repo is compromised,
-# and pre-commit hooks run arbitrary code at commit time -- so we pin to an
+# and pre-commit hooks run arbitrary code at commit time, so we pin to an
 # immutable commit SHA. `prek autoupdate` / `pre-commit autoupdate` only ever
 # write tags, so run THIS afterward to restore the SHA pins:
 #
 #     prek autoupdate && scripts/pin-precommit-shas.sh
 #
-# IDEMPOTENT: the tag is the source of truth -- taken from the trailing comment,
-# or from `rev:` itself right after autoupdate -- and is re-resolved to its
+# IDEMPOTENT: the tag is the source of truth (taken from the trailing comment,
+# or from `rev:` itself right after autoupdate) and is re-resolved to its
 # current commit SHA on every run. `repo: local` / `repo: meta` blocks have no
 # upstream to resolve, so they are left untouched.
 #
@@ -41,7 +41,7 @@ readonly repo_line_re='^[[:space:]]*-[[:space:]]+repo:[[:space:]]+(.+)$'
 
 # "    rev: <ref> [# <tag>]"  ->  groups:
 #   1 = leading indentation        (re-emitted verbatim)
-#   2 = current ref                (a SHA or tag; ignored -- we re-resolve)
+#   2 = current ref                (a SHA or tag; ignored, as we re-resolve)
 #   4 = tag from the # comment      (optional; the source of truth if present)
 readonly rev_line_re='^([[:space:]]*)rev:[[:space:]]*([^[:space:]#]+)([[:space:]]*#[[:space:]]*(.+))?$'
 
@@ -103,7 +103,7 @@ repin_rev_line() {
 
 # Read <config> line by line and echo it back with every remote hook's `rev:`
 # re-pinned to its tag's commit SHA. A line-oriented rewrite (not a YAML parser)
-# preserves formatting, comments, and key order exactly -- only `rev:` lines
+# preserves formatting, comments, and key order exactly: only `rev:` lines
 # change. The input file is named right here, next to the loop that reads it.
 rewrite_config() {
   local config_file="$1" current_repo="" line url

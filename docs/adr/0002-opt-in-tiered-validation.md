@@ -105,9 +105,9 @@ mirror-image reason: a single struct's own rules are knowable from its own
 fields and always true, so they are cheap and unconditional by nature.
 
 **Drop the warning severity: report only errors (a pure conformance checker).**
-Rejected. The argument for it is that conformance is binary per finding --
+Rejected. The argument for it is that conformance is binary per finding:
 either the document violates the spec (an error) or it does not (nothing to
-report) -- so a "warning" implies a third, incoherent "reportable yet
+report), so a "warning" implies a third, incoherent "reportable yet
 compliant" state. The
 flaw is that the spec itself defines exactly that state: a SHOULD / RECOMMENDED
 requirement is, by RFC 2119, one a conformant document may violate. A document

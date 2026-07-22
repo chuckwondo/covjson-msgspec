@@ -109,7 +109,7 @@ class CovJSONResponse(Response):
         # accepting `**kwargs`: it documents the accepted surface, lets FastAPI
         # introspect `status_code` for its OpenAPI generation (an absent
         # `status_code` parameter makes that raise an UnboundLocalError), and
-        # deliberately omits `media_type` -- the class owns that (the class
+        # deliberately omits `media_type`: the class owns that (the class
         # attribute plus `profile`), so a caller cannot override it and end up
         # serving non-CoverageJSON.
         profiles = (profile,) if isinstance(profile, str) else tuple(profile)

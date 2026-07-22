@@ -212,7 +212,7 @@ search_path      = [ "src", "tests", "benchmarks" ]
 [tool.pyrefly.errors]
 # strict's `missing-override-decorator` wants `@override` on ~32 overriding
 # methods. On the 3.11 floor (ADR-0001) `typing.override` does not exist, so that
-# means `typing_extensions` -- a new core runtime dependency (neither msgspec nor
+# means `typing_extensions`: a new core runtime dependency (neither msgspec nor
 # langcodes pulls it) added only to satisfy an informational-only checker the
 # blocking mypy / basedpyright pair do not gate on. Not worth the dependency;
 # revisit at the 3.12 floor, where `typing.override` is free. See #71.

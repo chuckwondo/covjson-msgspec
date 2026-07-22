@@ -464,7 +464,7 @@ class AssembleReport(msgspec.Struct, frozen=True):
     every tile that loaded, with ``None`` at positions whose tile failed under a
     collecting strategy (a still-valid `NdArray`); ``failures`` reports those failed
     tiles. Under the default [`fail_fast`][covjson_msgspec.fail_fast] strategy
-    ``failures`` is empty -- the first failed tile raises a
+    ``failures`` is empty: the first failed tile raises a
     [`FetchError`][covjson_msgspec.FetchError] instead of being collected.
 
     Attributes
