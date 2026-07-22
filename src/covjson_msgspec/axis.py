@@ -17,7 +17,7 @@ Spec: [Axis objects](https://github.com/covjson/specification/blob/master/spec.m
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from typing import Any, Self
 
 from covjson_msgspec._base import CovJSONStruct
@@ -226,12 +226,12 @@ class Axis(CovJSONStruct, frozen=True):
             raise ValueError(msg)
 
     @property
-    def coordinate_values(self) -> tuple[AxisValue, ...]:
+    def coordinate_values(self) -> Sequence[AxisValue]:
         """The explicit coordinate values, materializing the regular form.
 
         Returns
         -------
-        tuple
+        sequence
             For a value-listing axis, the ``values``; for a regular axis, the
             ``num`` evenly spaced values from ``start`` to ``stop`` inclusive.
 

@@ -30,6 +30,7 @@ documented at [msgspec][msgspec-schema].
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Final, get_args
 
 import msgspec
@@ -54,7 +55,7 @@ _REF_TEMPLATE: Final = f"#/components/schemas/{_NAMESPACE}.{{name}}"
 _ROOT_TYPES: Final = get_args(CoverageJSON)
 
 
-def component_schemas() -> dict[str, dict[str, Any]]:
+def component_schemas() -> Mapping[str, Mapping[str, Any]]:
     """Build OpenAPI ``components.schemas`` entries for the CoverageJSON types.
 
     Generates a JSON Schema (draft 2020-12) component for every CoverageJSON type
@@ -65,7 +66,7 @@ def component_schemas() -> dict[str, dict[str, Any]]:
 
     Returns
     -------
-    dict of {str: dict}
+    mapping of {str: mapping}
         Component name (``CoverageJSON.<Type>``) to its JSON Schema. All internal
         ``$ref``s point at other keys in this same mapping.
 
@@ -101,7 +102,7 @@ def component_schemas() -> dict[str, dict[str, Any]]:
     return {f"{_NAMESPACE}.{name}": schema for name, schema in components.items()}
 
 
-def schema_ref(type: type[CoverageJSON]) -> dict[str, str]:
+def schema_ref(type: type[CoverageJSON]) -> Mapping[str, str]:
     """Return the OpenAPI ``$ref`` for a CoverageJSON root type's component.
 
     Points at the component `component_schemas` registers for ``type``, so a route
@@ -117,7 +118,7 @@ def schema_ref(type: type[CoverageJSON]) -> dict[str, str]:
 
     Returns
     -------
-    dict of {str: str}
+    mapping of {str: str}
         A single-entry ``{"$ref": ...}`` mapping.
 
     Examples

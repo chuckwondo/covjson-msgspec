@@ -16,7 +16,7 @@ previews are truncated), so a repr is cheap even for a big coverage.
 from __future__ import annotations
 
 import html
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 from covjson_msgspec._i18n import display
@@ -310,8 +310,8 @@ def parameter_html(parameter: Parameter) -> str:
 def _document(
     kind: str,
     id_: str | None,
-    summary: list[tuple[str, str]],
-    sections: list[str],
+    summary: Sequence[tuple[str, str]],
+    sections: Sequence[str],
 ) -> str:
     """Wrap a header, a summary key/value table, and sections into the card.
 
@@ -398,7 +398,7 @@ def _cell(value: str) -> str:
     return _escape(value) if value else _EMPTY
 
 
-def _kv_table(rows: list[tuple[str, str]]) -> str:
+def _kv_table(rows: Sequence[tuple[str, str]]) -> str:
     """Render raw key/value pairs as a two-column table, escaping on render.
 
     Parameters
@@ -425,7 +425,7 @@ def _kv_table(rows: list[tuple[str, str]]) -> str:
     return f"<table>{cells}</table>"
 
 
-def _grid_table(headers: list[str], rows: list[list[str]]) -> str:
+def _grid_table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
     """Render a multi-column table with a header row, escaping on render.
 
     Parameters
@@ -460,7 +460,9 @@ def _grid_table(headers: list[str], rows: list[list[str]]) -> str:
     return f"<table>{head}{body}</table>"
 
 
-def _table_section(title: str, headers: list[str], rows: list[list[str]]) -> str:
+def _table_section(
+    title: str, headers: Sequence[str], rows: Sequence[Sequence[str]]
+) -> str:
     """Render a collapsible section titled ``title (n)`` over a grid table.
 
     The count in the title is ``len(rows)``, so it cannot drift from the table's
@@ -577,8 +579,8 @@ def _range_section(ranges: Mapping[str, NdArray | TiledNdArray | str]) -> str:
     return _table_section("Ranges", ["Key", "Type", "Data type", "Shape"], rows)
 
 
-def _range_summary(value: NdArray | TiledNdArray | str) -> list[str]:
-    """Summarize one range as raw ``[type, data_type, shape]`` cells.
+def _range_summary(value: NdArray | TiledNdArray | str) -> Sequence[str]:
+    """Summarize one range as raw ``(type, data_type, shape)`` cells.
 
     Parameters
     ----------
@@ -587,7 +589,7 @@ def _range_summary(value: NdArray | TiledNdArray | str) -> list[str]:
 
     Returns
     -------
-    list of str
+    sequence of str
         Three raw-text cells (escaped on render by the table builder). A
         URL-string range is labeled ``reference``, carries its URL in the
         data-type cell, and has an empty shape cell.
@@ -596,14 +598,14 @@ def _range_summary(value: NdArray | TiledNdArray | str) -> list[str]:
     --------
     >>> from covjson_msgspec import NdArray
     >>> _range_summary(NdArray(data_type="float", values=(1.0,), shape=(1,)))
-    ['NdArray', 'float', '(1,)']
+    ('NdArray', 'float', '(1,)')
     >>> _range_summary("https://example.org/r.json")
-    ['reference', 'https://example.org/r.json', '']
+    ('reference', 'https://example.org/r.json', '')
     """
     if isinstance(value, str):
-        return ["reference", value, ""]
+        return ("reference", value, "")
 
-    return [type(value).__name__, value.data_type, _shape_text(value.shape)]
+    return (type(value).__name__, value.data_type, _shape_text(value.shape))
 
 
 def _axis_detail(axis: Axis) -> str:
@@ -640,7 +642,7 @@ def _axis_detail(axis: Axis) -> str:
     return _value_preview(axis.values)
 
 
-def _value_preview(values: tuple[object, ...]) -> str:
+def _value_preview(values: Sequence[object]) -> str:
     """Format a flat sequence, eliding the middle past ``_PREVIEW_LIMIT``.
 
     Parameters

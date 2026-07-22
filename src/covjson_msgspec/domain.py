@@ -529,6 +529,6 @@ def _referencing(
     return () if referencing is None else tuple(referencing)
 
 
-def _axes(**candidates: Axis | None) -> dict[str, Axis]:
+def _axes(**candidates: Axis | None) -> Mapping[str, Axis]:
     # Assemble a name->Axis mapping, dropping the unset (None) optional axes.
     return {name: axis for name, axis in candidates.items() if axis is not None}

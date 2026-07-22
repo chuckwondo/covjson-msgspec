@@ -27,7 +27,7 @@ from __future__ import annotations
 import itertools
 import math
 import re
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from typing import TYPE_CHECKING, Any, Final, Literal, TypeVar, cast
 
 import msgspec
@@ -632,8 +632,8 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         )
 
         def fetch_one(
-            item: tuple[str, tuple[int, ...]],
-        ) -> tuple[tuple[int, ...], NdArray]:
+            item: tuple[str, Sequence[int]],
+        ) -> tuple[Sequence[int], NdArray]:
             url, offsets = item
 
             return offsets, fetch_and_decode(fetch, url, _TILE_DECODER)
@@ -641,7 +641,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         payloads, failures = collect(layout, fetch_one, _tile_failure, strategy)
         array = _assemble_tiles(self.data_type, self.axis_names, self.shape, payloads)
 
-        return AssembleReport(array=array, failures=failures)
+        return AssembleReport(array=array, failures=tuple(failures))
 
     async def assemble_async(
         self,
@@ -732,8 +732,8 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         )
 
         async def fetch_one(
-            item: tuple[str, tuple[int, ...]],
-        ) -> tuple[tuple[int, ...], NdArray]:
+            item: tuple[str, Sequence[int]],
+        ) -> tuple[Sequence[int], NdArray]:
             url, offsets = item
 
             return offsets, await fetch_and_decode_async(fetch, url, _TILE_DECODER)
@@ -743,7 +743,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         )
         array = _assemble_tiles(self.data_type, self.axis_names, self.shape, payloads)
 
-        return AssembleReport(array=array, failures=failures)
+        return AssembleReport(array=array, failures=tuple(failures))
 
     def _select_tile_set(self, tileset: int | None) -> TileSet:
         """Choose the tile set to assemble: the explicit index, else the fewest tiles.
@@ -822,7 +822,7 @@ _TILE_DECODER: Final[msgspec.json.Decoder[NdArray]] = msgspec.json.Decoder(NdArr
 _TEMPLATE_VARIABLE_RE = re.compile(r"\{([^{}]+)\}")
 
 
-def tile_count(shape: tuple[int, ...], tile_shape: tuple[int | None, ...]) -> int:
+def tile_count(shape: Sequence[int], tile_shape: Sequence[int | None]) -> int:
     """Return how many tiles a tile set partitions an array into.
 
     The product over the subdivided axes of how many tiles each is divided into
@@ -861,7 +861,7 @@ def tile_count(shape: tuple[int, ...], tile_shape: tuple[int | None, ...]) -> in
     )
 
 
-def template_variables(template: str) -> tuple[str, ...]:
+def template_variables(template: str) -> Sequence[str]:
     """Return the variable names in a Level 1 RFC 6570 URL template, in order.
 
     Each ``{name}`` expression contributes its bare ``name``; a template with no
@@ -877,7 +877,7 @@ def template_variables(template: str) -> tuple[str, ...]:
 
     Returns
     -------
-    tuple of str
+    sequence of str
         The variable names, in order of appearance (duplicates kept).
 
     Examples
@@ -890,7 +890,7 @@ def template_variables(template: str) -> tuple[str, ...]:
     return tuple(_TEMPLATE_VARIABLE_RE.findall(template))
 
 
-def _expand_url_template(template: str, variables: dict[str, int]) -> str:
+def _expand_url_template(template: str, variables: Mapping[str, int]) -> str:
     """Expand a Level 1 RFC 6570 URL template with integer tile indices.
 
     Substitutes each ``{name}`` in ``template`` with ``variables[name]``.
@@ -937,10 +937,10 @@ def _expand_url_template(template: str, variables: dict[str, int]) -> str:
 
 
 def _tile_layout(
-    shape: tuple[int, ...],
-    axis_names: tuple[str, ...],
+    shape: Sequence[int],
+    axis_names: Sequence[str],
     tile_set: TileSet,
-) -> list[tuple[str, tuple[int, ...]]]:
+) -> Sequence[tuple[str, Sequence[int]]]:
     """Lay out every tile of a tile set as a ``(url, offsets)`` pair.
 
     Each partitioned axis is divided into ``ceil(size / tile_size)`` tiles indexed
@@ -961,7 +961,7 @@ def _tile_layout(
 
     Returns
     -------
-    list of tuple
+    sequence of (url, offsets)
         One ``(url, offsets)`` pair per tile, where ``offsets`` is the tile's
         start index along each axis.
 
@@ -969,7 +969,7 @@ def _tile_layout(
     --------
     >>> tile_set = TileSet(tile_shape=(1,), url_template="{x}.covjson")
     >>> _tile_layout((2,), ("x",), tile_set)
-    [('0.covjson', (0,)), ('1.covjson', (1,))]
+    (('0.covjson', (0,)), ('1.covjson', (1,)))
     """
     per_axis: list[list[tuple[int, int | None]]] = []
 
@@ -991,14 +991,14 @@ def _tile_layout(
         }
         layout.append((_expand_url_template(tile_set.url_template, variables), offsets))
 
-    return layout
+    return tuple(layout)
 
 
 def _assemble_tiles(
     data_type: Literal["float", "integer", "string"],
-    axis_names: tuple[str, ...],
-    shape: tuple[int, ...],
-    tiles: list[tuple[tuple[int, ...], NdArray]],
+    axis_names: Sequence[str],
+    shape: Sequence[int],
+    tiles: Collection[tuple[Sequence[int], NdArray]],
 ) -> NdArray:
     """Place fetched tiles into one full-shape `NdArray`.
 
@@ -1048,13 +1048,13 @@ def _assemble_tiles(
     return NdArray(
         data_type=data_type,
         values=tuple(values),
-        shape=shape,
-        axis_names=axis_names,
+        shape=tuple(shape),
+        axis_names=tuple(axis_names),
     )
 
 
 def _tile_failure(
-    item: tuple[str, tuple[int, ...]], exc: Exception, kind: FailureKind
+    item: tuple[str, Sequence[int]], exc: Exception, kind: FailureKind
 ) -> TileFailure:
     """Build a `TileFailure` for a tile that failed to fetch or decode.
 
@@ -1086,4 +1086,4 @@ def _tile_failure(
     """
     url, offsets = item
 
-    return TileFailure(url=url, offsets=offsets, kind=kind, message=str(exc))
+    return TileFailure(url=url, offsets=tuple(offsets), kind=kind, message=str(exc))

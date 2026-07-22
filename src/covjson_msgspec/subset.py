@@ -22,7 +22,7 @@ URL reference, are not supported yet and raise.
 from __future__ import annotations
 
 import itertools
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal, NamedTuple, TypeVar
 
 import msgspec
@@ -246,7 +246,7 @@ class _AxisSelection(NamedTuple):
 
 def _merge_indexers(
     indexers: Mapping[str, _T] | None, indexers_kwargs: Mapping[str, _T]
-) -> dict[str, _T]:
+) -> Mapping[str, _T]:
     """Merge the positional mapping and keyword indexers into one dict.
 
     Mirrors xarray's twin-form indexer API: callers may pass a mapping, keyword
@@ -261,7 +261,7 @@ def _merge_indexers(
 
     Returns
     -------
-    dict
+    mapping
         The merged indexers.
 
     Raises
@@ -278,6 +278,9 @@ def _merge_indexers(
         ...
     ValueError: indexer for axis 'x' given both positionally and as a keyword
     """
+    # Merge by explicit loop, not {**indexers, **indexers_kwargs}: a name given
+    # both positionally and as a keyword is a conflict to reject, not a silent
+    # overwrite.
     merged: dict[str, _T] = dict(indexers) if indexers is not None else {}
 
     for name, indexer in indexers_kwargs.items():
@@ -653,7 +656,7 @@ def _label_to_indexer(
     return _exact_position(name, coords, label)
 
 
-def _exact_position(name: str, coords: tuple[AxisValue, ...], label: Label) -> int:
+def _exact_position(name: str, coords: Sequence[AxisValue], label: Label) -> int:
     """Return the position of an exact coordinate match, or raise `KeyError`.
 
     Parameters
@@ -694,7 +697,7 @@ def _exact_position(name: str, coords: tuple[AxisValue, ...], label: Label) -> i
         raise KeyError(msg) from None
 
 
-def _nearest_position(name: str, coords: tuple[AxisValue, ...], label: Label) -> int:
+def _nearest_position(name: str, coords: Sequence[AxisValue], label: Label) -> int:
     """Return the position of the coordinate closest to ``label`` (numeric axes).
 
     Parameters
@@ -727,7 +730,7 @@ def _nearest_position(name: str, coords: tuple[AxisValue, ...], label: Label) ->
     return min(range(len(numbers)), key=lambda i: abs(numbers[i] - target))
 
 
-def _label_slice(name: str, coords: tuple[AxisValue, ...], label: slice) -> slice:
+def _label_slice(name: str, coords: Sequence[AxisValue], label: slice) -> slice:
     """Map an inclusive label slice to the position slice it spans.
 
     The coordinates falling within the slice's ``[start, stop]`` bounds (either
@@ -812,7 +815,7 @@ def _within(value: AxisValue, start: Label | None, stop: Label | None) -> bool:
     return (start is None or start <= point) and (stop is None or point <= stop)
 
 
-def _numeric_coordinates(name: str, coords: tuple[AxisValue, ...]) -> list[float]:
+def _numeric_coordinates(name: str, coords: Sequence[AxisValue]) -> Sequence[float]:
     """Return ``coords`` as floats, or raise if any coordinate is non-numeric.
 
     Parameters
@@ -824,7 +827,7 @@ def _numeric_coordinates(name: str, coords: tuple[AxisValue, ...]) -> list[float
 
     Returns
     -------
-    list of float
+    sequence of float
         The coordinates as floats.
 
     Raises
@@ -835,7 +838,7 @@ def _numeric_coordinates(name: str, coords: tuple[AxisValue, ...]) -> list[float
     Examples
     --------
     >>> _numeric_coordinates("x", (0, 10, 20))
-    [0.0, 10.0, 20.0]
+    (0.0, 10.0, 20.0)
     >>> _numeric_coordinates("t", ("2020-01-01",))
     Traceback (most recent call last):
         ...
@@ -850,7 +853,7 @@ def _numeric_coordinates(name: str, coords: tuple[AxisValue, ...]) -> list[float
 
         numbers.append(float(coord))
 
-    return numbers
+    return tuple(numbers)
 
 
 def _as_number(name: str, label: Label) -> float:

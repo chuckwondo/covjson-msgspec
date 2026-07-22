@@ -39,7 +39,7 @@ from __future__ import annotations
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportMissingTypeStubs=false
 import math
 import re
-from collections.abc import Mapping
+from collections.abc import Mapping, MutableMapping, Sequence, Set
 from datetime import UTC, datetime
 from itertools import pairwise
 from typing import TYPE_CHECKING, Any, Literal, NoReturn
@@ -93,7 +93,7 @@ _GEOGRAPHIC_ROLES = ("longitude", "latitude", "height")
 # A coordinate/data-variable spec in xarray's ``(dims, data, attrs)`` form: the
 # dimension name(s) (a scalar coord uses the empty tuple), the array/scalar data
 # (heterogeneous, hence Any), and the CF attributes.
-_Variable = tuple[str | tuple[str, ...], Any, dict[str, Any]]
+_Variable = tuple[str | tuple[str, ...], Any, MutableMapping[str, Any]]
 
 
 def to_xarray(coverage: Coverage) -> xr.Dataset:
@@ -573,7 +573,7 @@ def _require_datatree() -> None:
 
 def _build_variables(
     coverage: Coverage, domain: Domain
-) -> tuple[dict[str, _Variable], dict[str, _Variable]]:
+) -> tuple[Mapping[str, _Variable], Mapping[str, _Variable]]:
     """Build the xarray coordinate and data variables for a coverage.
 
     Turns the domain's axes into coordinate variables (`_build_coords`, annotated
@@ -614,7 +614,7 @@ def _build_variables(
     return coords, data_vars
 
 
-def _geographic_roles(domain: Domain) -> dict[str, str]:
+def _geographic_roles(domain: Domain) -> Mapping[str, str]:
     """Map a geographic system's coordinates to longitude / latitude / height.
 
     A [`GeographicCRS`][covjson_msgspec.GeographicCRS] lists its coordinates in the
@@ -629,7 +629,7 @@ def _geographic_roles(domain: Domain) -> dict[str, str]:
 
     Returns
     -------
-    dict
+    mapping
         Each geographic coordinate identifier mapped to ``"longitude"`` /
         ``"latitude"`` / ``"height"``.
     """
@@ -649,9 +649,9 @@ def _geographic_roles(domain: Domain) -> dict[str, str]:
 
 def _build_coords(
     domain: Domain,
-    systems: dict[str, ResolvedReferenceSystem],
-    geo_roles: dict[str, str],
-) -> dict[str, _Variable]:
+    systems: Mapping[str, ResolvedReferenceSystem],
+    geo_roles: Mapping[str, str],
+) -> MutableMapping[str, _Variable]:
     """Turn a domain's axes into xarray coordinate variables.
 
     Each primitive axis becomes one coordinate (single-valued axes collapse to a
@@ -672,7 +672,7 @@ def _build_coords(
 
     Returns
     -------
-    dict
+    mutable mapping
         Coordinate name mapped to an xarray ``(dims, data, attrs)`` `_Variable`.
 
     Raises
@@ -710,9 +710,9 @@ def _build_coords(
 def _coordinate(
     coordinate: str,
     dim: str,
-    column: list[Any],
-    systems: dict[str, ResolvedReferenceSystem],
-    geo_roles: dict[str, str],
+    column: Sequence[Any],
+    systems: Mapping[str, ResolvedReferenceSystem],
+    geo_roles: Mapping[str, str],
     *,
     scalar: bool,
 ) -> _Variable:
@@ -772,7 +772,7 @@ def _coordinate(
     return ((), data[0], attrs) if scalar else (dim, data, attrs)
 
 
-def _parse_times(column: list[Any], calendar: str) -> npt.NDArray[Any]:
+def _parse_times(column: Sequence[Any], calendar: str) -> npt.NDArray[Any]:
     """Parse ISO time strings into a numpy time array, picking datetime64 or cftime.
 
     A standard-calendar column is parsed to ``datetime64[ns]`` when it fits
@@ -977,7 +977,7 @@ def _to_cftime(iso: str, calendar: str) -> Any:
     )
 
 
-def _vertical_attrs(system: VerticalCRS) -> dict[str, str]:
+def _vertical_attrs(system: VerticalCRS) -> Mapping[str, str]:
     """Infer CF vertical attributes from a [`VerticalCRS`][covjson_msgspec.VerticalCRS].
 
     CoverageJSON does not say whether a vertical axis points up or down, so this
@@ -993,7 +993,7 @@ def _vertical_attrs(system: VerticalCRS) -> dict[str, str]:
 
     Returns
     -------
-    dict
+    mapping
         CF ``standard_name`` / ``positive`` attributes, or empty when undetermined.
 
     Examples
@@ -1096,7 +1096,7 @@ def _data_variable(
     return (array.axis_names, array.to_numpy(), _variable_attrs(parameter))
 
 
-def _variable_attrs(parameter: Parameter | None) -> dict[str, Any]:
+def _variable_attrs(parameter: Parameter | None) -> MutableMapping[str, Any]:
     """Build the CF attributes for a data variable from its parameter.
 
     Maps the parameter's metadata to CF: ``long_name`` from the parameter /
@@ -1112,7 +1112,7 @@ def _variable_attrs(parameter: Parameter | None) -> dict[str, Any]:
 
     Returns
     -------
-    dict
+    mutable mapping
         The CF attributes (possibly empty).
     """
     if parameter is None:
@@ -1202,7 +1202,7 @@ def _unit_symbol(unit: Unit) -> str | None:
 def _flags(
     categories: tuple[Category, ...],
     encoding: CategoryEncoding,
-) -> tuple[tuple[int, ...], str]:
+) -> tuple[Sequence[int], str]:
     """Build CF ``flag_values`` / ``flag_meanings`` from categories and their codes.
 
     Pairs each category (that has an encoded code) with its label: the codes
@@ -1280,7 +1280,7 @@ def _detect_roles(
     y: str | None,
     z: str | None,
     t: str | None,
-) -> dict[str, str | None]:
+) -> Mapping[str, str | None]:
     """Decide which dataset coordinate fills each x / y / z / t role.
 
     Explicit overrides (``x`` / ``y`` / ``z`` / ``t`` arguments) win; the rest are
@@ -1297,7 +1297,7 @@ def _detect_roles(
 
     Returns
     -------
-    dict
+    mapping
         Each role mapped to a coordinate name, or ``None`` when unfilled.
     """
     # Explicit overrides win; remaining roles are filled from CF attributes and
@@ -1397,8 +1397,8 @@ def _is_time(coord: xr.DataArray) -> bool:
 
 def _detect_composite(
     dataset: xr.Dataset,
-    roles: dict[str, str | None],
-) -> tuple[str | None, set[str]]:
+    roles: Mapping[str, str | None],
+) -> tuple[str | None, Set[str]]:
     """Detect a composite (trajectory-style) axis: roles sharing one dimension.
 
     A composite axis appears as two or more role coordinates that are
@@ -1417,7 +1417,7 @@ def _detect_composite(
     -------
     tuple
         ``(dimension, roles)`` for the first such shared dimension, or
-        ``(None, set())`` when there is no composite axis.
+        ``(None, frozenset())`` when there is no composite axis.
     """
     # A composite (e.g. trajectory) axis shows up as several role coordinates
     # that are non-dimension coordinates sharing one dimension.
@@ -1433,18 +1433,22 @@ def _detect_composite(
             groups.setdefault(str(coord.dims[0]), set()).add(role)
 
     return next(
-        ((dim, grouped) for dim, grouped in groups.items() if len(grouped) >= 2),
-        (None, set()),
+        (
+            (dim, frozenset(grouped))
+            for dim, grouped in groups.items()
+            if len(grouped) >= 2
+        ),
+        (None, frozenset()),
     )
 
 
 def _build_axes(
     dataset: xr.Dataset,
-    roles: dict[str, str | None],
+    roles: Mapping[str, str | None],
     composite_dim: str | None,
-    composite_roles: set[str],
+    composite_roles: Set[str],
     compact_regular: bool,
-) -> tuple[dict[str, Axis], dict[str, str]]:
+) -> tuple[Mapping[str, Axis], Mapping[str, str]]:
     """Build CoverageJSON axes from a dataset's coordinates and dimensions.
 
     The composite roles (if any) are transposed into a single ``tuple`` axis along
@@ -1478,7 +1482,7 @@ def _build_axes(
 
     if composite_dim is not None:
         order = tuple(role for role in ("t", "x", "y", "z") if role in composite_roles)
-        columns = [_coord_to_list(dataset[roles[role]]) for role in order]
+        columns = [_coord_values(dataset[roles[role]]) for role in order]
         axes["composite"] = Axis(
             data_type="tuple",
             coordinates=order,
@@ -1551,7 +1555,7 @@ def _axis_from_coord(coord: xr.DataArray, compact_regular: bool) -> Axis:
     return Axis.listed(tuple(values))
 
 
-def _is_regular(values: list[Any]) -> bool:
+def _is_regular(values: Sequence[Any]) -> bool:
     """Whether numeric ``values`` are evenly spaced (a constant non-zero step).
 
     Decides if a coordinate can use the compact regular axis form. Needs at least
@@ -1597,11 +1601,11 @@ def _is_regular(values: list[Any]) -> bool:
     )
 
 
-def _coord_to_list(coord: xr.DataArray) -> list[Any]:
-    """Read a coordinate's values into a plain list (time as ISO strings).
+def _coord_values(coord: xr.DataArray) -> Sequence[Any]:
+    """Read a coordinate's values into a sequence (time as ISO strings).
 
     A time coordinate is rendered as ISO strings (`_time_to_iso`); any other
-    coordinate is converted straight to a Python list. Used to gather a composite
+    coordinate is converted straight to a tuple. Used to gather a composite
     axis's component columns in `_build_axes`.
 
     Parameters
@@ -1611,7 +1615,7 @@ def _coord_to_list(coord: xr.DataArray) -> list[Any]:
 
     Returns
     -------
-    list
+    sequence
         The coordinate's values (ISO strings for time, native Python values
         otherwise).
     """
@@ -1620,7 +1624,7 @@ def _coord_to_list(coord: xr.DataArray) -> list[Any]:
 
     import numpy as np
 
-    return list(np.atleast_1d(coord.values).tolist())
+    return tuple(np.atleast_1d(coord.values).tolist())
 
 
 def _scalar(coord: xr.DataArray) -> Any:
@@ -1640,7 +1644,7 @@ def _scalar(coord: xr.DataArray) -> Any:
     return _time_to_iso(coord)[0] if _is_time(coord) else coord.values.item()
 
 
-def _time_to_iso(coord: xr.DataArray) -> list[str]:
+def _time_to_iso(coord: xr.DataArray) -> Sequence[str]:
     """Render a time coordinate's values as ISO 8601 strings for a CoverageJSON axis.
 
     A ``datetime64`` value is narrowed to microsecond resolution (datetime's
@@ -1655,7 +1659,7 @@ def _time_to_iso(coord: xr.DataArray) -> list[str]:
 
     Returns
     -------
-    list of str
+    sequence of str
         One ISO 8601 string per coordinate value.
 
     Raises
@@ -1685,7 +1689,7 @@ def _time_to_iso(coord: xr.DataArray) -> list[str]:
         else:
             result.append(str(value))
 
-    return result
+    return tuple(result)
 
 
 def _raise_missing_time(coord: xr.DataArray) -> NoReturn:
@@ -1743,7 +1747,7 @@ def _calendar(coord: xr.DataArray) -> str:
 
 def _build_referencing(
     dataset: xr.Dataset,
-    roles: dict[str, str | None],
+    roles: Mapping[str, str | None],
 ) -> tuple[ReferenceSystemConnection, ...]:
     """Rebuild CoverageJSON referencing from a dataset's roles and grid mapping.
 
@@ -1808,7 +1812,7 @@ def _build_referencing(
 
 def _infer_domain_type(
     dataset: xr.Dataset,
-    roles: dict[str, str | None],
+    roles: Mapping[str, str | None],
     composite_dim: str | None,
 ) -> str | None:
     """Infer a CoverageJSON domain type from which roles are present and gridded.
@@ -1931,8 +1935,8 @@ def _parameter_from_variable(name: str, variable: xr.DataArray) -> Parameter | N
 
 def _build_ranges(
     dataset: xr.Dataset,
-    dim_to_key: dict[str, str],
-) -> tuple[dict[str, Range], dict[str, Parameter]]:
+    dim_to_key: Mapping[str, str],
+) -> tuple[Mapping[str, Range], Mapping[str, Parameter]]:
     """Build a coverage's ranges and parameters from a dataset's data variables.
 
     Each data variable becomes an [`NdArray`][covjson_msgspec.NdArray] range, its dims

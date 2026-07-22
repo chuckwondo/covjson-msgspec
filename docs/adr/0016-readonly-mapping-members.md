@@ -84,15 +84,79 @@ promise that a value read from the model cannot be corrupted by a caller.
   does not change hashability. A `frozendict` runtime (#117) would.
 - The change is annotation-only, so it carries no wire, data, or performance
   effect; it is a two-way door, reversible by relaxing the annotation.
-- **Return types are not blanket-swept.** A return is narrowed to read-only only
-  when nothing that consumes it requires a concrete type. Returns that feed
-  external plumbing stay concrete `dict` / `list`: the FastAPI `openapi()` hook
-  merges its result in place, `xarray`'s `attrs=`, GeoJSON feature dicts. But a
-  builder that returns a read-only *domain* type is consistent and retained. For
-  example, `i18n()` returns `I18n` (a `Mapping`), matching how the value is typed
-  in every field that stores it, so a just-built i18n object is immutable end to
-  end.
+- **Return types are not blanket-swept** (sharpened by the #119 amendment below,
+  which does sweep returns to their read-only interface). A return is narrowed to
+  read-only only when nothing that consumes it requires a concrete type. Returns
+  that feed external plumbing stay concrete `dict` / `list`: the FastAPI
+  `openapi()` hook merges its result in place, `xarray`'s `attrs=`, GeoJSON feature
+  dicts. But a builder that returns a read-only *domain* type is consistent and
+  retained. For example, `i18n()` returns `I18n` (a `Mapping`), matching how the
+  value is typed in every field that stores it, so a just-built i18n object is
+  immutable end to end.
 - Revisit gate: adopt a `frozendict` runtime (#117) once the Python floor reaches
   3.15 and msgspec can decode it.
+
+## Amendment (#119): the shape-based rule for parameters and returns
+
+[#119](../../issues/119) extended "immutable by default" past the members this ADR
+covers, to *parameters* and *return types*, and in doing so sharpened the
+"return types are not blanket-swept" note above. The governing distinction is
+**shape, not mutability**:
+
+- A **variable-length homogeneous** run of values (whatever its concrete type:
+  `list`, `tuple[X, ...]`, `set`) is annotated as the **read-only interface** in
+  both parameter and return position: `Sequence[X]`, `Set[X]`, `Mapping[K, V]`. The
+  runtime object is the strongest immutable available, so this ADR's per-kind
+  honesty carries over: a `Sequence` return hands back a `tuple` and a `Set` return
+  a `frozenset` (both genuinely immutable), while a `Mapping` return hands back a
+  `dict` (annotation-only, until the #117 `frozendict`).
+- A **fixed-arity product** (a fixed count of positional, possibly heterogeneous
+  slots: `tuple[str, NdArray]`, the `(url, offsets)` tile pair,
+  `tuple[int, int, int | None]`) stays a concrete `tuple`. It is its own identity,
+  not a sequence.
+- **Struct members** stay concrete `tuple[X, ...]` / `frozenset` even when
+  variable-length: the one identity exception, since a member must be hashable and
+  truly immutable for the frozen model (this ADR's Decision).
+
+Parameters and returns get the *same* treatment here, though this ADR left sequence
+members `tuple` and mapping members `Mapping`, for two reasons. A `Sequence` return
+cannot feed a `tuple` parameter (a concrete `tuple` satisfies any interface
+parameter, but not the reverse), so params and returns over the same data must
+agree on the interface. And decoupling has more value on a return: widening a
+parameter `tuple` to `Sequence` later is non-breaking, whereas changing a return's
+concrete type breaks callers, so the interface is right for returns even where
+`tuple` is the only immutable sequence and its "swap the container later"
+flexibility is theoretical (for `dict` to `Mapping` it is not theoretical: that is
+exactly what will make the #117 `frozendict` swap non-breaking).
+
+This creates boundary conversions, all at construction sites: where a widened
+`Sequence` value is stored into a `tuple` member, the constructor converts, e.g.
+`NdArray(shape=tuple(shape), ...)` and `TileFailure(offsets=tuple(offsets))`.
+
+Concrete types survive only for their true cause:
+
+- A mapping an *internal* consumer **mutates** is the mutable *interface*
+  `MutableMapping`, not a concrete `dict`: `_build_coords` returns one that
+  `_build_variables` extends with a `crs` coordinate, and a `_Variable`'s attrs
+  slot is `MutableMapping` because `grid_mapping` is `setdefault`-ed into it.
+- A concrete `dict` survives in exactly one spot, and only because a
+  **third-party framework** owns it: the nested `openapi()` hook in
+  `add_openapi_schemas`, which FastAPI requires to return a `dict` and which we
+  mutate in place (`setdefault` / `update` on FastAPI's own schema object). It is
+  not on the public surface. Every other former dict return -- `to_geojson`,
+  `component_schemas`, `schema_ref` -- returns a read-only `Mapping`: nothing
+  consuming them needs a concrete `dict` (`dict.update` accepts any `Mapping`;
+  `json.dumps` inspects the runtime object, still a `dict`), and the library's
+  stance is to present read-only interfaces rather than invite mutation. A caller
+  who wants a mutable structure builds one from the returned values.
+- `validate()`'s return is *not* swept here. Its outcome model (a materialized
+  report, a lazy stream, or a `ValidationReport` value) is a one-way public-API
+  decision spun off to [#157](../../issues/157); `validation.py` is left as it
+  stands.
+
+The three-way rule, then: **parameters and returns take the read-only interface for
+variable-length data (concrete `tuple` for fixed-arity products); struct members
+stay concrete immutable.** This supersedes the "return types are not blanket-swept"
+note above, which predated the shape framing.
 
 [pep-814]: https://peps.python.org/pep-0814/
