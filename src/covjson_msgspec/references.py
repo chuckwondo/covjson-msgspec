@@ -31,7 +31,7 @@ Spec: [ranges object][spec-ranges] (a range may be a URL string) and
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping, Sequence
-from typing import Final, Generic, NamedTuple, TypeVar, cast
+from typing import Final, Generic, NamedTuple, TypeVar, assert_never, cast
 
 import msgspec
 
@@ -401,6 +401,8 @@ def _coverages(obj: Coverage | CoverageCollection) -> Sequence[Coverage]:
             return (obj,)
         case CoverageCollection():
             return obj.coverages
+        case _:  # pragma: no cover - unreachable exhaustiveness guard
+            assert_never(obj)
 
 
 def _url_slots(coverage: Coverage) -> Iterator[tuple[str | None, str]]:
@@ -514,6 +516,8 @@ def _rebuild(obj: _CovT, resolved: _Resolved) -> _CovT:
                 for index, coverage in enumerate(obj.coverages)
             )
             return cast("_CovT", msgspec.structs.replace(obj, coverages=coverages))
+        case _:  # pragma: no cover - unreachable exhaustiveness guard
+            assert_never(obj)
 
 
 def _rebuild_coverage(index: int, coverage: Coverage, resolved: _Resolved) -> Coverage:

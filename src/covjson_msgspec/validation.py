@@ -1154,7 +1154,7 @@ def _issues(
                 yield from _check_value_data_types(obj, ())
         case TiledNdArray():
             yield from _validate_tiled_ndarray(obj, ())
-        case _:
+        case _:  # pragma: no cover - unreachable exhaustiveness guard
             # Exhaustiveness: a new CoverageJSON member would fail type checking
             # here until it is handled above.
             assert_never(obj)
@@ -3256,6 +3256,12 @@ def _range_axis_issue(
     >>> issue = _range_axis_issue(arr, dom, 0, "x", ("ranges", "v"))
     >>> issue.code == "coverage.range-shape-mismatch"
     True
+
+    An ``index`` past the range's ``shape`` (a rank mismatch reported elsewhere)
+    carries no shape check of its own:
+
+    >>> _range_axis_issue(arr, dom, 1, "x", ("ranges", "v")) is None
+    True
     """
     if name not in domain.axes:
         return CoverageRangeAxisNotInDomain(
@@ -3343,6 +3349,24 @@ def _check_categorical_codes(
     ------
     Issue
         One ``range.invalid-category-code`` per undefined code, in value order.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Category, NdArray, ObservedProperty, Parameter
+    >>> arr = NdArray(
+    ...     data_type="integer", values=(1,), shape=(1,), axis_names=("x",)
+    ... )
+    >>> prop = ObservedProperty(
+    ...     label={"en": "Land cover"},
+    ...     categories=(Category(id="1", label={"en": "Water"}),),
+    ... )
+
+    A categorical parameter that carries no ``category_encoding`` defines no code
+    set to check against, so nothing is yielded:
+
+    >>> param = Parameter(observed_property=prop)
+    >>> list(_check_categorical_codes(arr, param, ("ranges", "lc")))
+    []
     """
     if param is None or param.observed_property.categories is None:
         return

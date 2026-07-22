@@ -1,7 +1,7 @@
 """Behavioral tests for document-level validation."""
 
 from collections.abc import Sequence
-from typing import Literal, assert_never
+from typing import Literal, assert_never, get_args
 
 import msgspec
 import pytest
@@ -272,6 +272,25 @@ def test_range_axis_not_in_domain() -> None:
     issues = validate(cov)
 
     assert any(i.code == "coverage.range-axis-not-in-domain" for i in issues)
+
+
+def test_url_domain_skips_range_vs_domain_checks() -> None:
+    # An unfetched URL domain is spec-valid but exposes no inline axes, so the
+    # range-vs-domain checks are skipped: a range naming an axis no domain provides
+    # (and whose shape could match none) draws neither finding the inline-domain
+    # cases above raise.
+    cov = Coverage(
+        domain="https://example.org/domain.json",
+        ranges={
+            "t": NdArray(
+                data_type="float", values=(1.0, 2.0), shape=(2,), axis_names=("q",)
+            )
+        },
+    )
+    codes = {i.code for i in validate(cov)}
+
+    assert "coverage.range-axis-not-in-domain" not in codes
+    assert "coverage.range-shape-mismatch" not in codes
 
 
 def test_range_without_parameter_is_an_error() -> None:
@@ -576,6 +595,29 @@ def test_collection_member_conflict_declared_on_inline_domain() -> None:
     assert issue.domain_type == "Grid"
     assert issue.collection_domain_type == "Point"
     assert issue.severity is Severity.ERROR
+
+
+def test_collection_member_matching_inline_domain_type_is_not_flagged() -> None:
+    # The agreeing twin of the conflict case above: the member omits its
+    # coverage-level domainType but its inline domain declares "Point", which
+    # matches the "Point" collection. Matching the collection is no conflict, and
+    # with no coverage-level member to omit, the SHOULD-omit warning does not apply
+    # either, so the member draws no domain-type finding at all.
+    member = Coverage(
+        domain=Domain(
+            axes={"x": Axis.listed((1.0,)), "y": Axis.listed((2.0,))},
+            domain_type="Point",
+            referencing=_REF,
+        ),
+        ranges={},
+    )
+    collection = CoverageCollection(
+        coverages=(member,), domain_type="Point", parameters={}
+    )
+    codes = {i.code for i in validate(collection)}
+
+    assert "coverage.domain-type-conflict" not in codes
+    assert "coverage.domain-type-not-omitted" not in codes
 
 
 def test_collection_member_omitting_domain_type_is_not_flagged() -> None:
@@ -1074,6 +1116,72 @@ def test_every_finding_kind_is_exhaustively_matchable() -> None:
     domain = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
 
     assert {_describe(i) for i in validate(domain)} == {"domain"}
+
+
+# One instance of every `Issue` variant, for the `__str__` render tests below.
+# Payloads are distinctive but arbitrary; the `at` pointer is the whole-document
+# root throughout. Kept complete by `test_issue_samples_cover_every_variant`.
+_ISSUE_SAMPLES: tuple[Issue, ...] = (
+    DomainMissingAxis(at="/", domain_type="Grid", axis="y"),
+    DomainAxisNotSingle(at="/", domain_type="Point", axis="x"),
+    DomainCompositeDataType(at="/", domain_type="Trajectory", expected="tuple"),
+    DomainCompositeCoordinates(
+        at="/",
+        domain_type="Trajectory",
+        expected=(("t", "x", "y"), ("t", "x", "y", "z")),
+        actual=("t", "x"),
+    ),
+    DomainExtraAxisNotSingle(at="/", domain_type="Grid", axis="z"),
+    DomainMissingReferencing(at="/"),
+    DomainMissingDomainType(at="/"),
+    AxisNotMonotonic(at="/", axis="x"),
+    AxisCompositeValueShape(at="/", axis="composite", data_type="tuple"),
+    AxisCompositeArity(at="/", axis="composite", expected=3, got=2),
+    AxisPolygonPositionArity(at="/", axis="composite", expected=2, got=3),
+    AxisPolygonRingTooShort(at="/", axis="composite", got=3),
+    AxisPolygonRingNotClosed(at="/", axis="composite"),
+    AxisBoundsLength(at="/", axis="x", expected=4, got=3),
+    AxisCoordinatesNotOmitted(at="/", axis="x"),
+    TemporalMissingCalendar(at="/"),
+    IdentifierMissingTargetConcept(at="/"),
+    NdArrayShapeRank(at="/"),
+    NdArrayValueCount(at="/", expected=6, shape=(2, 3), got=5),
+    TiledNdArrayShapeRank(at="/"),
+    TiledNdArrayTileShapeTooLarge(at="/", tile_dim=8, dim=4),
+    TiledNdArrayTileShapeNotPositive(at="/", tile_dim=0),
+    TiledNdArrayUrlTemplateMissingVariable(at="/", axis="x"),
+    TiledNdArrayUrlTemplateUnknownVariable(at="/", variable="q"),
+    CoverageMissingParameters(at="/"),
+    CoverageRangeWithoutParameter(at="/", key="temperature"),
+    CoverageRangeAxisNotInDomain(at="/", axis="q"),
+    CoverageRangeShapeMismatch(at="/", axis="x", range_size=3, domain_size=2),
+    CoverageDomainTypeNotOmitted(at="/", domain_type="Point"),
+    CoverageDomainTypeConflict(
+        at="/", domain_type="Grid", collection_domain_type="Point"
+    ),
+    RangeValueTypeMismatch(at="/", value="NaN", data_type="integer"),
+    RangeInvalidCategoryCode(at="/", value=7),
+    TemporalLexicalForm(at="/", value="yesterday"),
+    ParameterGroupUnknownMember(at="/", member="humidity"),
+    I18nInvalidLanguageTag(at="/", lang="english"),
+    I18nEmpty(at="/"),
+)
+
+
+@pytest.mark.parametrize("issue", _ISSUE_SAMPLES, ids=lambda issue: issue.code)
+def test_every_issue_variant_renders_a_message(issue: Issue) -> None:
+    # Each variant's `__str__` builds a human-readable message from its payload.
+    # basedpyright-strict already rejects a `__str__` that reads a field the variant
+    # lacks, so this guards the runtime side the checker cannot see (a bad format
+    # spec, or a join over the wrong shape) by rendering one sample of every kind.
+    assert str(issue)
+
+
+def test_issue_samples_cover_every_variant() -> None:
+    # The render test is exhaustive only with one sample per variant, so tie the
+    # sample set to the `Issue` union: a new finding kind fails here until a sample
+    # is added (mirroring how `_describe`'s `assert_never` forces a new match arm).
+    assert {type(i) for i in _ISSUE_SAMPLES} == set(get_args(Issue))
 
 
 def test_axis_monotonic_check_is_opt_in() -> None:

@@ -354,6 +354,11 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
         (1.0, None)
         >>> arr.shape
         (1, 2)
+
+        A non-numeric dtype infers the ``"string"`` data type:
+
+        >>> NdArray.from_numpy(np.array(["a", "b"]), ("x",)).data_type
+        'string'
         """
         try:
             import numpy as np
