@@ -97,16 +97,19 @@ def test_resolved_coverages_inherits_shared_fields() -> None:
     temp = Parameter.continuous(
         ObservedProperty(label=i18n("Air temperature")), Unit(symbol="K")
     )
+    group = ParameterGroup(members=("t",), label=i18n("Temperature group"))
     collection = CoverageCollection(
         coverages=(_point_coverage(),),
         domain_type="Point",
         parameters={"t": temp},
+        parameter_groups=(group,),
     )
     (resolved,) = collection.resolved_coverages()
 
     assert resolved.domain_type == "Point"
     assert resolved.parameters is not UNSET
     assert resolved.parameters["t"].unit == Unit(symbol="K")
+    assert resolved.parameter_groups == (group,)
 
 
 def test_resolved_coverages_keeps_member_overrides() -> None:

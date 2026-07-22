@@ -412,6 +412,18 @@ def test_attrs_carry_domain_type_and_id() -> None:
     assert df.attrs["id"] == "urn:cov:1"
 
 
+def test_attrs_omit_domain_type_when_absent() -> None:
+    # A domain that declares no domainType leaves the attribute off the frame
+    # rather than storing None.
+    cov = Coverage(
+        domain=Domain(axes={"x": Axis.listed((1.0,)), "y": Axis.listed((2.0,))}),
+        ranges={"t": NdArray(data_type="float", values=(280.0,))},
+    )
+    df = to_pandas(cov)
+
+    assert "domain_type" not in df.attrs
+
+
 def test_url_domain_is_rejected() -> None:
     cov = Coverage(domain="http://example/domain.json", ranges={})
 
@@ -426,6 +438,22 @@ def test_polygon_domain_routes_to_geopandas() -> None:
     )
 
     with pytest.raises(ValueError, match="geopandas"):
+        to_pandas(cov)
+
+
+def test_polygon_axis_without_polygon_domain_type_is_rejected() -> None:
+    # The geopandas routing keys on domainType, so a polygon-data-type axis in a
+    # domain whose domainType is not a polygon type slips past it and reaches the
+    # layout. The layout's own guard rejects the vector geometry the tabular bridge
+    # has no place for, rather than mislaying it.
+    ring = ((0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 0.0))
+    axis = Axis(values=((ring,),), data_type="polygon", coordinates=("x", "y"))
+    cov = Coverage(
+        domain=Domain(axes={"composite": axis}, domain_type="Grid"),
+        ranges={},
+    )
+
+    with pytest.raises(ValueError, match="polygon axes are not supported"):
         to_pandas(cov)
 
 

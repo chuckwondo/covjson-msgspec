@@ -37,6 +37,18 @@ def test_point_is_single_point_feature() -> None:
     assert gdf["v"].tolist() == [280.0]
 
 
+def test_attrs_omit_domain_type_when_absent() -> None:
+    # With no domainType to route on, to_geopandas falls back to point geometry,
+    # and the absent type is left off the frame's attrs rather than stored as None.
+    cov = Coverage(
+        domain=Domain(axes={"x": Axis.listed((1.0,)), "y": Axis.listed((2.0,))}),
+        ranges={"v": NdArray(data_type="float", values=(280.0,))},
+    )
+    gdf = to_geopandas(cov)
+
+    assert "domain_type" not in gdf.attrs
+
+
 def test_coverage_methods_delegate() -> None:
     cov = Coverage(
         domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
@@ -275,6 +287,21 @@ def test_polygon_is_single_polygon_feature() -> None:
     assert gdf["v"].tolist() == [9.0]
 
 
+def test_polygon_carries_z_into_a_column() -> None:
+    # A Polygon domain may carry a single-valued z axis; the polygon frame builder
+    # broadcasts it into a z column alongside the geometry.
+    cov = Coverage(
+        domain=Domain.polygon(
+            [(0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 0.0)],
+            z=Axis.listed((15.0,)),
+        ),
+        ranges={},
+    )
+    gdf = to_geopandas(cov)
+
+    assert gdf["z"].tolist() == [15.0]
+
+
 def test_polygon_keeps_holes() -> None:
     exterior = [(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 0.0)]
     hole = [(1.0, 1.0), (2.0, 1.0), (2.0, 2.0), (1.0, 1.0)]
@@ -410,6 +437,7 @@ def test_collection_concatenates_members_with_coverage_column() -> None:
             _point_member("a", 1.0, 2.0, 10.0),
             _point_member("b", 3.0, 4.0, 20.0),
         ),
+        domain_type="Point",
     )
     gdf = to_geopandas(collection)
 
@@ -419,6 +447,7 @@ def test_collection_concatenates_members_with_coverage_column() -> None:
     assert gdf["coverage"].tolist() == ["a", "b"]
     assert gdf["v"].tolist() == [10.0, 20.0]
     assert [(p.x, p.y) for p in map(_point, gdf.geometry)] == [(1.0, 2.0), (3.0, 4.0)]
+    assert gdf.attrs["domain_type"] == "Point"
 
 
 def test_collection_methods_delegate() -> None:

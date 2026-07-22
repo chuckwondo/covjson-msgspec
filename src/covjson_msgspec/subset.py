@@ -213,6 +213,12 @@ def sel(
     (10.0,)
     >>> sub.ranges["v"].values
     (1.0, 5.0)
+
+    With no indexers there is nothing to narrow, so the coverage is returned
+    unchanged:
+
+    >>> sel(cov) is cov
+    True
     """
     if method not in (None, "nearest"):
         msg = f"unsupported method {method!r}; use 'nearest' or None"
@@ -766,6 +772,10 @@ def _label_slice(name: str, coords: Sequence[AxisValue], label: slice) -> slice:
     Traceback (most recent call last):
         ...
     KeyError: "no coordinates on axis 'x' fall within slice(100.0, 200.0, None)"
+    >>> _label_slice("x", (0.0, 10.0, 20.0), slice(0.0, 20.0, 2))
+    Traceback (most recent call last):
+        ...
+    ValueError: a label slice does not support a step
     """
     if label.step is not None:
         msg = "a label slice does not support a step"

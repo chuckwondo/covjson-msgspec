@@ -1000,6 +1000,8 @@ def _vertical_attrs(system: VerticalCRS) -> Mapping[str, str]:
     --------
     >>> _vertical_attrs(VerticalCRS(id="http://example.com/ocean/depth"))
     {'standard_name': 'depth', 'positive': 'down'}
+    >>> _vertical_attrs(VerticalCRS(id="http://example.com/altitude"))
+    {'standard_name': 'height', 'positive': 'up'}
     >>> _vertical_attrs(VerticalCRS(id="http://example.com/pressure"))
     {}
     """
@@ -1114,6 +1116,25 @@ def _variable_attrs(parameter: Parameter | None) -> MutableMapping[str, Any]:
     -------
     mutable mapping
         The CF attributes (possibly empty).
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Category, ObservedProperty, Parameter, Unit
+
+    An unlabeled parameter contributes no ``long_name``:
+
+    >>> temp = Parameter.continuous(ObservedProperty(label={}), Unit(symbol="K"))
+    >>> _variable_attrs(temp)
+    {'units': 'K'}
+
+    A category encoding that names none of the categories yields no flag attrs:
+
+    >>> prop = ObservedProperty(
+    ...     label={"en": "Land cover"},
+    ...     categories=(Category(id="1", label={"en": "Water"}),),
+    ... )
+    >>> sorted(_variable_attrs(Parameter.categorical(prop, {"99": 5})))
+    ['long_name']
     """
     if parameter is None:
         return {}
@@ -1191,6 +1212,14 @@ def _unit_symbol(unit: Unit) -> str | None:
     -------
     str or None
         The unit symbol, or ``None`` when there is none.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Symbol, Unit
+    >>> _unit_symbol(Unit(symbol=Symbol(value="Cel", type_="http://ex/Cel")))
+    'Cel'
+    >>> _unit_symbol(Unit(symbol="K"))
+    'K'
     """
     match unit.symbol:
         case Symbol(value, _):
@@ -1581,6 +1610,10 @@ def _is_regular(values: Sequence[Any]) -> bool:
     False
     >>> _is_regular([1.0])
     False
+    >>> _is_regular(["a", "b"])
+    False
+    >>> _is_regular([3.0, 3.0, 5.0])
+    False
     """
     if len(values) < 2:
         return False
@@ -1667,6 +1700,25 @@ def _time_to_iso(coord: xr.DataArray) -> Sequence[str]:
     ValueError
         If the coordinate contains a missing value (a CoverageJSON axis cannot
         hold a null coordinate).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import xarray as xr
+
+    Any remaining object value is stringified as a last resort (a real time
+    coordinate is ``datetime64`` or cftime; those paths are exercised by the
+    bridge round-trip tests):
+
+    >>> _time_to_iso(xr.DataArray(np.array(["2001", "2002"], dtype=object)))
+    ('2001', '2002')
+
+    A ``None`` has no coordinate representation, so it is rejected:
+
+    >>> _time_to_iso(xr.DataArray(np.array([None], dtype=object)))
+    Traceback (most recent call last):
+        ...
+    ValueError: time coordinate 'None' has a missing value...
     """
     import numpy as np
 

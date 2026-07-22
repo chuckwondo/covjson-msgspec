@@ -59,6 +59,17 @@ def test_categorical_parameter_with_unit_rejected_on_decode() -> None:
         msgspec.json.decode(msgspec.json.encode(payload), type=Parameter)
 
 
+def test_category_encoding_without_categories_rejected() -> None:
+    # The mirror of the unit rule: a categoryEncoding maps category ids to codes,
+    # so a parameter whose observed property declares no categories has nothing to
+    # encode. The __post_init__ guard rejects it (ADR-0002).
+    with pytest.raises(ValueError, match="category_encoding"):
+        Parameter(
+            observed_property=ObservedProperty(label={"en": "Air temperature"}),
+            category_encoding={"1": 1},
+        )
+
+
 def test_observed_property_rejects_empty_categories() -> None:
     # Spec 3: `categories`, if given, must be non-empty. A categorical property
     # of zero categories is uninterpretable, so it is rejected at construction

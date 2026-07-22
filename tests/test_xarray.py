@@ -288,6 +288,33 @@ def test_geographic_referencing_sets_cf_attrs_and_grid_mapping() -> None:
     assert ds["t"].attrs["grid_mapping"] == "crs"
 
 
+def test_geographic_third_coordinate_is_height() -> None:
+    # A geographic system lists its coordinates in CoverageJSON order (longitude,
+    # latitude, then an optional height), so a third coordinate takes the height
+    # role and its CF standard_name / positive attrs.
+    cov = Coverage(
+        domain=Domain(
+            axes={
+                "x": Axis.listed((1.0,)),
+                "y": Axis.listed((2.0,)),
+                "z": Axis.listed((100.0,)),
+            },
+            domain_type="Grid",
+            referencing=(
+                ReferenceSystemConnection(
+                    coordinates=("x", "y", "z"),
+                    system=ReferenceSystem.geographic(),
+                ),
+            ),
+        ),
+        ranges={"v": NdArray(data_type="float", values=(9.0,))},
+    )
+    ds = to_xarray(cov)
+
+    assert ds["z"].attrs["standard_name"] == "height"
+    assert ds["z"].attrs["positive"] == "up"
+
+
 def test_vertical_depth_sets_positive_down() -> None:
     cov = Coverage(
         domain=Domain.vertical_profile(
@@ -393,6 +420,34 @@ def test_polygon_domain_routes_to_geopandas() -> None:
 
     with pytest.raises(ValueError, match="geopandas"):
         to_xarray(cov)
+
+
+def test_polygon_axis_without_polygon_domain_type_is_rejected() -> None:
+    # The geopandas routing keys on domainType, so a polygon-data-type axis in a
+    # domain whose domainType is not a polygon type slips past it and reaches the
+    # coordinate builder, whose own guard rejects the vector geometry the gridded
+    # bridge cannot represent.
+    ring = ((0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 0.0))
+    axis = Axis(values=((ring,),), data_type="polygon", coordinates=("x", "y"))
+    cov = Coverage(
+        domain=Domain(axes={"composite": axis}, domain_type="Grid"),
+        ranges={},
+    )
+
+    with pytest.raises(ValueError, match="polygon axes are not supported"):
+        to_xarray(cov)
+
+
+def test_attrs_omit_domain_type_when_absent() -> None:
+    # A domain that declares no domainType leaves the attribute off the dataset
+    # rather than storing None (the CF Conventions attr is always present).
+    cov = Coverage(
+        domain=Domain(axes={"x": Axis.listed((1.0,)), "y": Axis.listed((2.0,))}),
+        ranges={"t": NdArray(data_type="float", values=(280.0,))},
+    )
+    ds = to_xarray(cov)
+
+    assert "domain_type" not in ds.attrs
 
 
 def test_non_ndarray_range_is_rejected() -> None:
@@ -731,6 +786,163 @@ def test_from_xarray_rejects_missing_time_coordinate() -> None:
 
     with pytest.raises(ValueError, match="missing value"):
         from_xarray(ds)
+
+
+def test_from_external_pointseries_infers_domain_type() -> None:
+    # Scalar lon/lat with a time dimension and no vertical: an external dataset with
+    # no domainType attribute infers PointSeries.
+    ds = xr.Dataset(
+        {"v": ("time", [1.0, 2.0])},
+        coords={
+            "lon": 1.0,
+            "lat": 2.0,
+            "time": np.array(["2020-01-01", "2020-01-02"], dtype="datetime64[ns]"),
+        },
+    )
+    cov = from_xarray(ds)
+
+    assert _dom(cov).domain_type == "PointSeries"
+
+
+def test_from_external_vertical_profile_infers_type_and_recovers_z() -> None:
+    # Scalar lon/lat with a depth dimension and no time infers VerticalProfile; the
+    # depth coordinate is recognized as the z role and recovered as the z axis.
+    ds = xr.Dataset(
+        {"v": ("depth", [1.0, 2.0])},
+        coords={
+            "lon": 1.0,
+            "lat": 2.0,
+            "depth": ("depth", [10.0, 20.0], {"positive": "down"}),
+        },
+    )
+    cov = from_xarray(ds)
+
+    assert _dom(cov).domain_type == "VerticalProfile"
+    assert _dom(cov).axes["z"].coordinate_values == (10.0, 20.0)
+
+
+def test_from_external_trajectory_infers_domain_type() -> None:
+    # lon, lat and time all varying along one shared dimension is a trajectory: the
+    # three fold into one composite (tuple) axis and the domain type infers
+    # Trajectory.
+    ds = xr.Dataset(
+        {"v": ("obs", [1.0, 2.0, 3.0])},
+        coords={
+            "lon": ("obs", [1.0, 2.0, 3.0]),
+            "lat": ("obs", [10.0, 20.0, 30.0]),
+            "time": (
+                "obs",
+                np.array(
+                    ["2020-01-01", "2020-01-02", "2020-01-03"], dtype="datetime64[ns]"
+                ),
+            ),
+        },
+    )
+    cov = from_xarray(ds)
+
+    assert _dom(cov).domain_type == "Trajectory"
+    assert _dom(cov).axes["composite"].data_type == "tuple"
+
+
+def test_from_external_x_y_with_both_z_and_t_dims_has_no_domain_type() -> None:
+    # Scalar lon/lat but both a depth and a time dimension matches none of the common
+    # domain types, so the domain type is left undetermined.
+    ds = xr.Dataset(
+        {"v": (("depth", "time"), [[1.0, 2.0], [3.0, 4.0]])},
+        coords={
+            "lon": 1.0,
+            "lat": 2.0,
+            "depth": ("depth", [10.0, 20.0]),
+            "time": (
+                "time",
+                np.array(["2020-01-01", "2020-01-02"], dtype="datetime64[ns]"),
+            ),
+        },
+    )
+    cov = from_xarray(ds)
+
+    assert _dom(cov).domain_type is None
+
+
+def test_from_external_non_dimension_horizontal_coords_fall_back_to_index() -> None:
+    # Known bug (#164): lon/lat here are 1-D auxiliary coordinates (named "lon"/"lat"
+    # but varying along dims "x"/"y"). This is a rectilinear grid that should convert
+    # losslessly to a Grid with x=[0, 10], y=[0, 5, 10]; instead from_xarray drops the
+    # values and falls back to integer-index axes. Asserted as a tripwire so the fix
+    # flips these to the real coordinate values (and domain_type "Grid").
+    ds = xr.Dataset(
+        {"v": (("y", "x"), np.arange(6.0).reshape(3, 2))},
+        coords={"lon": ("x", [0.0, 10.0]), "lat": ("y", [0.0, 5.0, 10.0])},
+    )
+    cov = from_xarray(ds)
+
+    assert _dom(cov).axes["x"].coordinate_values == (0, 1)
+    assert _dom(cov).axes["y"].coordinate_values == (0, 1, 2)
+
+
+def test_from_external_leftover_dimension_with_coordinate_becomes_axis() -> None:
+    # A dimension outside the x/y/z/t roles (here "band") becomes an axis under its
+    # own name, taking its coordinate values when it has a coordinate variable.
+    ds = xr.Dataset(
+        {"v": (("lat", "lon", "band"), np.arange(8.0).reshape(2, 2, 2))},
+        coords={
+            "lon": ("lon", [0.0, 10.0]),
+            "lat": ("lat", [0.0, 5.0]),
+            "band": ("band", [11, 12]),
+        },
+    )
+    cov = from_xarray(ds)
+
+    assert _dom(cov).axes["band"].coordinate_values == (11, 12)
+
+
+def test_from_external_bounds_variable_is_not_a_range() -> None:
+    # A CF bounds variable (name ending in _bnds / _bounds) describes cell edges, not
+    # measured data, so it is skipped rather than turned into a coverage range.
+    ds = xr.Dataset(
+        {
+            "v": (("lat", "lon"), np.arange(6.0).reshape(3, 2)),
+            "lat_bnds": (("lat", "nv"), np.zeros((3, 2))),
+        },
+        coords={"lon": ("lon", [0.0, 10.0]), "lat": ("lat", [0.0, 5.0, 10.0])},
+    )
+    cov = from_xarray(ds)
+
+    assert "v" in cov.ranges
+    assert "lat_bnds" not in cov.ranges
+    # Known bug (#163): the bounds variable's vertex dimension ("nv") leaks in as a
+    # spurious domain axis. Asserted as a tripwire so the fix flips this to
+    # `"nv" not in _dom(cov).axes` and adds a validate() clean-pass check.
+    assert "nv" in _dom(cov).axes
+
+
+def test_non_standard_calendar_survives_from_xarray_roundtrip() -> None:
+    # to_xarray renders a 360_day axis as cftime datetimes; from_xarray reads them
+    # back via cftime's isoformat and recovers the calendar from the values.
+    cov = Coverage(
+        domain=Domain.point_series(
+            x=Axis.listed((1.0,)),
+            y=Axis.listed((2.0,)),
+            t=Axis.listed(("2020-01-01", "2020-01-30")),
+            referencing=(
+                ReferenceSystemConnection(
+                    coordinates=("t",),
+                    system=ReferenceSystem.temporal(calendar="360_day"),
+                ),
+            ),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float", values=(1.0, 2.0), shape=(2,), axis_names=("t",)
+            )
+        },
+    )
+    back = from_xarray(to_xarray(cov))
+
+    values = _dom(back).axes["t"].coordinate_values
+    assert len(values) == 2
+    assert isinstance(values[0], str)
+    assert values[0].startswith("2020-01-01")
 
 
 def test_collection_to_datatree_one_node_per_coverage() -> None:
