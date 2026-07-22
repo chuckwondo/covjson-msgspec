@@ -15,7 +15,7 @@ no type error and no runtime guard.
 
 Sequence members already sidestep this: they are modelled as `tuple`, immutable at
 runtime. Mapping members had stayed `dict` on the rationale that "there is no
-msgspec-decodable frozen mapping" -- true of the *runtime* type, but it conflated
+msgspec-decodable frozen mapping", true of the *runtime* type, but it conflated
 a read-only *annotation* with an immutable *runtime object*. msgspec decodes an
 abstract `collections.abc.Mapping[K, V]` to a plain `dict` at runtime (verified),
 so the annotation and the runtime type are separable.
@@ -36,7 +36,7 @@ match, aligning with the existing "parameters prefer read-only types" preference
 
 ## Alternatives considered
 
-**Keep `dict`.** Rejected: it is exactly the leak above -- a frozen model whose
+**Keep `dict`.** Rejected: it is exactly the leak above, a frozen model whose
 mapping contents are freely mutable, with the type system silent.
 
 **Adopt a `frozendict` runtime now** ([PEP 814][pep-814], a genuinely immutable,
@@ -143,8 +143,8 @@ Concrete types survive only for their true cause:
   **third-party framework** owns it: the nested `openapi()` hook in
   `add_openapi_schemas`, which FastAPI requires to return a `dict` and which we
   mutate in place (`setdefault` / `update` on FastAPI's own schema object). It is
-  not on the public surface. Every other former dict return -- `to_geojson`,
-  `component_schemas`, `schema_ref` -- returns a read-only `Mapping`: nothing
+  not on the public surface. Every other former dict return (`to_geojson`,
+  `component_schemas`, `schema_ref`) returns a read-only `Mapping`: nothing
   consuming them needs a concrete `dict` (`dict.update` accepts any `Mapping`;
   `json.dumps` inspects the runtime object, still a `dict`), and the library's
   stance is to present read-only interfaces rather than invite mutation. A caller

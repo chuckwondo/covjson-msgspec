@@ -59,7 +59,7 @@ def component_schemas() -> Mapping[str, Mapping[str, Any]]:
     """Build OpenAPI ``components.schemas`` entries for the CoverageJSON types.
 
     Generates a JSON Schema (draft 2020-12) component for every CoverageJSON type
-    -- the five root document types plus every sub-type they reference -- keyed by
+    (the five root document types plus every sub-type they reference), keyed by
     a namespaced name (``CoverageJSON.<Type>``) so the mapping can be merged into a
     host application's OpenAPI ``components.schemas`` without colliding with its own
     components. Property names are the lowerCamelCase wire names.
@@ -107,8 +107,8 @@ def schema_ref(type: type[CoverageJSON]) -> Mapping[str, str]:
 
     Points at the component `component_schemas` registers for ``type``, so a route
     can reference it from its ``responses`` without hand-typing (and drifting from)
-    the path. Accepting only a root document type -- the kind an endpoint actually
-    returns -- means the ``$ref`` always resolves to a registered component.
+    the path. Accepting only a root document type (the kind an endpoint actually
+    returns) means the ``$ref`` always resolves to a registered component.
 
     Parameters
     ----------

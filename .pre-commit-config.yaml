@@ -38,7 +38,7 @@ repos:
       - id: trailing-whitespace
         exclude: ^tests/corpus/(playground|covjson-pydantic)/
 
-  # Python lint + format -- ruff (auto-fixes locally)
+  # Python lint + format: ruff (auto-fixes locally)
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: 3b3f7c3f57fe9925356faf5fe6230835138be230 # v0.15.17
     hooks:
@@ -73,7 +73,7 @@ repos:
     rev: 05c1426671b9237fb5e1444dd63aa5731bec0dfb # v3.13.1-1
     hooks:
       - id: shfmt
-        # Formatting options (2-space indent + indented case alternatives -- the
+        # Formatting options (2-space indent + indented case alternatives, the
         # Google Shell Style rules) live in .editorconfig; passing them as flags
         # here would make shfmt ignore .editorconfig. `-w` just writes fixes.
         args: [-w]
@@ -88,7 +88,7 @@ repos:
     hooks:
       - id: gitleaks
 
-  # Fail if any hook `rev:` is a bare tag instead of a commit SHA -- catches a
+  # Fail if any hook `rev:` is a bare tag instead of a commit SHA: catches a
   # `prek autoupdate` that was not followed by ./scripts/pin-precommit-shas.sh.
   - repo: local
     hooks:

@@ -52,7 +52,7 @@ jobs:
 
   # Run the full pre-commit suite (ruff, formatting, actionlint, zizmor,
   # gitleaks, shell hooks, lockfile sync, file hygiene) so CI enforces the same
-  # checks a developer runs locally -- defined once in .pre-commit-config.yaml,
+  # checks a developer runs locally, defined once in .pre-commit-config.yaml,
   # not restated here. Backstops anyone who commits with --no-verify.
   checks:
     runs-on: ubuntu-latest
@@ -118,7 +118,7 @@ jobs:
   # floor. lowest-direct runs only on the floor Python because the declared floors
   # are a floor-era snapshot (numpy 1.24, shapely 2.0, cftime 1.6.2, ...) whose
   # wheels stop at cp311; pairing them with a newer interpreter has no wheels and
-  # is a config no user runs. A floor set too low reds that leg -- the signal it
+  # is a config no user runs. A floor set too low reds that leg: the signal it
   # must rise deliberately. Both ends block.
   test:
     needs: config

@@ -8,7 +8,7 @@ updates:
       interval: weekly
     # Wait this many days after a release before opening an update PR, so a
     # freshly published (possibly compromised or soon-yanked) version is not
-    # adopted immediately. Only `default-days` applies here -- the
+    # adopted immediately. Only `default-days` applies here: the
     # `semver-*-days` keys are not supported for the github-actions ecosystem.
     cooldown:
       default-days: 7
