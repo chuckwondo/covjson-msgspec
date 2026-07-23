@@ -61,6 +61,7 @@ from covjson_msgspec.validation import (
     IdentifierMissingTargetConcept,
     NdArrayShapeRank,
     NdArrayValueCount,
+    ParameterCategoryEncodingUnknownId,
     ParameterGroupUnknownMember,
     RangeInvalidCategoryCode,
     RangeValueTypeMismatch,
@@ -360,6 +361,141 @@ def test_categorical_code_check_is_opt_in() -> None:
 
     assert len(bad) == 1
     assert bad[0].at == "/ranges/lc/values/1"
+
+
+def test_category_encoding_unknown_id_fires_without_a_referencing_range() -> None:
+    # The key check is parameter-intrinsic (encoding keys vs the parameter's own
+    # categories), so it runs in the default tier: it fires without check_values
+    # and even when no range references the parameter.
+    land_cover = ObservedProperty(
+        label=i18n("Land cover"),
+        categories=(Category(id="1", label=i18n("Water")),),
+    )
+    param = Parameter.categorical(land_cover, {"99": 5})  # key "99" is not an id
+    cov = Coverage(
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={},
+        parameters={"lc": param},
+    )
+
+    bad = _encoding_key_issues(validate(cov))
+
+    assert [i.key for i in bad] == ["99"]
+    assert bad[0].at == "/parameters/lc/categoryEncoding/99"
+    assert bad[0].severity is Severity.ERROR
+
+
+def test_category_encoding_unknown_id_closes_the_false_negative() -> None:
+    # Issue #162 repro: the only encoding entry is a phantom key, so its code (5)
+    # must not count as valid. Both findings fire: the phantom key, and the range
+    # value that referenced only that phantom key.
+    land_cover = ObservedProperty(
+        label=i18n("Land cover"),
+        categories=(Category(id="1", label=i18n("Water")),),
+    )
+    param = Parameter.categorical(land_cover, {"99": 5})
+    cov = Coverage(
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={"lc": NdArray(data_type="integer", values=(5,))},
+        parameters={"lc": param},
+    )
+
+    issues = validate(cov, check_values=True)
+    val_bad = [i for i in issues if i.code == "range.invalid-category-code"]
+
+    assert [i.at for i in _encoding_key_issues(issues)] == [
+        "/parameters/lc/categoryEncoding/99"
+    ]
+    assert [i.at for i in val_bad] == ["/ranges/lc/values/0"]
+
+
+def test_code_shared_by_real_and_phantom_key_stays_valid() -> None:
+    # Breaking edge: code 5 is backed by BOTH a real key ("1") and a phantom key
+    # ("99"). Value 5 stays valid via the real key, while the phantom key is still
+    # flagged. Narrowing must not reject a code some real key also backs.
+    land_cover = ObservedProperty(
+        label=i18n("Land cover"),
+        categories=(Category(id="1", label=i18n("Water")),),
+    )
+    param = Parameter.categorical(land_cover, {"1": 5, "99": 5})
+    cov = Coverage(
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={"lc": NdArray(data_type="integer", values=(5,))},
+        parameters={"lc": param},
+    )
+
+    issues = validate(cov, check_values=True)
+
+    # Value 5 is valid via real key "1": no range finding.
+    assert all(i.code != "range.invalid-category-code" for i in issues)
+    # The phantom key is still reported.
+    assert [i.key for i in _encoding_key_issues(issues)] == ["99"]
+
+
+def test_category_encoding_array_values_are_handled() -> None:
+    # An encoding entry may be an array of codes. A real key's array contributes
+    # every code (6 is valid); a phantom key's array legitimizes none (7 is not).
+    land_cover = ObservedProperty(
+        label=i18n("Land cover"),
+        categories=(Category(id="1", label=i18n("Water")),),
+    )
+    param = Parameter.categorical(land_cover, {"1": (5, 6), "99": (7,)})
+    cov = Coverage(
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={"lc": NdArray(data_type="integer", values=(6, 7))},
+        parameters={"lc": param},
+    )
+
+    issues = validate(cov, check_values=True)
+    val_bad = [i for i in issues if i.code == "range.invalid-category-code"]
+
+    assert [i.at for i in val_bad] == ["/ranges/lc/values/1"]
+    assert [i.key for i in _encoding_key_issues(issues)] == ["99"]
+
+
+def test_multiple_unknown_encoding_keys_reported_in_order() -> None:
+    # One finding per unknown key, in encoding (insertion) order.
+    land_cover = ObservedProperty(
+        label=i18n("Land cover"),
+        categories=(Category(id="1", label=i18n("Water")),),
+    )
+    param = Parameter.categorical(land_cover, {"99": 5, "1": 1, "98": 2})
+    cov = Coverage(
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={"lc": NdArray(data_type="integer", values=(1,))},
+        parameters={"lc": param},
+    )
+
+    bad = _encoding_key_issues(validate(cov))
+
+    assert [i.key for i in bad] == ["99", "98"]
+    assert [i.at for i in bad] == [
+        "/parameters/lc/categoryEncoding/99",
+        "/parameters/lc/categoryEncoding/98",
+    ]
+
+
+def test_conformant_encoding_yields_no_key_finding() -> None:
+    # Every key is a category id: neither the key finding, nor any change to
+    # range.invalid-category-code behavior (both codes remain valid).
+    land_cover = ObservedProperty(
+        label=i18n("Land cover"),
+        categories=(
+            Category(id="1", label=i18n("Water")),
+            Category(id="2", label=i18n("Forest")),
+        ),
+    )
+    param = Parameter.categorical(land_cover, {"1": 1, "2": 2})
+    cov = Coverage(
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={"lc": NdArray(data_type="integer", values=(1, 2))},
+        parameters={"lc": param},
+    )
+
+    issues = validate(cov, check_values=True)
+
+    assert _encoding_key_issues(issues) == []
+    assert all(i.code != "range.invalid-category-code" for i in issues)
 
 
 def test_value_data_type_check_is_opt_in() -> None:
@@ -1163,6 +1299,7 @@ _ISSUE_SAMPLES: tuple[Issue, ...] = (
     RangeInvalidCategoryCode(at="/", value=7),
     TemporalLexicalForm(at="/", value="yesterday"),
     ParameterGroupUnknownMember(at="/", member="humidity"),
+    ParameterCategoryEncodingUnknownId(at="/", key="99"),
     I18nInvalidLanguageTag(at="/", lang="english"),
     I18nEmpty(at="/"),
 )
@@ -1188,7 +1325,7 @@ def test_axis_monotonic_check_is_opt_in() -> None:
     domain = _axis_domain(Axis.listed((0.0, 2.0, 1.0)), ReferenceSystem.geographic())
 
     # Off by default: the value array is not scanned.
-    assert not any(i.code == "axis.not-monotonic" for i in validate(domain))
+    assert all(i.code != "axis.not-monotonic" for i in validate(domain))
 
     # Opt in: the reversal is flagged as an error, at the offending index.
     (issue,) = [
@@ -1764,6 +1901,16 @@ def _value_type_paths(issues: list[Issue]) -> list[str]:
     return [i.at for i in issues if i.code == "range.value-type-mismatch"]
 
 
+def _encoding_key_issues(
+    issues: list[Issue],
+) -> list[ParameterCategoryEncodingUnknownId]:
+    """The unknown-category-encoding-key findings, in document order.
+
+    Narrows via `isinstance` so callers can read the variant's ``key`` payload.
+    """
+    return [i for i in issues if isinstance(i, ParameterCategoryEncodingUnknownId)]
+
+
 def _expected_value_type_paths(
     data_type: Literal["float", "integer", "string"],
     values: tuple[float | int | str | None, ...],
@@ -1864,6 +2011,8 @@ def _describe(issue: Issue) -> str:
             return "identifier"
         case ParameterGroupUnknownMember():
             return "parameter-group"
+        case ParameterCategoryEncodingUnknownId():
+            return "parameter"
         case I18nInvalidLanguageTag() | I18nEmpty():
             return "i18n"
         case _:

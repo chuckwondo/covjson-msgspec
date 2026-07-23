@@ -35,6 +35,10 @@ file = "range-invalid-category-code.json"
 issues = [{ code = "range.invalid-category-code", severity = "error" }]
 
 [[case]]
+file = "parameter-category-encoding-unknown-id.json"
+issues = [{ code = "parameter.category-encoding-unknown-id", severity = "error" }]
+
+[[case]]
 file = "domain-extra-axis-not-single.json"
 issues = [{ code = "domain.extra-axis-not-single", severity = "error" }]
 
