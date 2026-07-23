@@ -29,6 +29,7 @@ from covjson_msgspec import (
     i18n,
     to_datatree,
     to_xarray,
+    validate,
 )
 
 
@@ -864,20 +865,38 @@ def test_from_external_x_y_with_both_z_and_t_dims_has_no_domain_type() -> None:
     assert _dom(cov).domain_type is None
 
 
-def test_from_external_non_dimension_horizontal_coords_fall_back_to_index() -> None:
-    # Known bug (#164): lon/lat here are 1-D auxiliary coordinates (named "lon"/"lat"
-    # but varying along dims "x"/"y"). This is a rectilinear grid that should convert
-    # losslessly to a Grid with x=[0, 10], y=[0, 5, 10]; instead from_xarray drops the
-    # values and falls back to integer-index axes. Asserted as a tripwire so the fix
-    # flips these to the real coordinate values (and domain_type "Grid").
+def test_from_external_non_dimension_horizontal_coords_build_a_grid() -> None:
+    # lon/lat here are 1-D auxiliary coordinates (named "lon"/"lat" but varying along
+    # dims "x"/"y"). This rectilinear grid converts losslessly to a Grid whose x/y
+    # axes carry the coordinate values, each keyed by the dimension it varies along.
     ds = xr.Dataset(
-        {"v": (("y", "x"), np.arange(6.0).reshape(3, 2))},
+        {"v": (("y", "x"), np.arange(6.0).reshape(3, 2), {"units": "K"})},
         coords={"lon": ("x", [0.0, 10.0]), "lat": ("y", [0.0, 5.0, 10.0])},
     )
     cov = from_xarray(ds)
 
-    assert _dom(cov).axes["x"].coordinate_values == (0, 1)
-    assert _dom(cov).axes["y"].coordinate_values == (0, 1, 2)
+    assert _dom(cov).domain_type == "Grid"
+    assert _dom(cov).axes["x"].coordinate_values == (0.0, 10.0)
+    assert _dom(cov).axes["y"].coordinate_values == (0.0, 5.0, 10.0)
+    assert validate(cov) == []
+
+
+def test_from_external_aux_coords_keyed_by_differently_named_dimension() -> None:
+    # The dimension-keying reframe in its own case: auxiliary lon/lat on dimensions
+    # NOT named x/y (here i/j). The Grid's x/y axes carry the coordinate values, and
+    # the range's (j, i) dims resolve through the DIMENSION to the role axes, a
+    # distinction invisible when the dimension is named after the role.
+    ds = xr.Dataset(
+        {"v": (("j", "i"), np.arange(6.0).reshape(3, 2), {"units": "K"})},
+        coords={"lon": ("i", [10.0, 20.0]), "lat": ("j", [0.0, 5.0, 10.0])},
+    )
+    cov = from_xarray(ds)
+
+    assert _dom(cov).domain_type == "Grid"
+    assert _dom(cov).axes["x"].coordinate_values == (10.0, 20.0)
+    assert _dom(cov).axes["y"].coordinate_values == (0.0, 5.0, 10.0)
+    assert _nd(cov, "v").axis_names == ("y", "x")
+    assert validate(cov) == []
 
 
 def test_from_external_leftover_dimension_with_coordinate_becomes_axis() -> None:
@@ -896,12 +915,25 @@ def test_from_external_leftover_dimension_with_coordinate_becomes_axis() -> None
     assert _dom(cov).axes["band"].coordinate_values == (11, 12)
 
 
+def test_from_external_leftover_dimension_without_coordinate_uses_index() -> None:
+    # A dimension a range uses but that has no coordinate variable (here "band")
+    # becomes an integer-index axis, so the range data is not orphaned.
+    ds = xr.Dataset(
+        {"v": (("lat", "lon", "band"), np.arange(8.0).reshape(2, 2, 2))},
+        coords={"lon": ("lon", [0.0, 10.0]), "lat": ("lat", [0.0, 5.0])},
+    )
+    cov = from_xarray(ds)
+
+    assert _dom(cov).axes["band"].coordinate_values == (0, 1)
+
+
 def test_from_external_bounds_variable_is_not_a_range() -> None:
     # A CF bounds variable (name ending in _bnds / _bounds) describes cell edges, not
-    # measured data, so it is skipped rather than turned into a coverage range.
+    # measured data, so it is skipped rather than turned into a coverage range, and
+    # its vertex dimension ("nv") is not promoted to a domain axis.
     ds = xr.Dataset(
         {
-            "v": (("lat", "lon"), np.arange(6.0).reshape(3, 2)),
+            "v": (("lat", "lon"), np.arange(6.0).reshape(3, 2), {"units": "K"}),
             "lat_bnds": (("lat", "nv"), np.zeros((3, 2))),
         },
         coords={"lon": ("lon", [0.0, 10.0]), "lat": ("lat", [0.0, 5.0, 10.0])},
@@ -910,10 +942,70 @@ def test_from_external_bounds_variable_is_not_a_range() -> None:
 
     assert "v" in cov.ranges
     assert "lat_bnds" not in cov.ranges
-    # Known bug (#163): the bounds variable's vertex dimension ("nv") leaks in as a
-    # spurious domain axis. Asserted as a tripwire so the fix flips this to
-    # `"nv" not in _dom(cov).axes` and adds a validate() clean-pass check.
-    assert "nv" in _dom(cov).axes
+    assert "nv" not in _dom(cov).axes
+    assert validate(cov) == []
+
+
+def test_from_external_bounds_declared_by_attribute_is_dropped() -> None:
+    # A bounds variable named without a _bnds / _bounds suffix is still recognized via
+    # the coordinate's CF `bounds` attribute: skipped as a range, and its vertex
+    # dimension is not promoted to a domain axis.
+    ds = xr.Dataset(
+        {
+            "v": (("lat", "lon"), np.arange(6.0).reshape(3, 2), {"units": "K"}),
+            "lat_edges": (("lat", "nv"), np.zeros((3, 2))),
+        },
+        coords={
+            "lon": ("lon", [0.0, 10.0]),
+            "lat": ("lat", [0.0, 5.0, 10.0], {"bounds": "lat_edges"}),
+        },
+    )
+    cov = from_xarray(ds)
+
+    assert "lat_edges" not in cov.ranges
+    assert "nv" not in _dom(cov).axes
+    assert validate(cov) == []
+
+
+def test_from_external_curvilinear_grid_raises() -> None:
+    # 2-D latitude/longitude is a curvilinear (non-separable) grid; CoverageJSON axes
+    # are 1-D, so there is no axis form for it. from_xarray rejects rather than
+    # silently emitting a wrong Point coverage that drops the geographic data.
+    lon2d = [[10.0, 11.0], [10.5, 11.5], [11.0, 12.0]]
+    lat2d = [[50.0, 50.2], [51.0, 51.2], [52.0, 52.2]]
+    ds = xr.Dataset(
+        {"v": (("y", "x"), np.arange(6.0).reshape(3, 2))},
+        coords={"lon": (("y", "x"), lon2d), "lat": (("y", "x"), lat2d)},
+    )
+
+    with pytest.raises(ValueError, match="curvilinear grid"):
+        from_xarray(ds)
+
+
+def test_from_external_two_roles_on_one_dimension_raises() -> None:
+    # Two role coordinates on one dimension (longitude x(x) and depth(x)) cannot be
+    # a single 1-D axis, so from_xarray rejects rather than silently binding the
+    # range to whichever role is detected last.
+    ds = xr.Dataset(
+        {"v": ("x", np.arange(3.0))},
+        coords={"x": ("x", [10.0, 20.0, 30.0]), "depth": ("x", [1.0, 2.0, 3.0])},
+    )
+
+    with pytest.raises(ValueError, match="hosts two role coordinates"):
+        from_xarray(ds)
+
+
+def test_from_external_dimension_named_like_a_role_axis_raises() -> None:
+    # An auxiliary lon keys its axis "x", and a plain dataset dimension literally
+    # named "x" would key an axis "x" too. Rather than silently overwriting the
+    # longitude axis (losing its values), from_xarray rejects the collision.
+    ds = xr.Dataset(
+        {"v": (("west_east", "x"), np.arange(6.0).reshape(3, 2))},
+        coords={"lon": ("west_east", [10.0, 20.0, 30.0])},
+    )
+
+    with pytest.raises(ValueError, match="axis key"):
+        from_xarray(ds)
 
 
 def test_non_standard_calendar_survives_from_xarray_roundtrip() -> None:

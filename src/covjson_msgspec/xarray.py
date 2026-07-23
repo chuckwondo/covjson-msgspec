@@ -39,10 +39,10 @@ from __future__ import annotations
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false, reportUnknownVariableType=false, reportMissingTypeStubs=false
 import math
 import re
-from collections.abc import Mapping, MutableMapping, Sequence, Set
+from collections.abc import Iterator, Mapping, MutableMapping, Sequence, Set
 from datetime import UTC, datetime
-from itertools import pairwise
-from typing import TYPE_CHECKING, Any, Literal, NoReturn
+from itertools import chain, pairwise
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NoReturn
 
 from msgspec import UNSET
 
@@ -219,9 +219,11 @@ def from_xarray(
     a single-valued axis (the original size-1 dimension is not recovered), an
     evenly spaced numeric axis is compacted to ``start`` / ``stop`` / ``num``
     when ``compact_regular`` is set, the domain type is inferred when not given,
-    CF bounds variables (``*_bnds`` / ``*_bounds``) are dropped, and only
-    ``units`` (continuous) or ``flag_values`` / ``flag_meanings`` (categorical)
-    are reconstructed into parameters.
+    CF bounds variables (a coordinate's ``bounds`` attribute, or a ``*_bnds`` /
+    ``*_bounds`` suffix) are dropped and their vertex dimension is not an axis,
+    and only ``units`` (continuous) or ``flag_values`` / ``flag_meanings``
+    (categorical) are reconstructed into parameters. A curvilinear grid (2-D
+    latitude/longitude) has no CoverageJSON axis form and is rejected.
 
     Parameters
     ----------
@@ -241,6 +243,14 @@ def from_xarray(
     -------
     Coverage
         A coverage whose domain and ranges mirror the dataset.
+
+    Raises
+    ------
+    ValueError
+        If a horizontal coordinate is 2-D (a curvilinear grid), or the dataset is
+        not a separable grid (a dimension hosting two role coordinates, or a
+        dimension whose name collides with a role's axis key), which CoverageJSON
+        has no axis form for.
 
     Examples
     --------
@@ -1471,6 +1481,304 @@ def _detect_composite(
     )
 
 
+class _AxisEntry(NamedTuple):
+    """A built axis, its key, and the dataset dimension it represents.
+
+    ``dim`` is the dataset dimension the axis maps in ``dim_to_key`` (so a range's
+    dims resolve to axis keys), or ``None`` for a scalar axis that maps no
+    dimension. The three axis generators (`_composite_axis`, `_role_axes`,
+    `_leftover_axes`) yield these, and `_build_axes` assembles them.
+    """
+
+    key: str
+    axis: Axis
+    dim: str | None
+
+
+def _composite_axis(
+    dataset: xr.Dataset,
+    roles: Mapping[str, str | None],
+    composite_dim: str | None,
+    composite_roles: Set[str],
+) -> Iterator[_AxisEntry]:
+    """Yield the single ``tuple`` axis for a composite (trajectory) domain, if any.
+
+    The composite roles' 1-D coordinates (which share ``composite_dim``) are
+    transposed into one ``tuple`` axis whose values are ``(t, x, y, z)`` points in
+    that fixed order. Yields nothing when there is no composite dimension.
+
+    Parameters
+    ----------
+    dataset
+        The source dataset.
+    roles
+        The role-to-name mapping from `_detect_roles`.
+    composite_dim, composite_roles
+        The shared dimension and roles from `_detect_composite`.
+
+    Yields
+    ------
+    _AxisEntry
+        A single entry whose key is ``"composite"``, or nothing when there is no
+        composite dimension.
+
+    Examples
+    --------
+    Two role coordinates sharing one dimension (``x`` and ``y`` along ``i``)
+    transpose into a ``tuple`` axis of ``(x, y)`` points:
+
+    >>> import numpy as np
+    >>> import xarray as xr
+    >>> ds = xr.Dataset(
+    ...     {"v": ("i", np.zeros(2))},
+    ...     coords={"x": ("i", [1.0, 2.0]), "y": ("i", [3.0, 4.0])},
+    ... )
+    >>> roles = {"x": "x", "y": "y", "z": None, "t": None}
+    >>> entries = list(_composite_axis(ds, roles, "i", frozenset({"x", "y"})))
+    >>> key, axis, dim = entries[0]
+    >>> key, dim, axis.coordinates, axis.values
+    ('composite', 'i', ('x', 'y'), ((1.0, 3.0), (2.0, 4.0)))
+    """
+    if composite_dim is None:
+        return
+
+    order = tuple(role for role in ("t", "x", "y", "z") if role in composite_roles)
+    columns = [_coord_values(dataset[roles[role]]) for role in order]
+    axis = Axis(
+        data_type="tuple",
+        coordinates=order,
+        values=tuple(zip(*columns, strict=True)),
+    )
+
+    yield _AxisEntry(key="composite", axis=axis, dim=composite_dim)
+
+
+def _role_axis(
+    dataset: xr.Dataset, role: str, name: str, compact_regular: bool
+) -> _AxisEntry:
+    """Build one x / y / z / t role's axis entry from its coordinate.
+
+    A 0-D coordinate yields a single-valued listed axis that maps no dimension; a
+    1-D coordinate (a dimension coordinate, or an auxiliary one whose name differs
+    from its dimension) an axis keyed by its dimension, so a range's dims resolve
+    through that dimension. A 2-D coordinate is a curvilinear (non-separable) grid,
+    which CoverageJSON's 1-D axes cannot represent, so it raises.
+
+    Parameters
+    ----------
+    dataset
+        The source dataset.
+    role
+        The axis role (``"x"`` / ``"y"`` / ``"z"`` / ``"t"``), also the axis key.
+    name
+        The name of the coordinate filling ``role``.
+    compact_regular
+        Whether to emit an evenly-spaced axis in the compact regular form
+        (`_axis_from_coord`).
+
+    Returns
+    -------
+    _AxisEntry
+        The entry; its ``dim`` is the coordinate's dimension, or ``None`` for a
+        scalar (0-D) coordinate.
+
+    Raises
+    ------
+    ValueError
+        If the coordinate is 2-D (a curvilinear grid).
+
+    Examples
+    --------
+    A 1-D coordinate yields an axis keyed by its dimension:
+
+    >>> import numpy as np
+    >>> import xarray as xr
+    >>> ds = xr.Dataset(coords={"lon": ("x", [10.0, 20.0])})
+    >>> key, axis, dim = _role_axis(ds, "x", "lon", True)
+    >>> key, dim, axis.coordinate_values
+    ('x', 'x', (10.0, 20.0))
+
+    A 2-D coordinate is a curvilinear grid, which has no 1-D axis form:
+
+    >>> curv = xr.Dataset(coords={"lon": (("y", "x"), np.zeros((2, 2)))})
+    >>> _role_axis(curv, "x", "lon", True)
+    Traceback (most recent call last):
+        ...
+    ValueError: cannot convert a curvilinear grid: the 'x'-axis coordinate ...
+    """
+    coord = dataset[name]
+
+    if coord.ndim == 0:
+        return _AxisEntry(key=role, axis=Axis.listed((_scalar(coord),)), dim=None)
+
+    if coord.ndim == 1:
+        return _AxisEntry(
+            key=role,
+            axis=_axis_from_coord(coord, compact_regular),
+            dim=str(coord.dims[0]),
+        )
+
+    dims = tuple(str(d) for d in coord.dims)
+    msg = (
+        f"cannot convert a curvilinear grid: the {role!r}-axis coordinate "
+        f"{name!r} is {coord.ndim}-D (varies along {dims}). CoverageJSON "
+        "axes are 1-D, so a non-separable 2-D lat/lon grid has no axis form"
+    )
+    raise ValueError(msg)
+
+
+def _role_axes(
+    dataset: xr.Dataset,
+    roles: Mapping[str, str | None],
+    composite_roles: Set[str],
+    compact_regular: bool,
+) -> Iterator[_AxisEntry]:
+    """Yield an axis entry for each present, non-composite x / y / z / t role.
+
+    Each role coordinate's entry is built by `_role_axis` (which raises on a 2-D
+    curvilinear coordinate). A role with no coordinate, or one already consumed by
+    the composite axis, is skipped.
+
+    Parameters
+    ----------
+    dataset
+        The source dataset.
+    roles
+        The role-to-name mapping from `_detect_roles`.
+    composite_roles
+        The roles already consumed by a composite axis (`_composite_axis`), skipped
+        here.
+    compact_regular
+        Whether to emit evenly-spaced axes in the compact regular form
+        (`_axis_from_coord`).
+
+    Yields
+    ------
+    _AxisEntry
+        An entry per role (`_role_axis`).
+
+    Raises
+    ------
+    ValueError
+        If a role coordinate is 2-D (a curvilinear grid).
+
+    Examples
+    --------
+    An auxiliary ``lon(x)`` / ``lat(y)`` grid: each role's axis is keyed by the
+    dimension it varies along (not the coordinate name):
+
+    >>> import numpy as np
+    >>> import xarray as xr
+    >>> ds = xr.Dataset(
+    ...     {"v": (("y", "x"), np.zeros((3, 2)))},
+    ...     coords={"lon": ("x", [10.0, 20.0]), "lat": ("y", [0.0, 5.0, 10.0])},
+    ... )
+    >>> roles = {"x": "lon", "y": "lat", "z": None, "t": None}
+    >>> [(key, dim) for key, _axis, dim in _role_axes(ds, roles, frozenset(), True)]
+    [('x', 'x'), ('y', 'y')]
+    """
+    yield from (
+        _role_axis(dataset, role, name, compact_regular)
+        for role in ("x", "y", "z", "t")
+        if (name := roles[role]) is not None and role not in composite_roles
+    )
+
+
+def _leftover_axis(dataset: xr.Dataset, key: str, compact_regular: bool) -> Axis:
+    """The axis for a leftover dimension: its coordinate values, or an integer index.
+
+    A dimension with a coordinate variable takes that coordinate's values
+    (`_axis_from_coord`); a bare index dimension (no coordinate) gets a plain
+    integer-index axis so its range data is not orphaned.
+
+    Parameters
+    ----------
+    dataset
+        The source dataset.
+    key
+        The dimension name (also the axis key).
+    compact_regular
+        Whether to emit an evenly-spaced coordinate axis in the compact regular
+        form (`_axis_from_coord`).
+
+    Returns
+    -------
+    Axis
+        The dimension's axis.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import xarray as xr
+    >>> ds = xr.Dataset(
+    ...     {"v": (("lat", "band"), np.zeros((2, 3)))},
+    ...     coords={"lat": ("lat", [0.0, 5.0])},
+    ... )
+    >>> _leftover_axis(ds, "lat", True).coordinate_values
+    (0.0, 5.0)
+    >>> _leftover_axis(ds, "band", True).coordinate_values
+    (0, 1, 2)
+    """
+    if key in dataset.coords:
+        return _axis_from_coord(dataset[key], compact_regular)
+
+    return Axis.listed(tuple(range(dataset.sizes[key])))
+
+
+def _leftover_axes(
+    dataset: xr.Dataset,
+    mapped_dims: Set[str],
+    compact_regular: bool,
+) -> Iterator[_AxisEntry]:
+    """Yield an axis for each kept-range dimension not already mapped to an axis.
+
+    A coverage axis is a dimension some kept range rides on (`_kept_range_dims`);
+    one that a role or composite axis has not already claimed becomes an axis under
+    its own name (`_leftover_axis`: its coordinate values, or an integer index). A
+    dimension living only in skipped variables (a bounds variable's vertex
+    dimension) is not among the kept dims, so it is never promoted.
+
+    Parameters
+    ----------
+    dataset
+        The source dataset.
+    mapped_dims
+        The dimensions already mapped to an axis by `_composite_axis` /
+        `_role_axes`, skipped here.
+    compact_regular
+        Whether to emit evenly-spaced axes in the compact regular form
+        (`_axis_from_coord`).
+
+    Yields
+    ------
+    _AxisEntry
+        An entry per promoted dimension; its key and dim are both the dimension
+        name.
+
+    Examples
+    --------
+    A dimension a range uses that has no coordinate (``band``) becomes an
+    integer-index axis; an already-mapped dimension (``lat``) is skipped:
+
+    >>> import numpy as np
+    >>> import xarray as xr
+    >>> ds = xr.Dataset(
+    ...     {"v": (("lat", "band"), np.zeros((2, 3)))},
+    ...     coords={"lat": ("lat", [0.0, 5.0])},
+    ... )
+    >>> [(key, dim) for key, _axis, dim in _leftover_axes(ds, {"lat"}, True)]
+    [('band', 'band')]
+    """
+    kept_dims = _kept_range_dims(dataset)
+    keys = map(str, dataset.sizes)
+
+    yield from (
+        _AxisEntry(key=key, axis=_leftover_axis(dataset, key, compact_regular), dim=key)
+        for key in keys
+        if key not in mapped_dims and key in kept_dims
+    )
+
+
 def _build_axes(
     dataset: xr.Dataset,
     roles: Mapping[str, str | None],
@@ -1480,12 +1788,11 @@ def _build_axes(
 ) -> tuple[Mapping[str, Axis], Mapping[str, str]]:
     """Build CoverageJSON axes from a dataset's coordinates and dimensions.
 
-    The composite roles (if any) are transposed into a single ``tuple`` axis along
-    the composite dimension; each remaining role coordinate becomes a primitive
-    axis (a 0-dimensional coordinate becomes a single-valued listed axis,
-    `_axis_from_coord` handles 1-D ones). Any leftover dimension becomes an axis
-    under its own name (from its coordinate, or a plain integer range) so no range
-    data is orphaned.
+    Assembles three groups of axes, each contributing `_AxisEntry` records: the
+    composite ``tuple`` axis (`_composite_axis`), the primitive x / y / z / t role
+    axes (`_role_axes`), and one axis for every remaining kept-range dimension
+    (`_leftover_axes`). Each entry's ``dim`` (when not ``None``) records which
+    dataset dimension the axis represents, so a range's dims resolve to axis keys.
 
     Parameters
     ----------
@@ -1504,49 +1811,70 @@ def _build_axes(
     tuple
         ``(axes, dim_to_key)``: the axis map, and a lookup from each dataset
         dimension to the axis key it became (used to map range dims).
+
+    Raises
+    ------
+    ValueError
+        If a role coordinate is 2-D (a curvilinear grid), or the dataset is not a
+        separable grid (two role coordinates on one dimension, or a dimension whose
+        name collides with a role's axis key), which CoverageJSON has no axis form
+        for.
+
+    Examples
+    --------
+    An auxiliary ``lon(x)`` / ``lat(y)`` grid: the axes are keyed by role, and each
+    dataset dimension maps to its axis so the ranges' dims resolve:
+
+    >>> import numpy as np
+    >>> import xarray as xr
+    >>> ds = xr.Dataset(
+    ...     {"v": (("y", "x"), np.zeros((3, 2)))},
+    ...     coords={"lon": ("x", [10.0, 20.0]), "lat": ("y", [0.0, 5.0, 10.0])},
+    ... )
+    >>> roles = {"x": "lon", "y": "lat", "z": None, "t": None}
+    >>> axes, dim_to_key = _build_axes(ds, roles, None, frozenset(), True)
+    >>> sorted(axes), sorted(dim_to_key.items())
+    (['x', 'y'], [('x', 'x'), ('y', 'y')])
     """
     axes: dict[str, Axis] = {}
     # Maps a dataset dimension to the CoverageJSON axis key it became.
     dim_to_key: dict[str, str] = {}
 
-    if composite_dim is not None:
-        order = tuple(role for role in ("t", "x", "y", "z") if role in composite_roles)
-        columns = [_coord_values(dataset[roles[role]]) for role in order]
-        axes["composite"] = Axis(
-            data_type="tuple",
-            coordinates=order,
-            values=tuple(zip(*columns, strict=True)),
-        )
-        dim_to_key[composite_dim] = "composite"
+    def add(entry: _AxisEntry) -> None:
+        # Each axis key and each dataset dimension names exactly one axis. A
+        # collision means the dataset is not a separable grid (two role coordinates
+        # on one dimension, or a dimension whose name is already a role's axis key),
+        # so reject rather than silently binding a range to the wrong axis.
+        if entry.key in axes:
+            msg = (
+                f"cannot convert to a grid: the axis key {entry.key!r} is claimed "
+                f"by two dimensions (a role coordinate, and a dataset dimension "
+                f"named {entry.key!r})."
+            )
+            raise ValueError(msg)
 
-    for role in ("x", "y", "z", "t"):
-        name = roles[role]
+        if entry.dim is not None and entry.dim in dim_to_key:
+            msg = (
+                f"cannot convert to a grid: dimension {entry.dim!r} hosts two role "
+                f"coordinates (axes {dim_to_key[entry.dim]!r} and {entry.key!r}), so "
+                f"it is not a separable 1-D axis."
+            )
+            raise ValueError(msg)
 
-        if name is None or role in composite_roles:
-            continue
+        axes[entry.key] = entry.axis
 
-        coord = dataset[name]
+        if entry.dim is not None:
+            dim_to_key[entry.dim] = entry.key
 
-        if coord.ndim == 0:
-            axes[role] = Axis.listed((_scalar(coord),))
-        elif coord.ndim == 1 and str(coord.dims[0]) == name:
-            axes[role] = _axis_from_coord(coord, compact_regular)
-            dim_to_key[name] = role
+    for entry in chain(
+        _composite_axis(dataset, roles, composite_dim, composite_roles),
+        _role_axes(dataset, roles, composite_roles, compact_regular),
+    ):
+        add(entry)
 
-    # Any remaining dimension becomes an axis under its own name so no range
-    # data is orphaned.
-    for dim in dataset.sizes:
-        key = str(dim)
-
-        if key in dim_to_key:
-            continue
-
-        if key in dataset.coords:
-            axes[key] = _axis_from_coord(dataset[key], compact_regular)
-        else:
-            axes[key] = Axis.listed(tuple(range(dataset.sizes[dim])))
-
-        dim_to_key[key] = key
+    # The leftover sweep needs the dimensions the role/composite axes already claimed.
+    for entry in _leftover_axes(dataset, frozenset(dim_to_key), compact_regular):
+        add(entry)
 
     return axes, dim_to_key
 
@@ -1869,9 +2197,10 @@ def _infer_domain_type(
 ) -> str | None:
     """Infer a CoverageJSON domain type from which roles are present and gridded.
 
-    A composite axis means ``"Trajectory"``. Otherwise, a role counts only when it
-    is an actual dataset dimension (not a scalar coordinate): ``x`` and ``y`` both
-    gridded give ``"Grid"``; with point-like ``x`` / ``y`` it is ``"PointSeries"``
+    A composite axis means ``"Trajectory"``. Otherwise, a role counts only when its
+    coordinate varies along a dimension (a 1-D coordinate, not a scalar): ``x`` and
+    ``y`` both gridded give ``"Grid"``; with point-like ``x`` / ``y`` it is
+    ``"PointSeries"``
     (``t`` varies), ``"VerticalProfile"`` (``z`` varies), or ``"Point"`` (neither).
     Anything else is left unset (``None``).
 
@@ -1893,9 +2222,15 @@ def _infer_domain_type(
         return "Trajectory"
 
     def is_dim(role: str) -> bool:
-        """Whether ``role``'s coordinate exists and is a real dataset dimension."""
+        """Whether ``role``'s coordinate varies along a dimension (grids an axis).
+
+        Mirrors `_build_axes`: a 1-D role coordinate (dimension or auxiliary)
+        becomes a dimension axis, a scalar (0-D) coordinate a single-valued one, so
+        gridded-ness follows the coordinate's dimensionality rather than whether its
+        name is a dimension. A 2-D coordinate has already raised in `_build_axes`.
+        """
         name = roles[role]
-        return name is not None and name in dataset.sizes
+        return name is not None and dataset[name].ndim >= 1
 
     if is_dim("x") and is_dim("y"):
         return "Grid"
@@ -1931,6 +2266,99 @@ def _is_grid_mapping(variable: xr.DataArray) -> bool:
         Whether the variable is a grid-mapping container.
     """
     return "grid_mapping_name" in variable.attrs
+
+
+def _bounds_variable_names(dataset: xr.Dataset) -> frozenset[str]:
+    """Names of a dataset's CF bounds variables (cell-edge arrays, not data).
+
+    A bounds variable is named in a coordinate's ``bounds`` attribute (CF 7.1);
+    a ``_bnds`` / ``_bounds`` name suffix is a fallback for datasets that omit the
+    attribute. Bounds variables hold no measurements, and their extra vertex
+    dimension is not a coverage axis, so both range-building and axis-building
+    skip them.
+
+    Parameters
+    ----------
+    dataset
+        The dataset whose variables are classified.
+
+    Returns
+    -------
+    frozenset of str
+        The names of the bounds variables.
+
+    Examples
+    --------
+    A bounds variable is found by the ``bounds`` attribute even without a
+    ``_bnds`` / ``_bounds`` suffix:
+
+    >>> import numpy as np
+    >>> import xarray as xr
+    >>> ds = xr.Dataset(
+    ...     {"lat_edges": (("lat", "nv"), np.zeros((2, 2)))},
+    ...     coords={"lat": ("lat", [0.0, 1.0], {"bounds": "lat_edges"})},
+    ... )
+    >>> sorted(_bounds_variable_names(ds))
+    ['lat_edges']
+    """
+    declared = {
+        str(variable.attrs["bounds"])
+        for variable in dataset.variables.values()
+        if "bounds" in variable.attrs
+    }
+    suffixed = {
+        str(name)
+        for name in dataset.data_vars
+        if str(name).endswith(("_bnds", "_bounds"))
+    }
+
+    return frozenset(declared | suffixed)
+
+
+def _kept_range_dims(dataset: xr.Dataset) -> frozenset[str]:
+    """The dataset dimensions that a kept range rides on.
+
+    A coverage axis is a dimension some real data variable varies along.
+    Grid-mapping containers (`_is_grid_mapping`) and bounds variables
+    (`_bounds_variable_names`) are not ranges, so a dimension living only in them
+    (a bounds variable's vertex dimension) is not an axis. Axis-building consults
+    this to bound itself to real axes instead of every dimension in the dataset.
+
+    Parameters
+    ----------
+    dataset
+        The dataset whose data variables are inspected.
+
+    Returns
+    -------
+    frozenset of str
+        The names of the dimensions used by at least one kept range.
+
+    Examples
+    --------
+    The bounds variable's vertex dimension (``nv``) is excluded; the data
+    variable's own dimensions are kept:
+
+    >>> import numpy as np
+    >>> import xarray as xr
+    >>> ds = xr.Dataset(
+    ...     {
+    ...         "v": (("lat", "lon"), np.zeros((2, 2))),
+    ...         "lat_bnds": (("lat", "nv"), np.zeros((2, 2))),
+    ...     },
+    ...     coords={"lat": ("lat", [0.0, 1.0], {"bounds": "lat_bnds"})},
+    ... )
+    >>> sorted(_kept_range_dims(ds))
+    ['lat', 'lon']
+    """
+    bounds = _bounds_variable_names(dataset)
+
+    return frozenset(
+        str(dim)
+        for name, variable in dataset.data_vars.items()
+        if not _is_grid_mapping(variable) and str(name) not in bounds
+        for dim in variable.dims
+    )
 
 
 def _parameter_from_variable(name: str, variable: xr.DataArray) -> Parameter | None:
@@ -1995,8 +2423,8 @@ def _build_ranges(
     remapped to CoverageJSON axis keys via ``dim_to_key``, and (when its CF
     attributes describe one) a [`Parameter`][covjson_msgspec.Parameter] via
     `_parameter_from_variable`. Grid-mapping containers (`_is_grid_mapping`) and CF
-    bounds variables (``*_bnds`` / ``*_bounds``) are skipped: they hold no
-    measurements.
+    bounds variables (`_bounds_variable_names`: a coordinate's ``bounds`` attribute,
+    or a ``*_bnds`` / ``*_bounds`` suffix) are skipped: they hold no measurements.
 
     Parameters
     ----------
@@ -2013,11 +2441,12 @@ def _build_ranges(
     """
     ranges: dict[str, Range] = {}
     parameters: dict[str, Parameter] = {}
+    bounds = _bounds_variable_names(dataset)
 
     for name, variable in dataset.data_vars.items():
         key = str(name)
 
-        if _is_grid_mapping(variable) or key.endswith(("_bnds", "_bounds")):
+        if _is_grid_mapping(variable) or key in bounds:
             continue
 
         axis_names = tuple(dim_to_key.get(str(dim), str(dim)) for dim in variable.dims)
