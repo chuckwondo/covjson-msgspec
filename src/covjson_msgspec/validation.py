@@ -736,6 +736,22 @@ class ParameterGroupUnknownMember(
         return f"parameter group references unknown member {self.member!r}"
 
 
+class ParameterCategoryEncodingUnknownId(
+    _Issue, frozen=True, tag="parameter.category-encoding-unknown-id"
+):
+    """A ``categoryEncoding`` key is not the id of any defined category.
+
+    Spec 3 states each ``categoryEncoding`` key "is equal to an id value of the
+    categories array". This is an error to match its sibling
+    `range.invalid-category-code`, the other half of the same constraint.
+    """
+
+    key: str
+
+    def __str__(self) -> str:
+        return f"category encoding key {self.key!r} is not a defined category id"
+
+
 class I18nInvalidLanguageTag(_Issue, frozen=True, tag="i18n.invalid-language-tag"):
     """An i18n object key is not a valid BCP 47 language tag."""
 
@@ -793,6 +809,7 @@ Issue = (
     | RangeInvalidCategoryCode
     | TemporalLexicalForm
     | ParameterGroupUnknownMember
+    | ParameterCategoryEncodingUnknownId
     | I18nInvalidLanguageTag
     | I18nEmpty
 )
@@ -3324,6 +3341,37 @@ def _check_range_against_domain(
     )
 
 
+def _category_ids(param: Parameter) -> frozenset[str]:
+    """Return the category ids declared by a parameter's observed property.
+
+    The authoritative set a ``categoryEncoding`` key must belong to (spec 3): each
+    key is required to equal one of these ids. Both this module's categorical
+    checks consult it, so the set has one home. Returns an empty set when the
+    parameter is not categorical (no ``categories``).
+
+    Parameters
+    ----------
+    param
+        The parameter whose observed property's categories supply the ids.
+
+    Returns
+    -------
+    frozenset of str
+        The declared category ids, or an empty set when non-categorical.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Category, ObservedProperty, Parameter
+    >>> prop = ObservedProperty(
+    ...     label={"en": "Land cover"},
+    ...     categories=(Category(id="1", label={"en": "Water"}),),
+    ... )
+    >>> sorted(_category_ids(Parameter.categorical(prop, {"1": 1})))
+    ['1']
+    """
+    return frozenset(c.id for c in (param.observed_property.categories or ()))
+
+
 def _check_categorical_codes(
     arr: NdArray, param: Parameter | None, path: tuple[str | int, ...]
 ) -> Iterator[Issue]:
@@ -3331,10 +3379,11 @@ def _check_categorical_codes(
 
     Only applies when the parameter is categorical (its observed property has
     ``categories``) and carries a ``category_encoding``; otherwise it yields
-    nothing. The encoding's values (each a single code or a tuple of codes) are
-    flattened into the set of valid codes, and every non-null range value must be
-    an integer in that set (else ``range.invalid-category-code``). This is one of
-    the value-scanning checks gated behind ``check_values=True``.
+    nothing. The values of encoding entries whose key is a defined category id
+    (each a single code or a tuple of codes) are flattened into the set of valid
+    codes, and every non-null range value must be an integer in that set (else
+    ``range.invalid-category-code``). This is one of the value-scanning checks
+    gated behind ``check_values=True``.
 
     Parameters
     ----------
@@ -3374,11 +3423,15 @@ def _check_categorical_codes(
     if (encoding := param.category_encoding) is None:
         return
 
-    # Each encoding entry is a single code or a tuple of codes; normalize a bare
-    # code to a 1-tuple so one comprehension flattens them all.
+    # Only entries whose key is a real category id contribute valid codes: a
+    # phantom key (reported separately as parameter.category-encoding-unknown-id)
+    # must not legitimize its code here. Each entry is a single code or a tuple of
+    # codes; normalize a bare code to a 1-tuple so one comprehension flattens them.
+    ids = _category_ids(param)
     valid = {
         code
-        for entry in encoding.values()
+        for key, entry in encoding.items()
+        if key in ids
         for code in (entry if isinstance(entry, tuple) else (entry,))
     }
 
@@ -3647,6 +3700,60 @@ def _parameter_i18n_issues(
     yield from _unit_i18n_issues(param.unit, (*path, "unit"))
 
 
+def _parameter_category_encoding_issues(
+    param: Parameter, path: tuple[str | int, ...]
+) -> Iterator[Issue]:
+    """Yield a ``categoryEncoding`` key that is the id of no defined category.
+
+    Spec 3 requires each ``categoryEncoding`` key to equal a category id. This is
+    a structural, cross-field check (encoding keys against the parameter's own
+    categories), so it runs in the default tier: unlike the value-scanning
+    `_check_categorical_codes`, it fires even when no range references the
+    parameter. Yields nothing for a non-categorical parameter or one without an
+    encoding.
+
+    Parameters
+    ----------
+    param
+        The parameter whose ``categoryEncoding`` keys are checked.
+    path
+        The reference-token path to ``param``, built via `_ptr` for each issue.
+
+    Yields
+    ------
+    Issue
+        One ``parameter.category-encoding-unknown-id`` per unknown key, in
+        encoding order.
+
+    Examples
+    --------
+    A key that is not one of the category ids is flagged (shown by its ``key``
+    payload); ``path`` only prefixes the JSON pointer, so it is empty here:
+
+    >>> from covjson_msgspec import Category, ObservedProperty, Parameter
+    >>> prop = ObservedProperty(
+    ...     label={"en": "Land cover"},
+    ...     categories=(Category(id="1", label={"en": "Water"}),),
+    ... )
+    >>> param = Parameter.categorical(prop, {"1": 1, "99": 5})
+    >>> [i.key for i in _parameter_category_encoding_issues(param, ())]
+    ['99']
+    """
+    if (encoding := param.category_encoding) is None:
+        return
+
+    # Flag keys that are not category ids (spec 3: keys are a subset of the ids).
+    # The reverse (a category with no encoding entry) is deliberately not flagged:
+    # spec 3 constrains keys to a subset of ids, not the other way, and a partial
+    # encoding is legitimate (a coverage encodes only the codes its data uses).
+    ids = _category_ids(param)
+    yield from (
+        ParameterCategoryEncodingUnknownId(key=k, at=_ptr(path, "categoryEncoding", k))
+        for k in encoding
+        if k not in ids
+    )
+
+
 def _parameter_group_i18n_issues(
     group: ParameterGroup, path: tuple[str | int, ...]
 ) -> Iterator[Issue]:
@@ -3812,7 +3919,8 @@ def _validate_coverage(
     ------
     Issue
         The coverage's issues, in document order: domain, parameters (including
-        parameter and parameter-group language-tag issues), ranges.
+        parameter language-tag, category-encoding, and parameter-group language-tag
+        issues), ranges.
     """
     domain = coverage.domain
     parameters = coverage.parameters
@@ -3844,6 +3952,10 @@ def _validate_coverage(
         _parameter_i18n_issues(param, (*path, "parameters", key))
         for key, param in (parameters or {}).items()
     )
+    parameter_encoding_issues = chain.from_iterable(
+        _parameter_category_encoding_issues(param, (*path, "parameters", key))
+        for key, param in (parameters or {}).items()
+    )
     parameter_group_i18n_issues = chain.from_iterable(
         _parameter_group_i18n_issues(group, (*path, "parameterGroups", i))
         for i, group in enumerate(coverage.parameter_groups or ())
@@ -3858,6 +3970,7 @@ def _validate_coverage(
         domain_issues,
         parameter_issues,
         parameter_i18n_issues,
+        parameter_encoding_issues,
         parameter_group_i18n_issues,
         _validate_ranges(coverage, domain, param_map, path, check_values),
     )
