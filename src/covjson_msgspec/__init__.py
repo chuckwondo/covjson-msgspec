@@ -88,6 +88,7 @@ from covjson_msgspec.validation import (
     DomainTypeRule,
     Issue,
     Severity,
+    ValidationReport,
     validate,
 )
 from covjson_msgspec.xarray import (
@@ -147,6 +148,7 @@ __all__ = [
     "TileSet",
     "TiledNdArray",
     "Unit",
+    "ValidationReport",
     "Verdict",
     "VerticalCRS",
     "__version__",

@@ -73,7 +73,7 @@ def test_multipoint_builder_validates_clean() -> None:
 
     assert dom.domain_type == "MultiPoint"
     assert set(dom.axes) == {"composite", "t"}
-    assert validate(dom) == []
+    assert validate(dom).issues == ()
     assert msgspec.json.decode(msgspec.json.encode(dom), type=Domain) == dom
 
 
@@ -85,7 +85,7 @@ def test_multipoint_series_builder_validates_clean() -> None:
 
     assert dom.domain_type == "MultiPointSeries"
     assert set(dom.axes) == {"composite", "t"}
-    assert validate(dom) == []
+    assert validate(dom).issues == ()
 
 
 def test_section_builder_validates_clean() -> None:
@@ -96,7 +96,7 @@ def test_section_builder_validates_clean() -> None:
 
     assert dom.domain_type == "Section"
     assert set(dom.axes) == {"composite", "z"}
-    assert validate(dom) == []
+    assert validate(dom).issues == ()
 
 
 def test_polygon_builder_holds_one_polygon() -> None:

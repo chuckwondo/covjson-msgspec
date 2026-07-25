@@ -34,8 +34,8 @@ by type *and* by string).
 The two questions:
 
 - **How to carry the code, and whether to keep serialization deferred.** A
-  msgspec tagged union (`tag_field="code"`) makes a `list[Issue]` encode to a
-  machine-readable report and decode back to the exact variants. The tag string
+  msgspec tagged union (`tag_field="code"`) makes a report of findings encode to
+  a machine-readable form and decode back to the exact variants. The tag string
   *is* the code, so a separate `IssueCode` enum is redundant.
 - **How to model the pointer `at`.** A JSON Pointer has an escaping invariant,
   so it is not a role-only value; the question was how much construction
@@ -44,8 +44,10 @@ The two questions:
 ## Decision
 
 Model each finding kind as a frozen `msgspec.Struct` subclassing a private base
-`_Issue`, unioned into the public `Issue`. `validate()` still returns
-`list[Issue]`.
+`_Issue`, unioned into the public `Issue`. `validate()` returns a
+`ValidationReport` whose `issues` are this union (see
+[ADR-0020](0020-validate-outcome-model.md)); the sum-type modeling here is
+independent of that container.
 
 - **Base `_Issue`** (`frozen`, `kw_only`, `omit_defaults`, `tag_field="code"`)
   carries the two fields every finding shares (`at: str` and `severity`), plus
@@ -112,7 +114,7 @@ call.
 
 ## Consequences
 
-- A `list[Issue]` encodes to a machine-readable report (`code` is the wire
+- A report of findings encodes to a machine-readable form (`code` is the wire
   discriminant) and decodes back to the exact variants (a new capability).
 - The 21 variant classes are public (a consumer needs them to `match` /
   `isinstance`), importable from `covjson_msgspec.validation`; the top-level

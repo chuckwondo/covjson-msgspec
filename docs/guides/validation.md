@@ -8,25 +8,34 @@ opt-in and tiered, through `validate`.
 ```python
 from covjson_msgspec import validate
 
-issues = validate(cov)                    # cheap, O(1)-per-object structural checks
-issues = validate(cov, check_values=True) # also the O(n) element-vs-dataType checks
+report = validate(cov)                    # cheap, O(1)-per-object structural checks
+report = validate(cov, check_values=True) # also the O(n) element-vs-dataType checks
 ```
 
-`validate` returns a `list[Issue]`. Each [`Issue`](../reference/validation.md)
-carries a [`Severity`](../reference/validation.md) (an error or a warning) and a
-pointer to the offending member, so you can report or filter them:
+`validate` returns a [`ValidationReport`](../reference/validation.md): the findings
+bundled with the valid/invalid verdict. Ask `report.ok` for validity (it is
+`True` when no error-severity issue was found), and `report.errors` /
+`report.warnings` to split the findings by severity. Each
+[`Issue`](../reference/validation.md) carries a
+[`Severity`](../reference/validation.md) and a pointer to the offending member:
 
 ```python
-from covjson_msgspec import Severity
-
-errors = [i for i in validate(cov) if i.severity is Severity.ERROR]
+if not report.ok:
+    for issue in report.errors:
+        print(issue.at, issue)
 ```
 
-To treat any issue as fatal, decode-then-check in one step with `mode="raise"`,
-which raises `CovJSONValidationError` instead of returning:
+The report has *no* truth value: `if report:` is ambiguous between "has findings"
+and "is valid" (opposite readings), so it raises. Ask `report.ok` for the verdict,
+and reach the findings through `report.issues` (all), `report.errors`, or
+`report.warnings`. The report is deliberately not iterable or sized: `for x in
+report` and `len(report)` raise, so each call site names the view it means.
+
+To treat any error as fatal, decode-then-check in one step with `mode="raise"`,
+which raises `CovJSONValidationError` (carrying every error) instead of returning:
 
 ```python
-validate(cov, mode="raise")               # raises on the first error
+validate(cov, mode="raise")               # raises if any error is found
 ```
 
 The two tiers exist because they cost differently: the default pass is cheap and

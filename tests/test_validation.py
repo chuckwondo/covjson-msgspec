@@ -1,6 +1,6 @@
 """Behavioral tests for document-level validation."""
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from typing import Literal, assert_never, get_args
 
 import msgspec
@@ -23,6 +23,7 @@ from covjson_msgspec import (
     Severity,
     TiledNdArray,
     Unit,
+    ValidationReport,
     i18n,
     validate,
 )
@@ -91,14 +92,14 @@ def test_valid_grid_has_no_issues() -> None:
         x=Axis.regular(0, 10, 3), y=Axis.regular(0, 10, 3), referencing=_REF
     )
 
-    assert validate(grid) == []
+    assert validate(grid).issues == ()
 
 
 def test_missing_required_axis() -> None:
     domain = Domain(
         axes={"x": Axis.listed((1.0,))}, domain_type="Grid", referencing=_REF
     )
-    (issue,) = validate(domain)
+    (issue,) = validate(domain).issues
 
     assert issue.code == "domain.missing-axis"
     assert issue.at == "/axes/y"
@@ -111,7 +112,7 @@ def test_axis_not_single_valued() -> None:
         axes={"x": Axis.listed((1.0, 2.0)), "y": Axis.listed((3.0,))},
         domain_type="Point",
     )
-    codes = {i.code for i in validate(domain)}
+    codes = {i.code for i in validate(domain).issues}
 
     assert "domain.axis-not-single" in codes
 
@@ -122,7 +123,7 @@ def test_composite_data_type_mismatch() -> None:
         values=((0.0, 1.0, 2.0),), data_type="polygon", coordinates=("t", "x", "y")
     )
     domain = Domain(axes={"composite": composite}, domain_type="Trajectory")
-    codes = {i.code for i in validate(domain)}
+    codes = {i.code for i in validate(domain).issues}
 
     assert "domain.composite-data-type" in codes
 
@@ -135,7 +136,7 @@ def test_composite_coordinates_mismatch() -> None:
         axes={"composite": composite}, domain_type="Trajectory", referencing=_REF
     )
     (issue,) = [
-        i for i in validate(domain) if isinstance(i, DomainCompositeCoordinates)
+        i for i in validate(domain).issues if isinstance(i, DomainCompositeCoordinates)
     ]
 
     assert issue.code == "domain.composite-coordinates"
@@ -167,7 +168,7 @@ def test_composite_coordinates_conformant_alternatives_not_reported(
         coordinates=coordinates,
     )
     domain = Domain(axes={"composite": composite}, domain_type=domain_type)
-    codes = {i.code for i in validate(domain)}
+    codes = {i.code for i in validate(domain).issues}
 
     assert "domain.composite-coordinates" not in codes
 
@@ -178,7 +179,7 @@ def test_composite_coordinates_gated_on_data_type() -> None:
     # already matching, so it stays silent rather than piling a second,
     # consequential finding on the same axis.
     domain = Domain(axes={"composite": Axis.listed((1.0, 2.0))}, domain_type="Polygon")
-    codes = {i.code for i in validate(domain)}
+    codes = {i.code for i in validate(domain).issues}
 
     assert "domain.composite-data-type" in codes
     assert "domain.composite-coordinates" not in codes
@@ -194,7 +195,7 @@ def test_surplus_multi_valued_axis_is_an_error() -> None:
         domain_type="Grid",
         referencing=_REF,
     )
-    (issue,) = validate(domain)
+    (issue,) = validate(domain).issues
 
     assert issue.code == "domain.extra-axis-not-single"
     assert issue.severity is Severity.ERROR
@@ -213,7 +214,7 @@ def test_surplus_single_valued_axis_is_conformant() -> None:
         referencing=_REF,
     )
 
-    assert validate(domain) == []
+    assert validate(domain).issues == ()
 
 
 def test_unknown_domain_type_is_not_checked() -> None:
@@ -223,12 +224,12 @@ def test_unknown_domain_type_is_not_checked() -> None:
         referencing=_REF,
     )
 
-    assert validate(domain) == []
+    assert validate(domain).issues == ()
 
 
 def test_ndarray_value_count_mismatch() -> None:
     arr = NdArray(data_type="float", values=(1.0, 2.0), shape=(3,), axis_names=("x",))
-    (issue,) = validate(arr)
+    (issue,) = validate(arr).issues
 
     assert issue.code == "ndarray.value-count"
     assert issue.at == "/values"
@@ -236,7 +237,7 @@ def test_ndarray_value_count_mismatch() -> None:
 
 def test_ndarray_shape_rank_mismatch() -> None:
     arr = NdArray(data_type="float", values=(1.0,), shape=(1, 1), axis_names=("x",))
-    codes = {i.code for i in validate(arr)}
+    codes = {i.code for i in validate(arr).issues}
 
     assert "ndarray.shape-rank" in codes
 
@@ -255,7 +256,7 @@ def test_range_shape_mismatch_against_domain() -> None:
             )
         },
     )
-    codes = {i.code for i in validate(cov)}
+    codes = {i.code for i in validate(cov).issues}
 
     assert "coverage.range-shape-mismatch" in codes
 
@@ -270,7 +271,7 @@ def test_range_axis_not_in_domain() -> None:
             )
         },
     )
-    issues = validate(cov)
+    issues = validate(cov).issues
 
     assert any(i.code == "coverage.range-axis-not-in-domain" for i in issues)
 
@@ -288,7 +289,7 @@ def test_url_domain_skips_range_vs_domain_checks() -> None:
             )
         },
     )
-    codes = {i.code for i in validate(cov)}
+    codes = {i.code for i in validate(cov).issues}
 
     assert "coverage.range-axis-not-in-domain" not in codes
     assert "coverage.range-shape-mismatch" not in codes
@@ -303,7 +304,7 @@ def test_range_without_parameter_is_an_error() -> None:
         ranges={"unknown": NdArray(data_type="float", values=(1.0,))},
         parameters={"t": temp},
     )
-    errors = [i for i in validate(cov) if i.severity is Severity.ERROR]
+    errors = validate(cov).errors
 
     assert any(i.code == "coverage.range-without-parameter" for i in errors)
 
@@ -319,7 +320,7 @@ def test_pointer_escapes_special_characters_in_a_key() -> None:
         parameters={},
     )
     (issue,) = [
-        i for i in validate(cov) if i.code == "coverage.range-without-parameter"
+        i for i in validate(cov).issues if i.code == "coverage.range-without-parameter"
     ]
 
     assert issue.at == "/ranges/a~1b~0c"
@@ -335,7 +336,7 @@ def test_parameter_group_unknown_member() -> None:
         parameters={"t": temp},
         parameter_groups=(ParameterGroup(members=("t", "missing"), label=i18n("Grp")),),
     )
-    codes = {i.code for i in validate(cov)}
+    codes = {i.code for i in validate(cov).issues}
 
     assert "parameter-group.unknown-member" in codes
 
@@ -353,10 +354,10 @@ def test_categorical_code_check_is_opt_in() -> None:
     )
 
     # Off by default: the undefined code 99 is not scanned.
-    assert all(i.code != "range.invalid-category-code" for i in validate(cov))
+    assert all(i.code != "range.invalid-category-code" for i in validate(cov).issues)
 
     # Opt in: the undefined code is flagged.
-    issues = validate(cov, check_values=True)
+    issues = validate(cov, check_values=True).issues
     bad = [i for i in issues if i.code == "range.invalid-category-code"]
 
     assert len(bad) == 1
@@ -378,7 +379,7 @@ def test_category_encoding_unknown_id_fires_without_a_referencing_range() -> Non
         parameters={"lc": param},
     )
 
-    bad = _encoding_key_issues(validate(cov))
+    bad = _encoding_key_issues(validate(cov).issues)
 
     assert [i.key for i in bad] == ["99"]
     assert bad[0].at == "/parameters/lc/categoryEncoding/99"
@@ -400,7 +401,7 @@ def test_category_encoding_unknown_id_closes_the_false_negative() -> None:
         parameters={"lc": param},
     )
 
-    issues = validate(cov, check_values=True)
+    issues = validate(cov, check_values=True).issues
     val_bad = [i for i in issues if i.code == "range.invalid-category-code"]
 
     assert [i.at for i in _encoding_key_issues(issues)] == [
@@ -424,7 +425,7 @@ def test_code_shared_by_real_and_phantom_key_stays_valid() -> None:
         parameters={"lc": param},
     )
 
-    issues = validate(cov, check_values=True)
+    issues = validate(cov, check_values=True).issues
 
     # Value 5 is valid via real key "1": no range finding.
     assert all(i.code != "range.invalid-category-code" for i in issues)
@@ -446,7 +447,7 @@ def test_category_encoding_array_values_are_handled() -> None:
         parameters={"lc": param},
     )
 
-    issues = validate(cov, check_values=True)
+    issues = validate(cov, check_values=True).issues
     val_bad = [i for i in issues if i.code == "range.invalid-category-code"]
 
     assert [i.at for i in val_bad] == ["/ranges/lc/values/1"]
@@ -466,7 +467,7 @@ def test_multiple_unknown_encoding_keys_reported_in_order() -> None:
         parameters={"lc": param},
     )
 
-    bad = _encoding_key_issues(validate(cov))
+    bad = _encoding_key_issues(validate(cov).issues)
 
     assert [i.key for i in bad] == ["99", "98"]
     assert [i.at for i in bad] == [
@@ -492,7 +493,7 @@ def test_conformant_encoding_yields_no_key_finding() -> None:
         parameters={"lc": param},
     )
 
-    issues = validate(cov, check_values=True)
+    issues = validate(cov, check_values=True).issues
 
     assert _encoding_key_issues(issues) == []
     assert all(i.code != "range.invalid-category-code" for i in issues)
@@ -502,10 +503,10 @@ def test_value_data_type_check_is_opt_in() -> None:
     cov = _coverage_with_range(NdArray(data_type="integer", values=(1, 1.5)))
 
     # Off by default: the float in an integer range is not scanned.
-    assert _value_type_paths(validate(cov)) == []
+    assert _value_type_paths(validate(cov).issues) == []
 
     # Opt in: the float is flagged, with its index in the path.
-    issues = validate(cov, check_values=True)
+    issues = validate(cov, check_values=True).issues
     bad = [i for i in issues if i.code == "range.value-type-mismatch"]
 
     assert len(bad) == 1
@@ -516,7 +517,7 @@ def test_value_data_type_check_is_opt_in() -> None:
 def test_integer_range_rejects_floats_including_whole_valued() -> None:
     # Strict: a fractional float AND a whole-valued float (1.0) are both flagged.
     cov = _coverage_with_range(NdArray(data_type="integer", values=(1, 1.0, 1.5)))
-    paths = _value_type_paths(validate(cov, check_values=True))
+    paths = _value_type_paths(validate(cov, check_values=True).issues)
 
     assert paths == ["/ranges/v/values/1", "/ranges/v/values/2"]
 
@@ -525,19 +526,19 @@ def test_float_range_accepts_int_and_float() -> None:
     # A JSON integer like 5 decodes to a Python int but is a valid float value.
     cov = _coverage_with_range(NdArray(data_type="float", values=(5, 5.0)))
 
-    assert _value_type_paths(validate(cov, check_values=True)) == []
+    assert _value_type_paths(validate(cov, check_values=True).issues) == []
 
 
 def test_float_range_rejects_string() -> None:
     cov = _coverage_with_range(NdArray(data_type="float", values=(1.0, "x")))
-    paths = _value_type_paths(validate(cov, check_values=True))
+    paths = _value_type_paths(validate(cov, check_values=True).issues)
 
     assert paths == ["/ranges/v/values/1"]
 
 
 def test_string_range_accepts_str_rejects_number() -> None:
     cov = _coverage_with_range(NdArray(data_type="string", values=("a", 1)))
-    paths = _value_type_paths(validate(cov, check_values=True))
+    paths = _value_type_paths(validate(cov, check_values=True).issues)
 
     assert paths == ["/ranges/v/values/1"]
 
@@ -546,7 +547,7 @@ def test_bool_rejected_in_integer_and_float_ranges() -> None:
     # bool is an int subclass, so it must be excluded explicitly.
     for data_type in ("integer", "float"):
         cov = _coverage_with_range(NdArray(data_type=data_type, values=(True,)))
-        paths = _value_type_paths(validate(cov, check_values=True))
+        paths = _value_type_paths(validate(cov, check_values=True).issues)
 
         assert paths == ["/ranges/v/values/0"], data_type
 
@@ -554,15 +555,15 @@ def test_bool_rejected_in_integer_and_float_ranges() -> None:
 def test_none_is_always_allowed() -> None:
     cov = _coverage_with_range(NdArray(data_type="integer", values=(1, None, 3)))
 
-    assert _value_type_paths(validate(cov, check_values=True)) == []
+    assert _value_type_paths(validate(cov, check_values=True).issues) == []
 
 
 def test_standalone_ndarray_value_types_checked() -> None:
     arr = NdArray(data_type="integer", values=(1, 1.5))
 
     # Off by default, on with check_values; path is relative to the array root.
-    assert _value_type_paths(validate(arr)) == []
-    assert _value_type_paths(validate(arr, check_values=True)) == ["/values/1"]
+    assert _value_type_paths(validate(arr).issues) == []
+    assert _value_type_paths(validate(arr, check_values=True).issues) == ["/values/1"]
 
 
 @pytest.mark.parametrize(
@@ -592,7 +593,7 @@ def test_value_screen_matches_reference_scan(
     arr = NdArray(data_type=data_type, values=values)
 
     assert _value_type_paths(
-        validate(arr, check_values=True)
+        validate(arr, check_values=True).issues
     ) == _expected_value_type_paths(data_type, values)
 
 
@@ -606,7 +607,7 @@ def test_collection_validates_resolved_members() -> None:
         ranges={},
     )
     collection = CoverageCollection(coverages=(member,), domain_type="Point")
-    issues = validate(collection)
+    issues = validate(collection).issues
 
     assert any(i.code == "domain.axis-not-single" for i in issues)
     assert all(i.at.startswith("/coverages/0/") for i in issues)
@@ -617,7 +618,7 @@ def test_missing_referencing_on_standalone_domain() -> None:
         axes={"x": Axis.listed((1.0,)), "y": Axis.listed((2.0,))},
         domain_type="Point",
     )
-    (issue,) = validate(domain)
+    (issue,) = validate(domain).issues
 
     assert issue.code == "domain.missing-referencing"
     assert issue.at == "/referencing"
@@ -628,7 +629,7 @@ def test_missing_domain_type_on_standalone_domain_is_a_warning() -> None:
     # A domain carrying referencing but no domainType isolates the SHOULD
     # (Spec 6.1 RECOMMENDS domainType): a warning, not an error.
     domain = Domain(axes={"x": Axis.listed((1.0,))}, referencing=_REF)
-    (issue,) = validate(domain)
+    (issue,) = validate(domain).issues
 
     assert isinstance(issue, DomainMissingDomainType)
     assert issue.at == "/domainType"
@@ -639,7 +640,7 @@ def test_empty_string_domain_type_is_treated_as_missing() -> None:
     # An empty-string domainType is present but meaningless, so it draws the same
     # recommended-member warning as an absent one.
     domain = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="", referencing=_REF)
-    (issue,) = validate(domain)
+    (issue,) = validate(domain).issues
 
     assert isinstance(issue, DomainMissingDomainType)
     assert issue.severity is Severity.WARNING
@@ -658,7 +659,9 @@ def test_coverage_domain_type_suppresses_the_inline_domain_warning() -> None:
         parameters={},
     )
 
-    assert all(i.code != "domain.missing-domain-type" for i in validate(coverage))
+    assert all(
+        i.code != "domain.missing-domain-type" for i in validate(coverage).issues
+    )
 
 
 def test_collection_member_repeating_domain_type_warns() -> None:
@@ -677,7 +680,9 @@ def test_collection_member_repeating_domain_type_warns() -> None:
     )
 
     (issue,) = [
-        i for i in validate(collection) if isinstance(i, CoverageDomainTypeNotOmitted)
+        i
+        for i in validate(collection).issues
+        if isinstance(i, CoverageDomainTypeNotOmitted)
     ]
     assert issue.at == "/coverages/0/domainType"
     assert issue.domain_type == "Point"
@@ -700,7 +705,9 @@ def test_collection_member_conflicting_domain_type_is_an_error() -> None:
     )
 
     (issue,) = [
-        i for i in validate(collection) if isinstance(i, CoverageDomainTypeConflict)
+        i
+        for i in validate(collection).issues
+        if isinstance(i, CoverageDomainTypeConflict)
     ]
     assert issue.at == "/coverages/0/domainType"
     assert issue.domain_type == "Grid"
@@ -725,7 +732,9 @@ def test_collection_member_conflict_declared_on_inline_domain() -> None:
     )
 
     (issue,) = [
-        i for i in validate(collection) if isinstance(i, CoverageDomainTypeConflict)
+        i
+        for i in validate(collection).issues
+        if isinstance(i, CoverageDomainTypeConflict)
     ]
     assert issue.at == "/coverages/0/domain/domainType"
     assert issue.domain_type == "Grid"
@@ -750,7 +759,7 @@ def test_collection_member_matching_inline_domain_type_is_not_flagged() -> None:
     collection = CoverageCollection(
         coverages=(member,), domain_type="Point", parameters={}
     )
-    codes = {i.code for i in validate(collection)}
+    codes = {i.code for i in validate(collection).issues}
 
     assert "coverage.domain-type-conflict" not in codes
     assert "coverage.domain-type-not-omitted" not in codes
@@ -770,7 +779,7 @@ def test_collection_member_omitting_domain_type_is_not_flagged() -> None:
     collection = CoverageCollection(
         coverages=(member,), domain_type="Point", parameters={}
     )
-    codes = {i.code for i in validate(collection)}
+    codes = {i.code for i in validate(collection).issues}
 
     assert "coverage.domain-type-not-omitted" not in codes
     assert "domain.missing-domain-type" not in codes
@@ -792,11 +801,11 @@ def test_temporal_lexical_form_check_is_opt_in() -> None:
     )
 
     # Off by default: no value scanning.
-    assert all(i.code != "temporal.lexical-form" for i in validate(domain))
+    assert all(i.code != "temporal.lexical-form" for i in validate(domain).issues)
 
     # Opt in: only the malformed value is flagged. The reduced-precision "2020"
     # and the unrepresentable "+102020" are legal forms and pass.
-    issues = validate(domain, check_values=True)
+    issues = validate(domain, check_values=True).issues
     (issue,) = [i for i in issues if i.code == "temporal.lexical-form"]
 
     assert isinstance(issue, TemporalLexicalForm)
@@ -820,7 +829,7 @@ def test_temporal_check_flags_malformed_year_zero_date() -> None:
         ),
     )
 
-    issues = validate(domain, check_values=True)
+    issues = validate(domain, check_values=True).issues
     (issue,) = [i for i in issues if i.code == "temporal.lexical-form"]
 
     assert isinstance(issue, TemporalLexicalForm)
@@ -840,7 +849,7 @@ def test_temporal_check_skips_non_gregorian_calendar() -> None:
         ),
     )
 
-    issues = validate(domain, check_values=True)
+    issues = validate(domain, check_values=True).issues
 
     assert all(i.code != "temporal.lexical-form" for i in issues)
 
@@ -858,7 +867,7 @@ def test_collection_referencing_is_inherited_into_member_domain() -> None:
     )
     collection = CoverageCollection(coverages=(member,), referencing=_REF)
 
-    assert validate(collection) == []
+    assert validate(collection).issues == ()
 
 
 def test_missing_parameters_on_standalone_coverage() -> None:
@@ -868,7 +877,7 @@ def test_missing_parameters_on_standalone_coverage() -> None:
         ),
         ranges={},
     )
-    (issue,) = validate(cov)
+    (issue,) = validate(cov).issues
 
     assert issue.code == "coverage.missing-parameters"
     assert issue.at == "/parameters"
@@ -885,7 +894,7 @@ def test_empty_parameters_member_is_present_so_not_missing() -> None:
         parameters={},
     )
 
-    assert validate(cov) == []
+    assert validate(cov).issues == ()
 
 
 def test_collection_parameters_are_inherited_by_member() -> None:
@@ -899,7 +908,7 @@ def test_collection_parameters_are_inherited_by_member() -> None:
         ranges={"t": NdArray(data_type="float", values=(280.0,))},
     )
     collection = CoverageCollection(coverages=(member,), parameters={"t": temp})
-    codes = {i.code for i in validate(collection)}
+    codes = {i.code for i in validate(collection).issues}
 
     assert "coverage.missing-parameters" not in codes
 
@@ -908,7 +917,7 @@ def test_url_reference_domain_skips_referencing_but_not_parameters() -> None:
     # A URL-reference domain is unfetched, so its referencing cannot be checked;
     # the coverage's own parameters MUST is independent of the domain form.
     cov = Coverage(domain="https://example.org/domain.json", ranges={})
-    codes = {i.code for i in validate(cov)}
+    codes = {i.code for i in validate(cov).issues}
 
     assert "domain.missing-referencing" not in codes
     assert "coverage.missing-parameters" in codes
@@ -921,7 +930,7 @@ def test_tiled_ndarray_tile_shape_too_large() -> None:
         shape=(4, 2),
         tile_sets=(TileSet(tile_shape=(5, None), url_template="{t}.covjson"),),
     )
-    (issue,) = validate(arr)
+    (issue,) = validate(arr).issues
 
     assert issue.code == "tiled-ndarray.tile-shape-too-large"
     assert issue.at == "/tileSets/0/tileShape/0"
@@ -934,7 +943,7 @@ def test_tiled_ndarray_url_template_missing_variable() -> None:
         shape=(4, 2),
         tile_sets=(TileSet(tile_shape=(1, None), url_template="tile.covjson"),),
     )
-    (issue,) = validate(arr)
+    (issue,) = validate(arr).issues
 
     assert issue.code == "tiled-ndarray.url-template-missing-variable"
     assert issue.at == "/tileSets/0/urlTemplate"
@@ -947,7 +956,7 @@ def test_tiled_ndarray_shape_rank_mismatch() -> None:
         shape=(4, 2),
         tile_sets=(TileSet(tile_shape=(1, None), url_template="{t}.covjson"),),
     )
-    codes = {i.code for i in validate(arr)}
+    codes = {i.code for i in validate(arr).issues}
 
     assert "tiled-ndarray.shape-rank" in codes
 
@@ -959,7 +968,7 @@ def test_tiled_ndarray_non_positive_tile_size() -> None:
         shape=(4, 2),
         tile_sets=(TileSet(tile_shape=(0, None), url_template="{t}.covjson"),),
     )
-    (issue,) = validate(arr)
+    (issue,) = validate(arr).issues
 
     assert issue.code == "tiled-ndarray.tile-shape-not-positive"
     assert issue.at == "/tileSets/0/tileShape/0"
@@ -972,7 +981,7 @@ def test_tiled_ndarray_url_template_unknown_variable() -> None:
         shape=(4, 2),
         tile_sets=(TileSet(tile_shape=(1, None), url_template="{t}-{z}.covjson"),),
     )
-    (issue,) = validate(arr)
+    (issue,) = validate(arr).issues
 
     assert issue.code == "tiled-ndarray.url-template-unknown-variable"
     assert issue.at == "/tileSets/0/urlTemplate"
@@ -988,7 +997,7 @@ def test_tiled_ndarray_unknown_variable_suppressed_on_rank_mismatch() -> None:
         shape=(4, 2),
         tile_sets=(TileSet(tile_shape=(1, None), url_template="{t}-{x}.covjson"),),
     )
-    codes = {i.code for i in validate(arr)}
+    codes = {i.code for i in validate(arr).issues}
 
     assert "tiled-ndarray.url-template-unknown-variable" not in codes
     assert "tiled-ndarray.shape-rank" in codes
@@ -1002,7 +1011,7 @@ def test_tiled_ndarray_well_formed_is_clean() -> None:
         tile_sets=(TileSet(tile_shape=(1, None), url_template="{t}.covjson"),),
     )
 
-    assert validate(arr) == []
+    assert validate(arr).issues == ()
 
 
 def test_tiled_ndarray_range_inside_coverage_is_validated() -> None:
@@ -1024,7 +1033,9 @@ def test_tiled_ndarray_range_inside_coverage_is_validated() -> None:
         parameters={"t": temp},
     )
     issue = next(
-        i for i in validate(cov) if i.code == "tiled-ndarray.tile-shape-too-large"
+        i
+        for i in validate(cov).issues
+        if i.code == "tiled-ndarray.tile-shape-too-large"
     )
 
     assert issue.at == "/ranges/t/tileSets/0/tileShape/0"
@@ -1060,7 +1071,7 @@ def test_i18n_invalid_tag_in_parameter_label() -> None:
         ranges={},
         parameters={"t": temp},
     )
-    (issue,) = validate(cov)
+    (issue,) = validate(cov).issues
 
     assert issue.code == "i18n.invalid-language-tag"
     assert issue.at == "/parameters/t/label/en_US"
@@ -1078,7 +1089,7 @@ def test_i18n_invalid_tag_in_category_label() -> None:
         ranges={},
         parameters={"lc": Parameter.categorical(land_cover, {"1": 1})},
     )
-    (issue,) = validate(cov)
+    (issue,) = validate(cov).issues
 
     assert issue.code == "i18n.invalid-language-tag"
     assert issue.at == "/parameters/lc/observedProperty/categories/0/label/en_US"
@@ -1097,7 +1108,7 @@ def test_i18n_invalid_tag_in_identifier_rs_description() -> None:
         ),
     )
     domain = Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,)), referencing=ref)
-    (issue,) = validate(domain)
+    (issue,) = validate(domain).issues
 
     assert issue.code == "i18n.invalid-language-tag"
     assert issue.at == "/referencing/0/system/description/en_US"
@@ -1131,7 +1142,7 @@ def test_refine_and_validate_agree_on_a_malformed_known_rs(
         domain_type="http://example/Custom",
         referencing=(ReferenceSystemConnection(coordinates=("x",), system=system),),
     )
-    (issue,) = validate(domain)
+    (issue,) = validate(domain).issues
 
     assert issue.code == code
     assert issue.at == f"/referencing/0/system/{member}"
@@ -1153,7 +1164,7 @@ def test_malformed_identifier_rs_still_reports_i18n() -> None:
         ),
     )
 
-    codes = {i.code for i in validate(domain)}
+    codes = {i.code for i in validate(domain).issues}
 
     assert codes == {"identifier.missing-target-concept", "i18n.invalid-language-tag"}
 
@@ -1176,7 +1187,7 @@ def test_i18n_invalid_tag_in_identifier_rs_identifiers() -> None:
         domain_type="http://example/Custom",
         referencing=ref,
     )
-    (issue,) = validate(domain)
+    (issue,) = validate(domain).issues
 
     assert issue.code == "i18n.invalid-language-tag"
     assert issue.at == "/referencing/0/system/identifiers/1/label/en_US"
@@ -1196,7 +1207,7 @@ def test_i18n_valid_tags_including_und_are_not_flagged() -> None:
     )
     cov = Coverage(domain=domain, ranges={}, parameters={"t": temp})
 
-    assert validate(cov) == []
+    assert validate(cov).issues == ()
 
 
 def test_i18n_invalid_tag_in_parameter_group_checked_even_without_parameters() -> None:
@@ -1206,7 +1217,7 @@ def test_i18n_invalid_tag_in_parameter_group_checked_even_without_parameters() -
         ranges={},
         parameter_groups=(ParameterGroup(members=("a",), label={"en_US": "grp"}),),
     )
-    codes = {i.code for i in validate(cov)}
+    codes = {i.code for i in validate(cov).issues}
 
     assert "coverage.missing-parameters" in codes
     assert "i18n.invalid-language-tag" in codes
@@ -1226,7 +1237,7 @@ def test_i18n_empty_map_is_flagged() -> None:
         ranges={},
         parameters={"t": temp},
     )
-    (issue,) = validate(cov)
+    (issue,) = validate(cov).issues
 
     assert issue.code == "i18n.empty"
     assert issue.at == "/parameters/t/unit/label"
@@ -1239,10 +1250,59 @@ def test_report_roundtrips_through_json() -> None:
     domain = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
     report = validate(domain)
 
-    restored = msgspec.json.decode(msgspec.json.encode(report), type=list[Issue])
+    restored = msgspec.json.decode(msgspec.json.encode(report), type=ValidationReport)
 
     assert restored == report
-    assert [type(i) for i in restored] == [type(i) for i in report]
+    assert [type(i) for i in restored.issues] == [type(i) for i in report.issues]
+
+
+def test_report_ok_and_empty_for_valid_document() -> None:
+    grid = Domain.grid(
+        x=Axis.regular(0, 10, 3), y=Axis.regular(0, 10, 3), referencing=_REF
+    )
+    report = validate(grid)
+
+    assert report.ok is True
+    assert report.issues == ()
+    assert report.errors == ()
+    assert report.warnings == ()
+
+
+def test_report_not_ok_when_an_error_is_present() -> None:
+    domain = Domain(
+        axes={"x": Axis.listed((1.0,))}, domain_type="Grid", referencing=_REF
+    )
+    report = validate(domain)
+
+    assert report.ok is False
+    # The one missing-axis error is the whole report; no warnings.
+    assert report.errors == report.issues
+    assert report.warnings == ()
+
+
+def test_report_ok_when_only_warnings_are_present() -> None:
+    # A domain with referencing but no domainType draws only the
+    # `domain.missing-domain-type` warning; a warnings-only document is valid.
+    domain = Domain(axes={"x": Axis.listed((1.0,))}, referencing=_REF)
+    report = validate(domain)
+
+    assert [i.severity for i in report.issues] == [Severity.WARNING]
+    assert report.ok is True
+    assert report.errors == ()
+    assert report.warnings == report.issues
+
+
+def test_report_has_no_truth_value() -> None:
+    # `if report` conflates "has findings" with "is valid" (a __len__-based
+    # truthiness would answer the former while reading like the latter), so the
+    # report refuses a boolean and directs callers to `ok`.
+    grid = Domain.grid(
+        x=Axis.regular(0, 10, 3), y=Axis.regular(0, 10, 3), referencing=_REF
+    )
+    report = validate(grid)
+
+    with pytest.raises(ValueError, match="ambiguous"):
+        bool(report)
 
 
 def test_every_finding_kind_is_exhaustively_matchable() -> None:
@@ -1251,7 +1311,7 @@ def test_every_finding_kind_is_exhaustively_matchable() -> None:
     # This document produces two `domain.*` findings.
     domain = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
 
-    assert {_describe(i) for i in validate(domain)} == {"domain"}
+    assert {_describe(i) for i in validate(domain).issues} == {"domain"}
 
 
 # One instance of every `Issue` variant, for the `__str__` render tests below.
@@ -1325,12 +1385,12 @@ def test_axis_monotonic_check_is_opt_in() -> None:
     domain = _axis_domain(Axis.listed((0.0, 2.0, 1.0)), ReferenceSystem.geographic())
 
     # Off by default: the value array is not scanned.
-    assert all(i.code != "axis.not-monotonic" for i in validate(domain))
+    assert all(i.code != "axis.not-monotonic" for i in validate(domain).issues)
 
     # Opt in: the reversal is flagged as an error, at the offending index.
     (issue,) = [
         i
-        for i in validate(domain, check_values=True)
+        for i in validate(domain, check_values=True).issues
         if isinstance(i, AxisNotMonotonic)
     ]
     assert issue.axis == "x"
@@ -1465,7 +1525,7 @@ def test_malformed_temporal_value_is_not_double_reported() -> None:
         coord="t",
     )
 
-    codes = {i.code for i in validate(domain, check_values=True)}
+    codes = {i.code for i in validate(domain, check_values=True).issues}
 
     assert "temporal.lexical-form" in codes
     assert "axis.not-monotonic" not in codes
@@ -1626,7 +1686,9 @@ def test_composite_issues_are_gated_by_check_values() -> None:
     axis = Axis(values=("abc",), data_type="tuple", coordinates=("t", "x", "y"))
     domain = Domain(axes={"composite": axis}, referencing=_REF)
 
-    assert [i for i in validate(domain) if i.code.startswith("axis.composite-")] == []
+    assert [
+        i for i in validate(domain).issues if i.code.startswith("axis.composite-")
+    ] == []
 
 
 # `_polygon_axis` is called at module-load time by the parametrize decorators
@@ -1743,7 +1805,9 @@ def test_polygon_deep_checks_are_gated_by_check_values() -> None:
     axis = _polygon_axis("[[[0.0,0.0],[1.0,0.0],[0.0,0.0]]]")
     domain = Domain(axes={"composite": axis}, referencing=_REF)
 
-    assert [i for i in validate(domain) if i.code.startswith("axis.polygon-")] == []
+    assert [
+        i for i in validate(domain).issues if i.code.startswith("axis.polygon-")
+    ] == []
 
 
 @pytest.mark.parametrize(
@@ -1854,7 +1918,7 @@ def _composite_issues(axis: Axis) -> list[Issue]:
 
     return [
         issue
-        for issue in validate(domain, check_values=True)
+        for issue in validate(domain, check_values=True).issues
         if issue.code.startswith("axis.composite-")
     ]
 
@@ -1865,7 +1929,7 @@ def _polygon_deep_issues(axis: Axis) -> list[Issue]:
 
     return [
         issue
-        for issue in validate(domain, check_values=True)
+        for issue in validate(domain, check_values=True).issues
         if issue.code.startswith("axis.polygon-")
     ]
 
@@ -1876,7 +1940,7 @@ def _bounds_issues(axis: Axis, *, check_values: bool = True) -> list[AxisBoundsL
 
     return [
         issue
-        for issue in validate(domain, check_values=check_values)
+        for issue in validate(domain, check_values=check_values).issues
         if isinstance(issue, AxisBoundsLength)
     ]
 
@@ -1891,18 +1955,18 @@ def _coordinates_issues(
 
     return [
         issue
-        for issue in validate(domain, check_values=check_values)
+        for issue in validate(domain, check_values=check_values).issues
         if isinstance(issue, AxisCoordinatesNotOmitted)
     ]
 
 
-def _value_type_paths(issues: list[Issue]) -> list[str]:
+def _value_type_paths(issues: Iterable[Issue]) -> list[str]:
     """Paths of the value-type-mismatch issues, in document order."""
     return [i.at for i in issues if i.code == "range.value-type-mismatch"]
 
 
 def _encoding_key_issues(
-    issues: list[Issue],
+    issues: Iterable[Issue],
 ) -> list[ParameterCategoryEncodingUnknownId]:
     """The unknown-category-encoding-key findings, in document order.
 
@@ -2031,5 +2095,5 @@ def _monotonic_paths(
     domain: Domain, checker: AxisOrderChecker | None = None
 ) -> list[str]:
     """The ``at`` pointers of the domain's ``axis.not-monotonic`` issues."""
-    issues = validate(domain, check_values=True, axis_order_checker=checker)
+    issues = validate(domain, check_values=True, axis_order_checker=checker).issues
     return [i.at for i in issues if i.code == "axis.not-monotonic"]

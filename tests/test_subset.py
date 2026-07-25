@@ -78,7 +78,7 @@ def test_isel_mapping_and_kwargs_merge() -> None:
 
 def test_isel_result_is_valid() -> None:
     sub = isel(_grid(), y=0, x=slice(1, 3))
-    assert validate(sub) == []
+    assert validate(sub).issues == ()
 
 
 def test_isel_unknown_axis() -> None:

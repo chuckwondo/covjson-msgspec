@@ -108,6 +108,12 @@ CLAUDE.md.
   must supply `coordinates` at construction (tuple ≥1, polygon ≥2) because the
   default (the axis's kind-name `"composite"`) names no real coordinate; it fits
   only primitive/custom axes
+- [ADR-0020](0020-validate-outcome-model.md): `validate()` returns a frozen
+  `ValidationReport` value (the issues plus `.ok` / `.errors` / `.warnings`),
+  giving the "is it valid?" verdict one public home that `mode="raise"` reuses;
+  the report exposes named accessors only (no `__iter__` / `__len__`, so each call
+  site names its view) and `__bool__` raises via `NoReturn`; the JSON form becomes
+  `{"issues": [...]}`
 
 Some decisions are recorded in ADRs that land with their implementation rather
 than here; see the issue tracker for the in-flight set.

@@ -60,7 +60,7 @@ import re
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from functools import cache
 from itertools import chain, pairwise
-from typing import Any, Literal, TypeGuard, assert_never, cast
+from typing import Any, Literal, NoReturn, TypeGuard, assert_never, cast
 
 import langcodes
 import msgspec
@@ -118,9 +118,9 @@ class _Issue(
     msgspec ``tag``: its stable, machine-readable ``code``
     (``"domain.missing-axis"``). The base supplies the two fields every finding
     carries (``at`` and ``severity``), the `code` accessor, and the
-    ``tag_field="code"`` config that makes a ``list[Issue]`` a *tagged union*:
-    it encodes to a machine-readable report and decodes back to the exact
-    concrete variants (the ``code`` field is the discriminant).
+    ``tag_field="code"`` config that makes `Issue` a *tagged union*: a report
+    encodes to a machine-readable form and each finding decodes back to its exact
+    concrete variant (the ``code`` field is the discriminant).
 
     Consumers have two matching styles, and the split is the whole point:
 
@@ -148,22 +148,26 @@ class _Issue(
 
     >>> from covjson_msgspec import Axis, Domain
     >>> dom = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
-    >>> sorted(i.code for i in validate(dom))
+    >>> sorted(i.code for i in validate(dom).issues)
     ['domain.missing-axis', 'domain.missing-referencing']
 
     Narrow with the type to read a variant's typed payload (the string ``code``
     cannot do this: it does not tell the checker which variant you hold):
 
-    >>> issue = validate(dom)[0]
+    >>> issue = validate(dom).issues[0]
     >>> issue.axis if isinstance(issue, DomainMissingAxis) else None
     'y'
 
-    A report round-trips through JSON, the ``code`` tag discriminating on decode:
+    A report round-trips through JSON, the ``code`` tag selecting each finding's
+    concrete variant on decode:
 
     >>> import msgspec
     >>> report = validate(dom)
-    >>> msgspec.json.decode(msgspec.json.encode(report), type=list[Issue]) == report
-    True
+    >>> restored = msgspec.json.decode(
+    ...     msgspec.json.encode(report), type=ValidationReport
+    ... )
+    >>> [type(i).__name__ for i in restored.issues]
+    ['DomainMissingAxis', 'DomainMissingReferencing']
     """
 
     at: str
@@ -768,10 +772,11 @@ class I18nEmpty(_Issue, frozen=True, tag="i18n.empty"):
         return "i18n object must have at least one language-tagged entry"
 
 
-# The closed set of validation findings. `validate` returns a ``list[Issue]``;
-# a consumer matches on the concrete variant (`match` / `assert_never` for
-# exhaustiveness, or `isinstance` to read a variant's typed payload) and uses
-# `code` only for stringly work (aggregation, logging, the wire tag).
+# The closed set of validation findings. `validate` returns a `ValidationReport`
+# whose ``issues`` are these; a consumer matches on the concrete variant (`match`
+# / `assert_never` for exhaustiveness, or `isinstance` to read a variant's typed
+# payload) and uses `code` only for stringly work (aggregation, logging, the wire
+# tag).
 # The union is a msgspec tagged union keyed on ``code``, so a report encodes to
 # JSON and decodes back to these exact types.
 Issue = (
@@ -813,6 +818,123 @@ Issue = (
     | I18nInvalidLanguageTag
     | I18nEmpty
 )
+
+
+class ValidationReport(msgspec.Struct, frozen=True):
+    """The findings from `validate`, bundled with the valid/invalid verdict.
+
+    Returned by `validate` in the default ``mode="collect"``. A frozen value
+    carrier, like [`ResolveReport`][covjson_msgspec.ResolveReport] and
+    [`AssembleReport`][covjson_msgspec.AssembleReport]; unlike those it has no
+    recovered value to carry, so the findings are the whole payload and the
+    verdict is computed over them.
+
+    The question a caller most often asks is the one a bare list of findings
+    cannot answer on its own: is the document *valid*? The library defines that
+    as carrying no error-severity `Issue`, exposed here as `ok` (over the
+    underlying `errors`). It is not a lazy question: errors and warnings are
+    interleaved in document order, so a valid or warnings-only document is known
+    valid only once every finding has been seen, which is why `validate`
+    materializes this report rather than yielding a stream.
+
+    Reach the findings through the named accessors: `issues` (all, in document
+    order), `errors`, and `warnings`. The report is deliberately neither iterable
+    nor sized, because it bundles three views (all findings, the errors, the
+    warnings) and an implicit ``for x in report`` or ``len(report)`` would
+    silently pick one; instead each raises a `TypeError`, so the caller reaches
+    for the accessor it meant. It also has **no** truth value: ``bool(report)`` raises,
+    because ``if report`` is ambiguous between "has findings" and "is valid". Ask
+    `ok`.
+
+    Attributes
+    ----------
+    issues
+        Every finding, in document order.
+
+    Examples
+    --------
+    A conformant document reports no findings and is valid:
+
+    >>> from covjson_msgspec import (
+    ...     Axis, Domain, ReferenceSystem, ReferenceSystemConnection
+    ... )
+    >>> ref = ReferenceSystemConnection(
+    ...     coordinates=("x", "y"), system=ReferenceSystem.geographic()
+    ... )
+    >>> grid = Domain.grid(
+    ...     x=Axis.regular(0, 10, 3), y=Axis.regular(0, 10, 3), referencing=[ref]
+    ... )
+    >>> report = validate(grid)
+    >>> report.ok
+    True
+    >>> report.issues
+    ()
+
+    A document missing a required axis is invalid; `errors` carries why:
+
+    >>> incomplete = Domain(
+    ...     axes={"x": Axis.listed((1.0,))}, domain_type="Grid", referencing=[ref]
+    ... )
+    >>> report = validate(incomplete)
+    >>> report.ok
+    False
+    >>> report.errors[0].code
+    'domain.missing-axis'
+
+    The report has no truth value, so the verdict must be asked explicitly:
+
+    >>> bool(report)
+    Traceback (most recent call last):
+        ...
+    ValueError: ValidationReport truth value is ambiguous; use .ok, .errors, or .issues
+
+    A report round-trips through JSON as an object with an ``issues`` array:
+
+    >>> import msgspec
+    >>> msgspec.json.decode(
+    ...     msgspec.json.encode(report), type=ValidationReport
+    ... ) == report
+    True
+    """
+
+    issues: tuple[Issue, ...]
+
+    @property
+    def errors(self) -> tuple[Issue, ...]:
+        """The error-severity findings, in document order (the verdict's basis)."""
+        return tuple(i for i in self.issues if i.severity is Severity.ERROR)
+
+    @property
+    def warnings(self) -> tuple[Issue, ...]:
+        """The warning-severity findings, in document order.
+
+        Defined positively (``is Severity.WARNING``), not as "not an error", so
+        that a future third `Severity` lands in neither `errors` nor `warnings`
+        rather than being silently mislabelled a warning. `issues` stays the whole.
+        """
+        return tuple(i for i in self.issues if i.severity is Severity.WARNING)
+
+    @property
+    def ok(self) -> bool:
+        """Whether the document is valid: it carries no error-severity `Issue`."""
+        return not self.errors
+
+    def __bool__(self) -> NoReturn:
+        """Refuse a truth value: ``if report`` conflates "has issues" with "valid".
+
+        `validate` reads like a verdict, so ``if report`` looks like "if valid",
+        but the report has no meaningful truth value: with no `__len__` to fall
+        back on it would default to always-true, so ``if not validate(doc):``
+        (meant as "if valid") would silently never run. Rather than answer with a
+        misleading value, this raises so the caller reaches for `ok`, `errors`, or
+        `issues` explicitly. The `NoReturn` annotation lifts the guard from runtime
+        to the type checker: ``if report`` and ``bool(report)`` are flagged as
+        unreachable rather than only raising once reached. The `ValueError` matches
+        what numpy and pandas raise for an ambiguous truth value (pandas likewise
+        annotates ``DataFrame.__bool__`` as `NoReturn`).
+        """
+        msg = "ValidationReport truth value is ambiguous; use .ok, .errors, or .issues"
+        raise ValueError(msg)
 
 
 # An axis-ordering policy: given a primitive axis's ``values`` and the reference
@@ -974,7 +1096,7 @@ def validate(
     check_values: bool = False,
     axis_order_checker: AxisOrderChecker | None = None,
     mode: Literal["collect", "raise"] = "collect",
-) -> list[Issue]:
+) -> ValidationReport:
     """Check a CoverageJSON document for cross-cutting, document-level problems.
 
     Decoding already yields a structurally valid, correctly typed object: msgspec
@@ -1018,14 +1140,16 @@ def validate(
         check while keeping the other value scans, pass a checker that always
         returns ``None``.
     mode
-        ``"collect"`` (default) returns every issue found. ``"raise"`` raises a
-        `CovJSONValidationError` if any error-severity issue is found, and
-        otherwise returns the (warning-only) issues.
+        ``"collect"`` (default) returns a `ValidationReport` of every finding.
+        ``"raise"`` raises a `CovJSONValidationError` if any error-severity issue
+        is found, and otherwise returns the (warning-only) report.
 
     Returns
     -------
-    list of Issue
-        Every issue found, in document order.
+    ValidationReport
+        The findings (in document order) bundled with the valid/invalid verdict.
+        Ask ``report.ok`` for validity, ``report.errors`` / ``report.warnings``
+        to split by severity, or read ``report.issues`` for every finding.
 
     Raises
     ------
@@ -1053,13 +1177,13 @@ def validate(
     >>> grid = Domain.grid(
     ...     x=Axis.regular(0, 10, 3), y=Axis.regular(0, 10, 3), referencing=[ref]
     ... )
-    >>> validate(grid)
-    []
+    >>> validate(grid).ok
+    True
 
     A domain with no ``referencing`` in scope is a spec violation (an error):
 
     >>> bare = Domain.grid(x=Axis.regular(0, 10, 3), y=Axis.regular(0, 10, 3))
-    >>> validate(bare)[0].code == "domain.missing-referencing"
+    >>> validate(bare).errors[0].code == "domain.missing-referencing"
     True
 
     A Grid domain missing its ``y`` axis yields an error. Match the string
@@ -1068,7 +1192,7 @@ def validate(
     >>> incomplete = Domain(
     ...     axes={"x": Axis.listed((1.0,))}, domain_type="Grid", referencing=[ref]
     ... )
-    >>> issue = validate(incomplete)[0]
+    >>> issue = validate(incomplete).issues[0]
     >>> issue.code == "domain.missing-axis"
     True
     >>> issue.axis if isinstance(issue, DomainMissingAxis) else None
@@ -1094,7 +1218,7 @@ def validate(
     ...     ranges={"v": NdArray(data_type="float", values=(280.0,))},
     ...     parameters={},
     ... )
-    >>> issue = validate(cov)[0]
+    >>> issue = validate(cov).issues[0]
     >>> issue.code == "coverage.range-without-parameter"
     True
     >>> issue.severity.value
@@ -1103,17 +1227,17 @@ def validate(
     A coverage with no ``parameters`` member at all is likewise an error:
 
     >>> cov = Coverage(domain=point, ranges={})
-    >>> validate(cov)[0].code == "coverage.missing-parameters"
+    >>> validate(cov).issues[0].code == "coverage.missing-parameters"
     True
     """
-    issues = list(_issues(obj, check_values, axis_order_checker))
+    report = ValidationReport(
+        issues=tuple(_issues(obj, check_values, axis_order_checker))
+    )
 
-    if mode == "raise" and (
-        errors := tuple(i for i in issues if i.severity is Severity.ERROR)
-    ):
+    if mode == "raise" and (errors := report.errors):
         raise CovJSONValidationError(errors)
 
-    return issues
+    return report
 
 
 def _issues(
