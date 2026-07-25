@@ -353,7 +353,7 @@ def test_wrong_arity_polygon_is_reported_before_the_bridge_indexerrors() -> None
         ranges={},
     )
 
-    codes = {issue.code for issue in validate(cov, check_values=True)}
+    codes = {issue.code for issue in validate(cov, check_values=True).issues}
     assert "axis.polygon-position-arity" in codes
 
     with pytest.raises(IndexError):

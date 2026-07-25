@@ -149,10 +149,10 @@ Concrete types survive only for their true cause:
   `json.dumps` inspects the runtime object, still a `dict`), and the library's
   stance is to present read-only interfaces rather than invite mutation. A caller
   who wants a mutable structure builds one from the returned values.
-- `validate()`'s return is *not* swept here. Its outcome model (a materialized
-  report, a lazy stream, or a `ValidationReport` value) is a one-way public-API
-  decision spun off to [#157](../../issues/157); `validation.py` is left as it
-  stands.
+- `validate()`'s return is *not* swept here. Its outcome model is a one-way
+  public-API decision, spun off to [#157](../../issues/157) and settled in
+  [ADR-0020](0020-validate-outcome-model.md): a frozen `ValidationReport` value.
+  `validation.py` is left as it stands here.
 
 The three-way rule, then: **parameters and returns take the read-only interface for
 variable-length data (concrete `tuple` for fixed-arity products); struct members

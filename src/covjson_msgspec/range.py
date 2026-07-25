@@ -108,8 +108,8 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
     ...   "values": [1, 2, 3]
     ... }
     ... '''
-    >>> validate(msgspec.json.decode(blob, type=NdArray), check_values=True)
-    []
+    >>> validate(msgspec.json.decode(blob, type=NdArray), check_values=True).ok
+    True
 
     while a non-integer value is flagged deterministically:
 
@@ -123,7 +123,7 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
     ... }
     ... '''
     >>> bad = msgspec.json.decode(blob, type=NdArray)
-    >>> [issue.code for issue in validate(bad, check_values=True)] == [
+    >>> [issue.code for issue in validate(bad, check_values=True).issues] == [
     ...     "range.value-type-mismatch"
     ... ]
     True

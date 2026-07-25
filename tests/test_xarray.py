@@ -878,7 +878,7 @@ def test_from_external_non_dimension_horizontal_coords_build_a_grid() -> None:
     assert _dom(cov).domain_type == "Grid"
     assert _dom(cov).axes["x"].coordinate_values == (0.0, 10.0)
     assert _dom(cov).axes["y"].coordinate_values == (0.0, 5.0, 10.0)
-    assert validate(cov) == []
+    assert validate(cov).issues == ()
 
 
 def test_from_external_aux_coords_keyed_by_differently_named_dimension() -> None:
@@ -896,7 +896,7 @@ def test_from_external_aux_coords_keyed_by_differently_named_dimension() -> None
     assert _dom(cov).axes["x"].coordinate_values == (10.0, 20.0)
     assert _dom(cov).axes["y"].coordinate_values == (0.0, 5.0, 10.0)
     assert _nd(cov, "v").axis_names == ("y", "x")
-    assert validate(cov) == []
+    assert validate(cov).issues == ()
 
 
 def test_from_external_leftover_dimension_with_coordinate_becomes_axis() -> None:
@@ -943,7 +943,7 @@ def test_from_external_bounds_variable_is_not_a_range() -> None:
     assert "v" in cov.ranges
     assert "lat_bnds" not in cov.ranges
     assert "nv" not in _dom(cov).axes
-    assert validate(cov) == []
+    assert validate(cov).issues == ()
 
 
 def test_from_external_bounds_declared_by_attribute_is_dropped() -> None:
@@ -964,7 +964,7 @@ def test_from_external_bounds_declared_by_attribute_is_dropped() -> None:
 
     assert "lat_edges" not in cov.ranges
     assert "nv" not in _dom(cov).axes
-    assert validate(cov) == []
+    assert validate(cov).issues == ()
 
 
 def test_from_external_curvilinear_grid_raises() -> None:

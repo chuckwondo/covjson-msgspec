@@ -130,12 +130,13 @@ def test_every_issue_code_has_corpus_coverage() -> None:
 def _error_codes(obj: CoverageJSON) -> set[str]:
     return {
         issue.code
-        for issue in validate(obj, check_values=True)
+        for issue in validate(obj, check_values=True).issues
         if issue.severity is Severity.ERROR
     }
 
 
 def _issues(obj: CoverageJSON) -> set[tuple[str, str]]:
     return {
-        (issue.code, issue.severity.value) for issue in validate(obj, check_values=True)
+        (issue.code, issue.severity.value)
+        for issue in validate(obj, check_values=True).issues
     }

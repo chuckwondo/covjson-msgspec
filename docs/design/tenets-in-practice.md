@@ -44,16 +44,19 @@ The same rule shows up at two more edges:
 
 ## A functional core with an imperative shell
 
-`validate()` yields a lazy stream of typed issue values and never raises on its
-own. The issues are not strings: each is a frozen struct in a closed
-[`Issue` sum type](../adr/0006-validation-findings-sum-type.md) tagged by rule
-(`ndarray.value-count`, `range.value-type-mismatch`, `i18n.invalid-language-tag`,
-and so on), and carries an `at` field locating the fault as a
-[JSON Pointer][rfc6901]. A consumer can `match` on the variant to read its typed
-payload, or read the string `code` for stringly work (logging, counting); and
-because the discriminant is a field, a whole report round-trips through JSON. The
-caller decides at the edge what to do with the stream: iterate and report, or ask
-`validate()` to raise the first error via `mode="raise"`.
+`validate()` returns its findings as values (a `ValidationReport` bundling the
+issues with the valid/invalid verdict) and never raises on its own. Internally a
+lazy pipeline of pure checkers produces the issues; `validate()` is the shell that
+materializes them into the report. The issues are not strings: each is a frozen
+struct in a closed [`Issue` sum type](../adr/0006-validation-findings-sum-type.md)
+tagged by rule (`ndarray.value-count`, `range.value-type-mismatch`,
+`i18n.invalid-language-tag`, and so on), and carries an `at` field locating the
+fault as a [JSON Pointer][rfc6901]. A consumer can `match` on the variant to read
+its typed payload, or read the string `code` for stringly work (logging,
+counting); and because the discriminant is a field, a whole report round-trips
+through JSON. The caller decides at the edge what to do with the report: ask
+`report.ok` for the verdict and read the findings via `report.issues`, or ask
+`validate()` to raise via `mode="raise"`, the one sanctioned effect.
 
 Best-effort reference resolution takes the pattern further: both the fetcher *and*
 the policy for how a batch reacts to failures are injected values.

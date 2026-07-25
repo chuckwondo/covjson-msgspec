@@ -1,9 +1,12 @@
 # Validation
 
-The opt-in, tiered `validate()` and the finding types it reports (`Issue`, its
-`Severity`), the domain-type rules, and the raise bridge.
+The opt-in, tiered `validate()`, the `ValidationReport` it returns, the finding
+types it reports (`Issue`, its `Severity`), the domain-type rules, and the raise
+bridge.
 
 ::: covjson_msgspec.validate
+
+::: covjson_msgspec.ValidationReport
 
 ::: covjson_msgspec.Issue
 
