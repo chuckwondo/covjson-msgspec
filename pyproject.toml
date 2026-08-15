@@ -47,14 +47,14 @@ Issues     = "https://github.com/chuckwondo/covjson-msgspec/issues"
 # Floor policy (ADR-0010): each lower bound is the lowest version that provides
 # the APIs the bridge uses AND ships a cp311 wheel (our Python floor, so a 3.11
 # user never has to build from source). Verified by the lowest-direct CI lane;
-# raised only by deliberate decision, never auto-bumped by Dependabot (#65).
+# raised only by deliberate decision, never auto-bumped by Dependabot.
 [project.optional-dependencies]
 # numpy 1.24 has cp311 wheels; the all-extras resolution pins it here via xarray.
 numpy = [ "numpy>=1.24" ]
 # xarray>=2025.01.2 is the first release to PRESERVE a non-nanosecond datetime64
 # instead of coercing it to ns; the temporal bridge needs it so a standard-calendar
 # date outside numpy's ns window (~1677-2262) stays faithful rather than int64-
-# wrapping (numpy#9956; #109). It also ships xarray.DataTree (the earlier 2024.10
+# wrapping (numpy#9956). It also ships xarray.DataTree (the earlier 2024.10
 # floor reason), which it subsumes. cftime 1.6.2 is the first release with a cp311
 # wheel (1.6.0/1.6.1 have none).
 xarray = [ "xarray>=2025.01.2", "numpy>=1.24", "cftime>=1.6.2" ]
@@ -134,12 +134,13 @@ build-backend = "uv_build"
 line-length = 88
 src         = [ "src", "tests", "benchmarks" ]
 
-# ruff's default `include` covers `*.md`, so a bare `ruff format` would reflow
-# the Python inside our documentation code blocks and collapse deliberately
-# aligned trailing comments, while the `ruff-format` hook never sees those
-# files: it passes only `types_or: [python, pyi, jupyter]`. Keeping ruff
-# Python-only is what makes the command CONTRIBUTING documents and the command
-# CI runs agree on a clean tree.
+# Since ruff 0.16, the default `include` covers `*.md`, so a bare `ruff format`
+# would reflow the Python inside our documentation code blocks and collapse
+# deliberately aligned trailing comments, while the `ruff-format` hook never
+# sees those files: it passes only `types_or: [python, pyi, jupyter]`. Keeping
+# ruff Python-only is what makes the command CONTRIBUTING documents and the
+# command CI runs agree on a clean tree. The `ruff>=0.15` floor still admits a
+# ruff that ignores Markdown, where both settings are simply inert.
 extend-exclude = [ "*.md" ]
 # `exclude` normally applies only to files ruff discovers itself, so an explicit
 # `ruff format README.md` would still reflow it. `force-exclude` makes the rule
@@ -216,7 +217,7 @@ rules   = { invalid-argument-type = "ignore" }
 # the suite imports shared helpers by top-level name (e.g. `import fetchers`) via
 # pytest's `pythonpath`, which the default `src`-only import root cannot resolve.
 # `preset = "strict"` sharpens the informational signal past what the blocking
-# mypy / basedpyright pair flag (see #71).
+# mypy / basedpyright pair flag.
 [tool.pyrefly]
 preset           = "strict"
 project_includes = [ "src", "tests", "benchmarks" ]
@@ -228,7 +229,7 @@ search_path      = [ "src", "tests", "benchmarks" ]
 # means `typing_extensions`: a new core runtime dependency (neither msgspec nor
 # langcodes pulls it) added only to satisfy an informational-only checker the
 # blocking mypy / basedpyright pair do not gate on. Not worth the dependency;
-# revisit at the 3.12 floor, where `typing.override` is free. See #71.
+# revisit at the 3.12 floor, where `typing.override` is free.
 missing-override-decorator = false
 
 [tool.pytest.ini_options]
