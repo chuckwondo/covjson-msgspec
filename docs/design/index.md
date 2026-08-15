@@ -60,3 +60,68 @@ off-limits to end users). Keeping them distinct means every module-local `_helpe
 stays genuinely file-local: safe to rename or inline after grepping a single file.
 Ruff's PLC2701 enforces the neighboring rule (it bans importing *another package's*
 privates), but not this intra-package case, so review has to catch it.
+
+### The pointer in a checker doctest
+
+**Convention:** a validation checker's doctest passes a root path (`()`), and
+asserts the finding's typed payload where that payload is what identifies the
+flagged thing. It keeps `.at` only where the pointer is itself what the checker
+worked out.
+
+**Why:** a finding carries two different kinds of information. Its `at` is a
+JSON Pointer to the offending location, assembled from the `path` the checker
+was handed plus whatever segments the checker appends as it descends. Its
+remaining fields are the typed payload: `DomainMissingAxis.axis`,
+`AxisBoundsLength.got`, `RangeValueTypeMismatch.value`.
+
+A doctest that calls a checker directly has to supply that incoming `path`
+itself, and it has nothing real to supply: in an actual run, the `_validate_*`
+walk builds the path from the document's own keys. So the example invents one,
+and the invention lands in the expected output:
+
+```python
+>>> [i.at for i in _parameter_i18n_issues(temp, ("parameters", "t"))]
+['/parameters/t/unit/label/en_US']
+```
+
+Nothing in the example anchors that `"t"`, so a reader cannot tell where it came
+from. Passing `()` drops the invented prefix and leaves exactly the segments the
+checker itself contributed. What the example should assert then turns on one
+question: *can this assertion fail?* Three cases come up.
+
+**The payload, where it selects one item out of several.** This is the case the
+convention is written for, and the flagged thing is named directly:
+
+```python
+>>> [issue.axis for issue in _unexpected_axis_issues(dom, "Grid", rule, ())]
+['bogus']
+```
+
+That example's domain carries `x`, `y` and `bogus`. Only `bogus` comes back, so
+the assertion breaks if the checker flags the wrong axis, or flags all three.
+
+**Not the payload, where it merely echoes the input.** An i18n map with a single
+key is the trap:
+
+```python
+>>> [i.lang for i in _unit_i18n_issues(bad, ())]  # rejected
+['en_US']
+```
+
+`bad` is built one line above as `Unit(label={"en_US": "kelvin"})`, so the
+output restates a literal already on screen. Empty the check's body and this
+still passes. Assert `.at` here instead, which at a root path reads
+`['/label/en_US']` and at least shows the descent into `label`.
+
+**The pointer, where the pointer is the computation.** Some checkers do their
+work *in* the path. `_parameter_i18n_issues` walks `observedProperty`, then its
+own label, then `unit`, so `/unit/label/en_US` is the only executable evidence
+that the finding came down the unit branch (`['en_US']` reads the same whichever
+branch produced it). `_axis_monotonic_issues` puts the first out-of-order
+position in the pointer, `/axes/x/values/2`, and nowhere else. `_ptr` and
+`_escape` have RFC 6901 assembly as their entire subject. In all three, `.at`
+stays, root-anchored.
+
+The check that settles a doubtful case is to break the checker on purpose:
+delete the segment it appends, or empty its body, then re-run the doctest. If it
+still passes, the example was documenting nothing.

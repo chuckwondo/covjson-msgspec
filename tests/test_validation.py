@@ -107,14 +107,19 @@ def test_missing_required_axis() -> None:
 
 
 def test_axis_not_single_valued() -> None:
-    # A Point domain requires single-valued x/y.
+    # A Point domain requires single-valued x/y, so only the two-valued x is
+    # flagged.
     domain = Domain(
         axes={"x": Axis.listed((1.0, 2.0)), "y": Axis.listed((3.0,))},
         domain_type="Point",
     )
-    codes = {i.code for i in validate(domain).issues}
+    (issue,) = [
+        i for i in validate(domain).issues if isinstance(i, DomainAxisNotSingle)
+    ]
 
-    assert "domain.axis-not-single" in codes
+    assert issue.axis == "x"
+    assert issue.at == "/axes/x"
+    assert issue.severity is Severity.ERROR
 
 
 def test_composite_data_type_mismatch() -> None:
@@ -1217,10 +1222,14 @@ def test_i18n_invalid_tag_in_parameter_group_checked_even_without_parameters() -
         ranges={},
         parameter_groups=(ParameterGroup(members=("a",), label={"en_US": "grp"}),),
     )
-    codes = {i.code for i in validate(cov).issues}
+    issues = validate(cov).issues
+    codes = {i.code for i in issues}
 
     assert "coverage.missing-parameters" in codes
     assert "i18n.invalid-language-tag" in codes
+    assert [i.at for i in issues if isinstance(i, I18nInvalidLanguageTag)] == [
+        "/parameterGroups/0/label/en_US"
+    ]
 
 
 def test_i18n_empty_map_is_flagged() -> None:

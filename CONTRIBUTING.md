@@ -103,6 +103,12 @@ Docstrings and doctests:
   byte blobs via implicit string concatenation.
 - Multi-line JSON in docstrings uses `indent=2` with short arrays kept inline. Do
   not reformat verbatim `msgspec.json.format(indent=2)` output.
+- A validation checker's doctest shows what gets flagged, not the JSON pointer
+  that prefixes it: pass a root path (`()`), and assert the payload (`.axis`,
+  `.key`, `.value`) where it selects the flagged item out of several. Keep `.at`
+  where the pointer is itself the behavior: a branch the checker routed down, an
+  index it computed, or pointer construction
+  ([why](docs/design/index.md#the-pointer-in-a-checker-doctest)).
 
 Documentation:
 

@@ -1407,8 +1407,8 @@ def _missing_axis_issues(
     >>> from covjson_msgspec import Axis, Domain
     >>> rule = DOMAIN_TYPE_RULES["Grid"]
     >>> dom = Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid")
-    >>> [issue.at for issue in _missing_axis_issues(dom, "Grid", rule, ())]
-    ['/axes/y']
+    >>> [issue.axis for issue in _missing_axis_issues(dom, "Grid", rule, ())]
+    ['y']
     """
     return (
         DomainMissingAxis(
@@ -1453,8 +1453,8 @@ def _non_single_axis_issues(
     ...     axes={"x": Axis.listed((1.0, 2.0)), "y": Axis.listed((3.0,))},
     ...     domain_type="Point",
     ... )
-    >>> [issue.at for issue in _non_single_axis_issues(dom, "Point", rule, ())]
-    ['/axes/x']
+    >>> [issue.axis for issue in _non_single_axis_issues(dom, "Point", rule, ())]
+    ['x']
     """
     return (
         DomainAxisNotSingle(
@@ -1626,8 +1626,8 @@ def _unexpected_axis_issues(
     ...     },
     ...     domain_type="Grid",
     ... )
-    >>> [issue.at for issue in _unexpected_axis_issues(dom, "Grid", rule, ())]
-    ['/axes/bogus']
+    >>> [issue.axis for issue in _unexpected_axis_issues(dom, "Grid", rule, ())]
+    ['bogus']
     """
     allowed = set(rule.required_axes) | set(rule.optional_axes)
 
@@ -1782,21 +1782,22 @@ def _language_tag_issues(
     --------
     ``"und"`` and well-formed, registered tags pass; ``None`` yields nothing:
 
-    >>> list(_language_tag_issues({"und": "x", "en-US": "y"}, ("label",)))
+    >>> list(_language_tag_issues({"und": "x", "en-US": "y"}, ()))
     []
-    >>> list(_language_tag_issues(None, ("label",)))
+    >>> list(_language_tag_issues(None, ()))
     []
 
-    A present-but-empty map is reported once, at the map's own path:
+    A present-but-empty map is reported once, as a single ``i18n.empty``:
 
-    >>> issue = next(_language_tag_issues({}, ("label",)))
-    >>> issue.code, issue.at
-    ('i18n.empty', '/label')
+    >>> [i.code for i in _language_tag_issues({}, ())]
+    ['i18n.empty']
 
-    A malformed separator and an unregistered subtag are both reported:
+    A malformed separator and an unregistered subtag are both reported, each
+    naming the tag it flags (``path`` only prefixes the pointer, so it is
+    empty here):
 
-    >>> [i.at for i in _language_tag_issues({"en_US": "x", "jp": "y"}, ("label",))]
-    ['/label/en_US', '/label/jp']
+    >>> [i.lang for i in _language_tag_issues({"en_US": "x", "jp": "y"}, ())]
+    ['en_US', 'jp']
     """
     if tags is None:
         return
@@ -1838,11 +1839,12 @@ def _label_description_i18n_issues(
 
     Examples
     --------
-    >>> issues = _label_description_i18n_issues(
-    ...     {"en_US": "x"}, {"jp": "y"}, ("parameters", "t")
-    ... )
+    The pointer shows which member each issue came down, so it stays here;
+    ``path`` only prefixes it, and is empty:
+
+    >>> issues = _label_description_i18n_issues({"en_US": "x"}, {"jp": "y"}, ())
     >>> [i.at for i in issues]
-    ['/parameters/t/label/en_US', '/parameters/t/description/jp']
+    ['/label/en_US', '/description/jp']
     """
     yield from _language_tag_issues(label, (*path, "label"))
     yield from _language_tag_issues(description, (*path, "description"))
@@ -1868,9 +1870,12 @@ def _concept_i18n_issues(
 
     Examples
     --------
-    >>> bad = Concept(label={"en_US": "Water"})
-    >>> [i.at for i in _concept_i18n_issues(bad, ("targetConcept",))]
-    ['/targetConcept/label/en_US']
+    The well-formed ``"en"`` passes, so the reported tag is a selection, not
+    an echo of the input:
+
+    >>> bad = Concept(label={"en": "Water", "en_US": "Water"})
+    >>> [i.lang for i in _concept_i18n_issues(bad, ())]
+    ['en_US']
     """
     yield from _label_description_i18n_issues(concept.label, concept.description, path)
 
@@ -1949,8 +1954,8 @@ def _reference_system_i18n_issues(
     >>> rs = ReferenceSystem.identifier(
     ...     target_concept=Concept(label={"en_US": "Land cover"})
     ... )
-    >>> [i.at for i in _reference_system_i18n_issues(rs, ("referencing", 0, "system"))]
-    ['/referencing/0/system/targetConcept/label/en_US']
+    >>> [i.at for i in _reference_system_i18n_issues(rs, ())]
+    ['/targetConcept/label/en_US']
 
     A temporal RS has no i18n member, so it yields nothing:
 
@@ -2564,8 +2569,8 @@ def _axis_bounds_issues(
     --------
     >>> from covjson_msgspec import Axis, Domain
     >>> dom = Domain(axes={"x": Axis.listed((1.0, 2.0), bounds=(0.5, 1.5, 1.5))})
-    >>> [issue.at for issue in _axis_bounds_issues(dom, ())]
-    ['/axes/x/bounds']
+    >>> [(i.axis, i.expected, i.got) for i in _axis_bounds_issues(dom, ())]
+    [('x', 4, 3)]
     """
     return (
         AxisBoundsLength(
@@ -2619,8 +2624,8 @@ def _axis_coordinates_issues(
     ...         "y": Axis(values=(1.0,), coordinates=("t",)),
     ...     }
     ... )
-    >>> [issue.at for issue in _axis_coordinates_issues(dom, ())]
-    ['/axes/x/coordinates']
+    >>> [issue.axis for issue in _axis_coordinates_issues(dom, ())]
+    ['x']
     """
     return (
         AxisCoordinatesNotOmitted(at=_ptr(path, "axes", name, "coordinates"), axis=name)
@@ -3126,9 +3131,7 @@ def _validate_ndarray(arr: NdArray, path: tuple[str | int, ...]) -> Iterator[Iss
     >>> arr = NdArray(
     ...     data_type="float", values=(1.0, 2.0), shape=(3,), axis_names=("x",)
     ... )
-    >>> [issue.code for issue in _validate_ndarray(arr, ("ranges", "v"))] == [
-    ...     "ndarray.value-count"
-    ... ]
+    >>> [issue.code for issue in _validate_ndarray(arr, ())] == ["ndarray.value-count"]
     True
 
     A consistent array yields nothing:
@@ -3136,7 +3139,7 @@ def _validate_ndarray(arr: NdArray, path: tuple[str | int, ...]) -> Iterator[Iss
     >>> consistent = NdArray(
     ...     data_type="float", values=(1.0,), shape=(1,), axis_names=("x",)
     ... )
-    >>> list(_validate_ndarray(consistent, ("ranges", "v")))
+    >>> list(_validate_ndarray(consistent, ()))
     []
     """
     if len(arr.axis_names) != len(arr.shape):
@@ -3299,8 +3302,8 @@ def _validate_tiled_ndarray(
 
     Examples
     --------
-    A tile larger than the array along an axis is flagged, with the offending
-    tile set and axis in the JSON Pointer:
+    A tile larger than the array along an axis is flagged, carrying the tile
+    extent and the array extent it exceeds:
 
     >>> from covjson_msgspec.range import TileSet
     >>> arr = TiledNdArray(
@@ -3312,8 +3315,8 @@ def _validate_tiled_ndarray(
     >>> (issue,) = _validate_tiled_ndarray(arr, ())
     >>> issue.code == "tiled-ndarray.tile-shape-too-large"
     True
-    >>> issue.at
-    '/tileSets/0/tileShape/0'
+    >>> issue.tile_dim, issue.dim
+    (5, 4)
 
     A subdivided axis whose ordinal the template omits is flagged:
 
@@ -3326,8 +3329,8 @@ def _validate_tiled_ndarray(
     >>> (issue,) = _validate_tiled_ndarray(arr, ())
     >>> issue.code == "tiled-ndarray.url-template-missing-variable"
     True
-    >>> issue.at
-    '/tileSets/0/urlTemplate'
+    >>> issue.axis
+    't'
 
     A template variable that names no subdivided axis is flagged too:
 
@@ -3340,8 +3343,8 @@ def _validate_tiled_ndarray(
     >>> (issue,) = _validate_tiled_ndarray(arr, ())
     >>> issue.code == "tiled-ndarray.url-template-unknown-variable"
     True
-    >>> issue.at
-    '/tileSets/0/urlTemplate'
+    >>> issue.variable
+    'z'
     """
     rank_ok = len(arr.axis_names) == len(arr.shape)
 
@@ -3394,14 +3397,14 @@ def _range_axis_issue(
     >>> from covjson_msgspec import Axis, Domain, NdArray
     >>> dom = Domain.grid(x=Axis.regular(0.0, 10.0, 3), y=Axis.regular(0.0, 10.0, 2))
     >>> arr = NdArray(data_type="float", values=(1.0,), shape=(9,), axis_names=("x",))
-    >>> issue = _range_axis_issue(arr, dom, 0, "x", ("ranges", "v"))
-    >>> issue.code == "coverage.range-shape-mismatch"
-    True
+    >>> issue = _range_axis_issue(arr, dom, 0, "x", ())
+    >>> issue.code, issue.range_size, issue.domain_size
+    ('coverage.range-shape-mismatch', 9, 3)
 
     An ``index`` past the range's ``shape`` (a rank mismatch reported elsewhere)
     carries no shape check of its own:
 
-    >>> _range_axis_issue(arr, dom, 1, "x", ("ranges", "v")) is None
+    >>> _range_axis_issue(arr, dom, 1, "x", ()) is None
     True
     """
     if name not in domain.axes:
@@ -3453,10 +3456,8 @@ def _check_range_against_domain(
     >>> arr = NdArray(
     ...     data_type="float", values=(1.0, 2.0), shape=(2,), axis_names=("q",)
     ... )
-    >>> [i.code for i in _check_range_against_domain(arr, dom, ("ranges", "v"))] == [
-    ...     "coverage.range-axis-not-in-domain"
-    ... ]
-    True
+    >>> [(i.code, i.axis) for i in _check_range_against_domain(arr, dom, ())]
+    [('coverage.range-axis-not-in-domain', 'q')]
     """
     return (
         issue
@@ -3538,7 +3539,7 @@ def _check_categorical_codes(
     set to check against, so nothing is yielded:
 
     >>> param = Parameter(observed_property=prop)
-    >>> list(_check_categorical_codes(arr, param, ("ranges", "lc")))
+    >>> list(_check_categorical_codes(arr, param, ()))
     []
     """
     if param is None or param.observed_property.categories is None:
@@ -3652,15 +3653,12 @@ def _check_value_data_types(
 
     Examples
     --------
-    A non-integer value in an ``"integer"`` range is reported, with its index in
-    the JSON Pointer:
+    Only the non-integer value in an ``"integer"`` range is reported, carrying
+    the offending value and the ``dataType`` it failed:
 
     >>> arr = NdArray(data_type="integer", values=(1, 1.5, None))
-    >>> (issue,) = _check_value_data_types(arr, ("ranges", "v"))
-    >>> issue.code == "range.value-type-mismatch"
-    True
-    >>> issue.at
-    '/ranges/v/values/1'
+    >>> [(i.value, i.data_type) for i in _check_value_data_types(arr, ())]
+    [(1.5, 'integer')]
 
     A ``"float"`` range accepts integer-written values (no issues):
 
@@ -3707,11 +3705,11 @@ def _unit_i18n_issues(
 
     Examples
     --------
-    >>> list(_unit_i18n_issues(Unit(symbol="K"), ("unit",)))
+    >>> list(_unit_i18n_issues(Unit(symbol="K"), ()))
     []
     >>> bad = Unit(label={"en_US": "kelvin"})
-    >>> [i.at for i in _unit_i18n_issues(bad, ("unit",))]
-    ['/unit/label/en_US']
+    >>> [i.at for i in _unit_i18n_issues(bad, ())]
+    ['/label/en_US']
     """
     if unit is None:
         return
@@ -3738,9 +3736,9 @@ def _category_i18n_issues(
 
     Examples
     --------
-    >>> bad = Category(id="1", label={"en_US": "Water"})
-    >>> [i.at for i in _category_i18n_issues(bad, ("categories", 0))]
-    ['/categories/0/label/en_US']
+    >>> bad = Category(id="1", label={"en": "Water", "en_US": "Water"})
+    >>> [i.lang for i in _category_i18n_issues(bad, ())]
+    ['en_US']
     """
     yield from _label_description_i18n_issues(
         category.label, category.description, path
@@ -3772,9 +3770,12 @@ def _observed_property_i18n_issues(
     ...     label={"en": "Land cover"},
     ...     categories=(Category(id="1", label={"en_US": "Water"}),),
     ... )
-    >>> issues = _observed_property_i18n_issues(land_cover, ("observedProperty",))
-    >>> [i.at for i in issues]
-    ['/observedProperty/categories/0/label/en_US']
+
+    The valid ``label`` passes; the pointer shows the descent into the
+    offending category, the index being this helper's own contribution:
+
+    >>> [i.at for i in _observed_property_i18n_issues(land_cover, ())]
+    ['/categories/0/label/en_US']
     """
     if op is None:
         return
@@ -3814,8 +3815,12 @@ def _parameter_i18n_issues(
     ...     ObservedProperty(label=i18n("Air temperature")),
     ...     Unit(label={"en_US": "kelvin"}),
     ... )
-    >>> [i.at for i in _parameter_i18n_issues(temp, ("parameters", "t"))]
-    ['/parameters/t/unit/label/en_US']
+
+    The observed property is clean, so the pointer is the only evidence the
+    issue came down the ``unit`` branch:
+
+    >>> [i.at for i in _parameter_i18n_issues(temp, ())]
+    ['/unit/label/en_US']
     """
     yield from _observed_property_i18n_issues(
         param.observed_property, (*path, "observedProperty")
@@ -3900,9 +3905,11 @@ def _parameter_group_i18n_issues(
 
     Examples
     --------
-    >>> bad = ParameterGroup(members=("u", "v"), label={"en_US": "Wind"})
-    >>> [i.at for i in _parameter_group_i18n_issues(bad, ("parameterGroups", 0))]
-    ['/parameterGroups/0/label/en_US']
+    >>> bad = ParameterGroup(
+    ...     members=("u", "v"), label={"en": "Wind", "en_US": "Wind"}
+    ... )
+    >>> [i.lang for i in _parameter_group_i18n_issues(bad, ())]
+    ['en_US']
     """
     yield from _label_description_i18n_issues(group.label, group.description, path)
     yield from _observed_property_i18n_issues(
