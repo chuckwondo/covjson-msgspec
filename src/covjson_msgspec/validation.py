@@ -1870,9 +1870,12 @@ def _concept_i18n_issues(
 
     Examples
     --------
-    >>> bad = Concept(label={"en_US": "Water"})
-    >>> [i.at for i in _concept_i18n_issues(bad, ())]
-    ['/label/en_US']
+    The well-formed ``"en"`` passes, so the reported tag is a selection, not
+    an echo of the input:
+
+    >>> bad = Concept(label={"en": "Water", "en_US": "Water"})
+    >>> [i.lang for i in _concept_i18n_issues(bad, ())]
+    ['en_US']
     """
     yield from _label_description_i18n_issues(concept.label, concept.description, path)
 
@@ -3733,9 +3736,9 @@ def _category_i18n_issues(
 
     Examples
     --------
-    >>> bad = Category(id="1", label={"en_US": "Water"})
-    >>> [i.at for i in _category_i18n_issues(bad, ())]
-    ['/label/en_US']
+    >>> bad = Category(id="1", label={"en": "Water", "en_US": "Water"})
+    >>> [i.lang for i in _category_i18n_issues(bad, ())]
+    ['en_US']
     """
     yield from _label_description_i18n_issues(
         category.label, category.description, path
@@ -3902,9 +3905,11 @@ def _parameter_group_i18n_issues(
 
     Examples
     --------
-    >>> bad = ParameterGroup(members=("u", "v"), label={"en_US": "Wind"})
-    >>> [i.at for i in _parameter_group_i18n_issues(bad, ())]
-    ['/label/en_US']
+    >>> bad = ParameterGroup(
+    ...     members=("u", "v"), label={"en": "Wind", "en_US": "Wind"}
+    ... )
+    >>> [i.lang for i in _parameter_group_i18n_issues(bad, ())]
+    ['en_US']
     """
     yield from _label_description_i18n_issues(group.label, group.description, path)
     yield from _observed_property_i18n_issues(
