@@ -134,12 +134,12 @@ build-backend = "uv_build"
 line-length = 88
 src         = [ "src", "tests", "benchmarks" ]
 
-# ruff 0.16 added `*.md` to the default `include`, so a bare `ruff format`
-# reformats the Python inside our documentation code blocks (collapsing
-# deliberately aligned trailing comments), while the `ruff-format` pre-commit
-# hook never sees those files: it passes only `types_or: [python, pyi,
-# jupyter]`. Keeping ruff Python-only is what makes the command CONTRIBUTING
-# documents and the command CI runs agree on a clean tree (#183).
+# ruff's default `include` covers `*.md`, so a bare `ruff format` would reflow
+# the Python inside our documentation code blocks and collapse deliberately
+# aligned trailing comments, while the `ruff-format` hook never sees those
+# files: it passes only `types_or: [python, pyi, jupyter]`. Keeping ruff
+# Python-only is what makes the command CONTRIBUTING documents and the command
+# CI runs agree on a clean tree.
 extend-exclude = [ "*.md" ]
 # `exclude` normally applies only to files ruff discovers itself, so an explicit
 # `ruff format README.md` would still reflow it. `force-exclude` makes the rule
