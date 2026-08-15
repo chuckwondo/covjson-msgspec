@@ -8,6 +8,14 @@
 #     prek autoupdate && ./scripts/pin-precommit-shas.sh
 #
 # autoupdate moves revs to the latest tags; the script re-pins them to SHAs.
+#
+# ruff is the one exception, and runs from this project's own environment
+# (`repo: local`, `uv run --frozen ruff`). It is also a `dev` dependency, so an
+# upstream hook rev would be a second, independently updated version of a tool
+# uv.lock already pins: the two can disagree, and then whether the tree is
+# clean depends on which one ran. Running the locked ruff leaves one version to
+# update, which Dependabot's weekly uv PR already does. Its trust anchor is
+# correspondingly uv.lock's recorded wheel hash rather than a hook-repo SHA.
 repos:
   # General hygiene
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -38,13 +46,23 @@ repos:
       - id: trailing-whitespace
         exclude: ^tests/corpus/(playground|covjson-pydantic)/
 
-  # Python lint + format: ruff (auto-fixes locally)
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: 39d9ac5938dadb73df0564a45f163e25ff9fa6e2 # v0.16.1
+  # Python lint + format: this project's own ruff (see the note above on why
+  # this one hook is `repo: local`). `--frozen` stops a commit from
+  # re-resolving uv.lock underneath you; `types_or` matches what the upstream
+  # ruff hooks match. Markdown stays out of ruff's reach via `extend-exclude`
+  # and `force-exclude` in pyproject.toml.
+  - repo: local
     hooks:
       - id: ruff-check
-        args: [--fix]
+        name: ruff check
+        entry: uv run --frozen ruff check --fix
+        language: system
+        types_or: [python, pyi, jupyter]
       - id: ruff-format
+        name: ruff format
+        entry: uv run --frozen ruff format
+        language: system
+        types_or: [python, pyi, jupyter]
 
   # Keep uv.lock in sync with pyproject.toml
   - repo: https://github.com/astral-sh/uv-pre-commit
