@@ -209,6 +209,10 @@ def test_from_numpy_infinities_become_none() -> None:
         (np.array([1, -2], dtype=np.int8), (1, -2)),
         (np.array([2**64 - 1], dtype=np.uint64), (18446744073709551615,)),
         (np.array(["ab", "cd"]), ("ab", "cd")),
+        # longdouble shares dtype kind "f" with float64 but has no lossless
+        # Python float, so tolist() returns numpy scalars; it must convert
+        # element by element instead.
+        (np.array([1.5, 2.5], dtype=np.longdouble), (1.5, 2.5)),
     ],
 )
 def test_from_numpy_yields_native_python_scalars(
@@ -240,6 +244,13 @@ def test_from_numpy_yields_native_python_scalars(
         # The missing-value guard is shared across the branches: without it,
         # None in an object array would reach float(None) and raise TypeError.
         (np.array([1.0, None], dtype=object), "float", (1.0, None)),
+        # numpy.isfinite cannot see inside an object array, so a non-finite
+        # float hiding in one is caught by converting, not by the dtype scan.
+        (np.array([1.0, np.nan], dtype=object), "float", (1.0, None)),
+        (np.array([1.0, np.inf, -np.inf], dtype=object), "float", (1.0, None, None)),
+        # timedelta64 is an np.integer subtype, so it infers "integer"; tolist()
+        # would yield datetime.timedelta, which is not an integer at all.
+        (np.array([1, 2], dtype="timedelta64[D]"), "string", ("1 days", "2 days")),
     ],
 )
 def test_from_numpy_converts_non_native_dtypes_element_by_element(
