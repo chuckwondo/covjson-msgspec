@@ -473,32 +473,30 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
         # string form either, so it joins masked entries as missing data whatever
         # the data_type. The dtype test is load-bearing, not defensive:
         # np.isfinite raises TypeError on a datetime64 or object array.
-        nonfinite = (
-            ~np.isfinite(flat)
-            if np.issubdtype(flat.dtype, np.number)
-            else np.zeros(flat.shape, dtype=bool)
+        gaps = mask | (
+            ~np.isfinite(flat) if np.issubdtype(flat.dtype, np.number) else False
         )
-        gaps = mask | nonfinite
 
         # ``data_type`` is fixed for the whole array, so resolve the element
         # conversion once rather than re-dispatching on it per value.
         convert = _CONVERTERS[data_type]
-        # The type this conversion produces, asked of the conversion itself so
-        # the two cannot drift apart: each converter accepts ``0`` and returns
-        # its own element type (``_float_or_none(0)`` is ``0.0``).
-        target_element_type = type(convert(0))
+        # ``tolist`` converts a whole array to Python scalars in C, which is what
+        # ``convert`` does one at a time, but only for some dtypes: ``longdouble``
+        # shares kind "f" with ``float64`` yet has no lossless Python float, and
+        # ``timedelta64`` is an integer subtype yielding ``timedelta``. So ask
+        # ``tolist`` on one element, and compare against the type the converter
+        # produces, asked of the converter so the two cannot drift apart. An
+        # object array is excluded outright: its elements are not homogeneous, so
+        # one does not speak for the rest, and ``gaps`` cannot see a NaN in it.
+        head: list[object] = flat[:1].tolist()
         values: list[_Scalar | None]
 
         if (
-            # An object array is excluded because its elements are not
-            # homogeneous, so one of them does not speak for the rest, and
-            # because ``nonfinite`` cannot see a NaN inside it.
             flat.dtype.kind != "O"
-            and _native_element_type(flat) is target_element_type
+            and head
+            and type(head[0]) is type(convert(0))
             and not gaps.any()
         ):
-            # ``tolist`` converts the whole array to native Python scalars in C,
-            # which is exactly what ``convert`` does one element at a time.
             values = flat.tolist()
         else:
             values = [
@@ -1049,40 +1047,6 @@ def _float_or_none(value: Any) -> float | None:
 _CONVERTERS: Final[
     Mapping[Literal["float", "integer", "string"], Callable[[Any], _Scalar | None]]
 ] = {"float": _float_or_none, "integer": int, "string": str}
-
-
-def _native_element_type(flat: npt.NDArray[Any]) -> type | None:
-    """Return the Python type `numpy.ndarray.tolist` yields for ``flat``'s elements.
-
-    Answers by running ``tolist`` on a single element rather than by reasoning
-    from the dtype, because the dtype does not predict it: ``longdouble`` shares
-    kind ``"f"`` with ``float64`` yet has no lossless Python float, and
-    ``timedelta64`` is an integer subtype that yields `datetime.timedelta`. Both
-    would leak a non-encodable object into ``values`` if trusted by kind.
-
-    Parameters
-    ----------
-    flat
-        A one-dimensional array.
-
-    Returns
-    -------
-    type or None
-        The element type, or ``None`` when ``flat`` is empty.
-
-    Examples
-    --------
-    >>> import numpy as np
-    >>> _native_element_type(np.array([1.5, 2.5]))
-    <class 'float'>
-    >>> _native_element_type(np.array([1.5], dtype=np.longdouble))
-    <class 'numpy.longdouble'>
-    >>> print(_native_element_type(np.array([], dtype=np.float64)))
-    None
-    """
-    head: list[object] = flat[:1].tolist()
-
-    return type(head[0]) if head else None
 
 
 def _expand_url_template(template: str, variables: Mapping[str, int]) -> str:
