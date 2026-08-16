@@ -96,11 +96,20 @@ def to_pandas(obj: Coverage | CoverageCollection) -> pd.DataFrame:
 
     Raises
     ------
+    ModuleNotFoundError
+        If the bridge's dependencies are not installed; install
+        ``covjson-msgspec[pandas]``.
     ValueError
         If a domain is a URL reference, a domain type is a polygon type
         (use the geopandas bridge), a composite ``tuple`` axis has a value that
         is not a tuple matching its coordinate identifiers, or a range is not an
         inline `NdArray`.
+    msgspec.ValidationError
+        If a range value cannot be projected to the Python type its ``dataType``
+        names, propagated from
+        [`to_numpy`][covjson_msgspec.NdArray.to_numpy]
+        ([`validate`][covjson_msgspec.validate] with ``check_values=True``
+        *reports* such a mismatch instead of raising).
 
     Examples
     --------

@@ -119,11 +119,20 @@ def to_xarray(coverage: Coverage) -> xr.Dataset:
 
     Raises
     ------
+    ModuleNotFoundError
+        If the bridge's dependencies are not installed; install
+        ``covjson-msgspec[xarray]``.
     ValueError
         If the domain is a URL reference, the domain type is a polygon type
         (use the geopandas bridge), a composite ``tuple`` axis has a value that
         is not a tuple matching its coordinate identifiers, or a range is not an
         inline `NdArray`.
+    msgspec.ValidationError
+        If a range value cannot be projected to the Python type its ``dataType``
+        names, propagated from
+        [`to_numpy`][covjson_msgspec.NdArray.to_numpy]
+        ([`validate`][covjson_msgspec.validate] with ``check_values=True``
+        *reports* such a mismatch instead of raising).
 
     Examples
     --------
@@ -369,9 +378,16 @@ def to_datatree(collection: CoverageCollection) -> xr.DataTree:
 
     Raises
     ------
+    ModuleNotFoundError
+        If the bridge's dependencies are not installed, or the installed xarray
+        predates [`DataTree`][xarray.DataTree]; install
+        ``covjson-msgspec[xarray]``.
     ValueError
         If any member cannot be converted by `to_xarray` (e.g. a polygon
         domain, a URL-reference domain, or a non-inline range).
+    msgspec.ValidationError
+        Propagated from `to_xarray` when a range value cannot be projected to
+        the Python type its ``dataType`` names.
 
     Examples
     --------
@@ -1101,6 +1117,10 @@ def _data_variable(
     ------
     ValueError
         If ``range_`` is not an inline [`NdArray`][covjson_msgspec.NdArray].
+    msgspec.ValidationError
+        Propagated from [`to_numpy`][covjson_msgspec.NdArray.to_numpy] when a
+        range value cannot be projected to the Python type its ``dataType``
+        names.
     """
     array = require_inline_ndarray(key, range_, "xarray")
     parameter = parameters.get(key) if parameters is not None else None

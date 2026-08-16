@@ -27,8 +27,8 @@ from __future__ import annotations
 import itertools
 import math
 import re
-from collections.abc import Collection, Iterable, Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Final, Literal, TypeVar, cast
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Final, Literal, TypeVar, assert_never, cast
 
 import msgspec
 from msgspec import UNSET, UnsetType
@@ -62,6 +62,28 @@ _Scalar = float | int | str
 # The element type a caller projects to via ``NdArray.values_as``; bounded to
 # ``_Scalar`` so only ``float`` / ``int`` / ``str`` are admissible targets.
 _ScalarT = TypeVar("_ScalarT", bound=_Scalar)
+
+# The Python conversion each ``dataType`` names, for building values from a
+# foreign source. Spelling the key type keeps a fourth ``dataType`` a type error
+# at the lookup rather than a runtime KeyError. ``NdArray.to_numpy`` deliberately
+# does not share this: it passes the type as a *type argument* to the generic
+# ``values_as``, where a union-valued table collapses the result to
+# ``tuple[None, ...]``.
+_CONVERTERS: Final[
+    Mapping[Literal["float", "integer", "string"], Callable[[Any], _Scalar]]
+] = {"float": float, "integer": int, "string": str}
+
+# The Python type ``numpy.ndarray.tolist`` yields per dtype kind, listed only for
+# the kinds where it already equals a ``_CONVERTERS`` conversion. A kind absent
+# here converts differently and must go element by element: ``datetime64`` ("M")
+# yields ``date`` / ``datetime`` objects rather than ISO strings, ``bool`` ("b")
+# yields ``True`` rather than ``"True"``, and bytes ("S") yield ``bytes``.
+_NATIVE_TYPES: Final[Mapping[str, Callable[[Any], _Scalar]]] = {
+    "f": float,
+    "i": int,
+    "u": int,
+    "U": str,
+}
 
 
 class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
@@ -236,6 +258,22 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
         ``"float"`` range, a masked entry for an ``"integer"`` range, and
         ``None`` in an object array for a ``"string"`` range.
 
+        Values are *projected* through
+        [`values_as`][covjson_msgspec.NdArray.values_as] keyed on ``data_type``,
+        not coerced, so a value the projection rejects raises rather than
+        silently becoming something else (a ``"1.5"`` in a ``"float"`` range does
+        not quietly become ``1.5``). Because the projection keys on ``data_type``
+        alone, ``to_numpy()`` and ``to_numpy(as_float=True)`` accept exactly the
+        same documents: ``as_float`` chooses how missing data is represented,
+        never which values are admissible.
+
+        A clean [`validate`][covjson_msgspec.validate] does not guarantee a
+        successful conversion. ``validate(check_values=True)`` asks a *membership*
+        question and keeps a stored ``int`` an ``int``, so an integer too large
+        for any ``float`` is a conformant value it correctly passes; this method
+        asks a *projection* question, and that same value has no ``float`` to
+        project to.
+
         Parameters
         ----------
         fill_value
@@ -251,6 +289,27 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
             The values reshaped to ``shape`` (a 0-dimensional array when
             ``shape`` is empty). Integer ranges with missing values return a
             ``numpy.ma.MaskedArray`` unless ``as_float`` is set.
+
+        Raises
+        ------
+        ModuleNotFoundError
+            If NumPy is not installed; install ``covjson-msgspec[numpy]``.
+        msgspec.ValidationError
+            If any value cannot be projected to the Python type its ``data_type``
+            names, the contract of
+            [`values_as`][covjson_msgspec.NdArray.values_as], which this
+            delegates to: a value of the wrong type (``1.5`` in an ``"integer"``
+            range), or an ``int`` too large for a ``"float"`` range. Projection
+            runs first, so a range that is both nonconforming and miscounted
+            reports this rather than the ``ValueError`` below.
+        OverflowError
+            If a conforming value does not fit the target NumPy dtype: an
+            ``"integer"`` range holding a value beyond ``int64`` (or beyond
+            ``float64`` under ``as_float``). Unlike the above, such a value is
+            valid CoverageJSON; NumPy simply cannot hold it.
+        ValueError
+            If the number of values is inconsistent with ``shape``; run
+            [`validate`][covjson_msgspec.validate] to locate the mismatch.
 
         Examples
         --------
@@ -271,36 +330,60 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
         [1, None, 3]
         >>> ints.to_numpy(as_float=True).tolist()
         [1.0, nan, 3.0]
+
+        A value the projection rejects raises instead of being coerced:
+
+        >>> NdArray(
+        ...     data_type="integer", values=(1, 1.5), shape=(2,), axis_names=("x",)
+        ... ).to_numpy()
+        Traceback (most recent call last):
+            ...
+        msgspec.ValidationError: Expected `int | null`, got `float` - at `$[1]`
         """
         try:
             import numpy as np
         except ModuleNotFoundError as exc:  # pragma: no cover - env-dependent
             raise ModuleNotFoundError(_NUMPY_HINT) from exc
 
-        has_missing = any(value is None for value in self.values)
+        array: npt.NDArray[Any]
 
-        if self.data_type == "string":
-            strings = [None if v is None else str(v) for v in self.values]
-            array: npt.NDArray[Any] = np.array(strings, dtype=object)
-        elif self.data_type == "integer" and not as_float:
-            if has_missing:
-                masked = np.ma.MaskedArray(
-                    data=[0 if v is None else int(v) for v in self.values],
-                    mask=[v is None for v in self.values],
-                    dtype=np.int64,
-                )
+        # Each arm passes a concrete type to ``values_as``: a lookup table keyed
+        # on ``data_type`` would collapse the projection's static type to
+        # ``tuple[None, ...]`` and lose the exhaustiveness ``assert_never`` gives.
+        match self.data_type:
+            case "string":
+                array = np.array(self.values_as(str), dtype=object)
 
-                if fill_value is not None:
-                    masked.fill_value = fill_value
+            case "integer" if not as_float:
+                ints = self.values_as(int)
 
-                array = masked
-            else:
-                ints = [0 if v is None else int(v) for v in self.values]
-                array = np.array(ints, dtype=np.int64)
-        else:
-            # float, or integer requested as float: NaN marks the gaps.
-            floats = [math.nan if v is None else float(v) for v in self.values]
-            array = np.array(floats, dtype=np.float64)
+                if any(value is None for value in ints):
+                    masked = np.ma.MaskedArray(
+                        data=[0 if v is None else v for v in ints],
+                        mask=[v is None for v in ints],
+                        dtype=np.int64,
+                    )
+
+                    if fill_value is not None:
+                        masked.fill_value = fill_value
+
+                    array = masked
+                else:
+                    array = np.array(ints, dtype=np.int64)
+
+            case "integer":
+                # Integer values requested as float, per the guard above.
+                array = np.array(self.values_as(int), dtype=np.float64)
+
+            case "float":
+                # NumPy renders None as NaN, so the gaps need no separate pass.
+                array = np.array(self.values_as(float), dtype=np.float64)
+
+            case _:  # pragma: no cover - unreachable exhaustiveness guard
+                # Exhaustiveness: a fourth ``dataType`` would fail type checking
+                # here until it is handled above. mypy needs this arm to see the
+                # gap at all; basedpyright rejects the ``as`` capture form of it.
+                assert_never(self.data_type)
 
         # Fail with a clear message rather than numpy's cryptic "cannot reshape
         # array of size N into shape (...)": decoding is permissive, so a value
@@ -327,8 +410,16 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
     ) -> NdArray:
         """Build an `NdArray` from a NumPy array.
 
-        Requires the ``numpy`` extra. Masked entries and non-finite floats (NaN,
-        infinities) become ``None`` so the result is always JSON-encodable.
+        Requires the ``numpy`` extra. Masked entries, ``None``, and non-finite
+        floats (NaN, infinities) all become ``None``, whatever the ``data_type``,
+        so the result is always JSON-encodable.
+
+        Unlike a decode, this constructor rejects an ``axis_names`` that does not
+        match the array's rank. Decoding stays permissive so a slightly
+        nonconformant document still loads and
+        [`validate`][covjson_msgspec.validate] can report it (as
+        ``ndarray.shape-rank``); building from a NumPy array is not a decode, so
+        it can refuse rather than manufacture a range that validate would reject.
 
         Parameters
         ----------
@@ -346,6 +437,15 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
         NdArray
             A range holding the array's values in row-major order.
 
+        Raises
+        ------
+        ModuleNotFoundError
+            If NumPy is not installed; install ``covjson-msgspec[numpy]``.
+        ValueError
+            If ``axis_names`` does not give one name per dimension of ``array``,
+            or if an explicit ``data_type`` cannot represent the array's values
+            (``"float"`` or ``"integer"`` over a string array).
+
         Examples
         --------
         >>> import numpy as np
@@ -359,6 +459,13 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
 
         >>> NdArray.from_numpy(np.array(["a", "b"]), ("x",)).data_type
         'string'
+
+        One name per dimension, or it raises:
+
+        >>> NdArray.from_numpy(np.array([[1.0, 2.0]]), ("x",))
+        Traceback (most recent call last):
+            ...
+        ValueError: axis_names has 1 name(s) but the array is 2-dimensional
         """
         try:
             import numpy as np
@@ -373,26 +480,49 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
             else:
                 data_type = "string"
 
+        if len(names := tuple(axis_names)) != array.ndim:
+            msg = (
+                f"axis_names has {len(names)} name(s) but the array is "
+                f"{array.ndim}-dimensional"
+            )
+            raise ValueError(msg)
+
         shape = tuple(map(int, array.shape))
         flat = np.ma.getdata(array).reshape(-1)
         mask = np.ma.getmaskarray(array).reshape(-1)
-        values: list[_Scalar | None] = []
 
-        for value, missing in zip(flat, mask, strict=True):
-            if missing:
-                values.append(None)
-            elif data_type == "float":
-                values.append(number if math.isfinite(number := float(value)) else None)
-            elif data_type == "integer":
-                values.append(int(value))
-            else:
-                values.append(None if value is None else str(value))
+        # A non-finite float has no JSON form, and no integer or meaningful
+        # string form either, so it joins masked entries as missing data whatever
+        # the data_type. The dtype test is load-bearing, not defensive:
+        # np.isfinite raises TypeError on a datetime64 or object array.
+        nonfinite = (
+            ~np.isfinite(flat)
+            if np.issubdtype(flat.dtype, np.number)
+            else np.zeros(flat.shape, dtype=bool)
+        )
+        gaps = mask | nonfinite
+
+        # ``data_type`` is fixed for the whole array, so resolve the element
+        # conversion once rather than re-dispatching on it per value.
+        convert = _CONVERTERS[data_type]
+        values: tuple[_Scalar | None, ...]
+
+        if _NATIVE_TYPES.get(flat.dtype.kind) is convert and not gaps.any():
+            # ``tolist`` converts the whole array to native Python scalars in C,
+            # which is exactly what ``convert`` does one element at a time.
+            values = tuple(flat.tolist())
+        else:
+            converted = [
+                None if gap or value is None else convert(value)
+                for value, gap in zip(flat, gaps, strict=True)
+            ]
+            values = tuple(converted)
 
         return NdArray(
             data_type=data_type,
-            values=tuple(values),
+            values=values,
             shape=shape,
-            axis_names=tuple(axis_names),
+            axis_names=names,
         )
 
     def _repr_html_(self) -> str:

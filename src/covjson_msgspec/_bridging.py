@@ -133,6 +133,13 @@ def range_column(
         integer range with masked entries is cast to ``float64`` with NaN gaps,
         since pandas has no general masked-integer column.
 
+    Raises
+    ------
+    msgspec.ValidationError
+        Propagated from [`to_numpy`][covjson_msgspec.NdArray.to_numpy] when a
+        range value cannot be projected to the Python type its ``dataType``
+        names.
+
     Examples
     --------
     A range that varies over only ``y`` (not ``x``) is broadcast across ``x`` so

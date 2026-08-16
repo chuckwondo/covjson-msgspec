@@ -135,6 +135,9 @@ def to_geopandas(
 
     Raises
     ------
+    ModuleNotFoundError
+        If the bridge's dependencies are not installed; install
+        ``covjson-msgspec[geo]``.
     ValueError
         If a domain is a URL reference, a point-like domain lacks ``x`` / ``y``
         coordinates, a range is not an inline `NdArray`, ``trajectory_as`` is not
@@ -142,6 +145,12 @@ def to_geopandas(
         ``composite`` axis declares the wrong ``dataType`` or resolves to
         coordinates without ``x`` / ``y``, or (in ``"linestring"`` mode) a
         Trajectory has fewer than two vertices.
+    msgspec.ValidationError
+        If a range value cannot be projected to the Python type its ``dataType``
+        names, propagated from
+        [`to_numpy`][covjson_msgspec.NdArray.to_numpy]
+        ([`validate`][covjson_msgspec.validate] with ``check_values=True``
+        *reports* such a mismatch instead of raising).
 
     Warns
     -----
@@ -222,10 +231,16 @@ def to_geojson(
 
     Raises
     ------
+    ModuleNotFoundError
+        Propagated from `to_geopandas` when the bridge's dependencies are not
+        installed; install ``covjson-msgspec[geo]``.
     ValueError
         Propagated from `to_geopandas` (URL domain, missing ``x`` / ``y``, a
         non-composite ``composite`` axis, a non-inline range, or an invalid
         ``trajectory_as``).
+    msgspec.ValidationError
+        Propagated from `to_geopandas` when a range value cannot be projected to
+        the Python type its ``dataType`` names.
 
     Warns
     -----
