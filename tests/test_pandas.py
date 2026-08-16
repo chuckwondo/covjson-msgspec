@@ -1,5 +1,6 @@
 """Behavioral tests for the pandas bridge (to_pandas)."""
 
+import msgspec
 import numpy as np
 import pandas as pd
 import pytest
@@ -600,6 +601,19 @@ def test_collection_inherits_parameters_and_referencing() -> None:
 
 def test_empty_collection_is_empty_frame() -> None:
     assert to_pandas(CoverageCollection(coverages=())).empty
+
+
+def test_to_pandas_propagates_a_range_value_error() -> None:
+    # to_numpy projects rather than coerces, so a value that does not match its
+    # dataType raises out through the bridge, as to_pandas documents. Nothing
+    # else holds that docstring honest if the conversion is ever wrapped.
+    cov = Coverage(
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={"t": NdArray(data_type="float", values=("1.5",))},
+    )
+
+    with pytest.raises(msgspec.ValidationError):
+        to_pandas(cov)
 
 
 def _point_series_member(

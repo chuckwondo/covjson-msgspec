@@ -3,6 +3,7 @@
 import warnings
 from collections.abc import Mapping
 
+import msgspec
 import numpy as np
 import pytest
 import xarray as xr
@@ -1079,6 +1080,22 @@ def test_from_datatree_single_node_root_data() -> None:
     assert _dom(collection.coverages[0]).domain_type == "Grid"
 
 
+def test_to_xarray_propagates_a_range_value_error() -> None:
+    # to_numpy projects rather than coerces, so a value that does not match its
+    # dataType raises out through the bridge. Both entry points document that,
+    # and nothing else holds those docstrings honest if the conversion is ever
+    # wrapped in a try/except.
+    with pytest.raises(msgspec.ValidationError):
+        to_xarray(_nonconforming_grid())
+
+
+def test_to_datatree_propagates_a_range_value_error() -> None:
+    collection = CoverageCollection(coverages=(_nonconforming_grid(),))
+
+    with pytest.raises(msgspec.ValidationError):
+        to_datatree(collection)
+
+
 def _dom(coverage: Coverage) -> Domain:
     domain = coverage.domain
     assert isinstance(domain, Domain)
@@ -1124,4 +1141,19 @@ def _collection() -> CoverageCollection:
         coverages=members,
         domain_type="Point",
         parameters={"t": _temperature()},
+    )
+
+
+def _nonconforming_grid() -> Coverage:
+    """A Grid whose "float" range holds a string, which to_numpy refuses."""
+    return Coverage(
+        domain=Domain.grid(x=Axis.listed((1.0, 2.0)), y=Axis.listed((3.0,))),
+        ranges={
+            "t": NdArray(
+                data_type="float",
+                values=("1.5", 2.0),
+                shape=(1, 2),
+                axis_names=("y", "x"),
+            )
+        },
     )
