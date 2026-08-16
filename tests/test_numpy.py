@@ -245,9 +245,24 @@ def test_from_numpy_yields_native_python_scalars(
         # None in an object array would reach float(None) and raise TypeError.
         (np.array([1.0, None], dtype=object), "float", (1.0, None)),
         # numpy.isfinite cannot see inside an object array, so a non-finite
-        # float hiding in one is caught by converting, not by the dtype scan.
+        # float hiding in one is found element by element. That has to hold for
+        # every data_type: "integer" would otherwise raise and "string" would
+        # write the literal "nan".
         (np.array([1.0, np.nan], dtype=object), "float", (1.0, None)),
         (np.array([1.0, np.inf, -np.inf], dtype=object), "float", (1.0, None, None)),
+        (np.array([1.0, np.nan], dtype=object), "integer", (1, None)),
+        (np.array([1.0, np.inf], dtype=object), "integer", (1, None)),
+        (np.array([1.0, np.nan], dtype=object), "string", ("1.0", None)),
+        # A genuine "nan" string is a value, not a gap, so str keeps it.
+        (np.array(["nan", "abc"], dtype=object), "string", ("nan", "abc")),
+        # A structured dtype is the one case where getmaskarray returns a
+        # structured mask rather than a plain bool array, so the gap mask has to
+        # be left alone rather than combined with anything.
+        (
+            np.array([(1, 2.0)], dtype=[("a", "i4"), ("b", "f8")]),
+            None,
+            ("(1, 2.0)",),
+        ),
         # timedelta64 is an np.integer subtype, so it infers "integer"; tolist()
         # would yield datetime.timedelta, which is not an integer at all.
         (np.array([1, 2], dtype="timedelta64[D]"), "string", ("1 days", "2 days")),

@@ -471,11 +471,20 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
 
         # A non-finite float has no JSON form, and no integer or meaningful
         # string form either, so it joins masked entries as missing data whatever
-        # the data_type. The dtype test is load-bearing, not defensive:
-        # np.isfinite raises TypeError on a datetime64 or object array.
-        gaps = mask | (
-            ~np.isfinite(flat) if np.issubdtype(flat.dtype, np.number) else False
-        )
+        # the data_type. np.isfinite settles a numeric dtype in one call, but it
+        # raises on datetime64 and cannot see inside an object array, whose
+        # elements have to be tested one at a time.
+        if np.issubdtype(flat.dtype, np.number):
+            gaps = mask | ~np.isfinite(flat)
+        elif flat.dtype.kind == "O":
+            # Only a real float is at issue: a genuine ``"nan"`` string is a
+            # value ``str`` should keep.
+            gaps = mask | np.array(
+                [isinstance(v, float) and not math.isfinite(v) for v in flat],
+                dtype=bool,
+            )
+        else:
+            gaps = mask
 
         # ``data_type`` is fixed for the whole array, so resolve the element
         # conversion once rather than re-dispatching on it per value.
