@@ -1,8 +1,10 @@
 """Behavioral tests for the geo bridge (to_geopandas / to_geojson)."""
 
+from collections.abc import Callable
 from typing import Any
 
 import geopandas as gpd
+import msgspec
 import pandas as pd
 import pytest
 from shapely import LineString, Point, Polygon
@@ -708,6 +710,22 @@ def test_to_geojson_trajectory_as_linestring() -> None:
     gj = to_geojson(cov, trajectory_as="linestring")
 
     assert gj["features"][0]["geometry"]["type"] == "LineString"
+
+
+@pytest.mark.parametrize("convert", [to_geopandas, to_geojson])
+def test_geo_bridges_propagate_a_range_value_error(
+    convert: Callable[[Coverage], object],
+) -> None:
+    # to_numpy projects rather than coerces, so a value that does not match its
+    # dataType raises out through both bridges, as each documents. A point
+    # domain keeps the Grid warning out of the way.
+    cov = Coverage(
+        domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+        ranges={"t": NdArray(data_type="float", values=("1.5",))},
+    )
+
+    with pytest.raises(msgspec.ValidationError):
+        convert(cov)
 
 
 def _point(geom: Any) -> Point:

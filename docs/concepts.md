@@ -298,9 +298,13 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
   a precise element tuple when you know the `dataType`. `values_as(float)` returns
   `tuple[float | None, ...]`, promoting integer-written values as the spec's
   `dataType` allows and raising fail-fast on a mismatch (where
-  `validate(check_values=True)` instead *reports* the same mismatch). This is the
-  "view you ask for" half of typed projection: faithful in storage, precise on
-  demand.
+  `validate(check_values=True)` instead *reports* a type mismatch as an issue).
+  The two ask related but distinct questions, so they can disagree at the edge:
+  `validate` asks whether a value is a *member* of the type its `dataType` names
+  and keeps a stored `int` an `int`, while `values_as` asks whether it can be
+  *projected* to the Python type, which an integer too large for any `float`
+  cannot be. This is the "view you ask for" half of typed projection: faithful
+  in storage, precise on demand.
 - Decode enforces only what is local and cheap: the `float | int | str | None`
   union rejects a nested array or a boolean. The cross-cutting checks (the
   `values` count versus `shape`, the `shape` rank versus `axisNames`, the element
