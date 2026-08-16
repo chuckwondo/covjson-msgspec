@@ -253,6 +253,11 @@ def test_from_numpy_yields_native_python_scalars(
         (np.array([1.0, np.nan], dtype=object), "integer", (1, None)),
         (np.array([1.0, np.inf], dtype=object), "integer", (1, None)),
         (np.array([1.0, np.nan], dtype=object), "string", ("1.0", None)),
+        # Only np.float64 subclasses float, so the gap test asks whether a value
+        # is float-convertible rather than naming float types.
+        (np.array([np.float32("nan")], dtype=object), "integer", (None,)),
+        (np.array([np.float16("nan")], dtype=object), "string", (None,)),
+        (np.array([np.longdouble("nan")], dtype=object), "integer", (None,)),
         # A genuine "nan" string is a value, not a gap, so str keeps it.
         (np.array(["nan", "abc"], dtype=object), "string", ("nan", "abc")),
         # A structured dtype is the one case where getmaskarray returns a

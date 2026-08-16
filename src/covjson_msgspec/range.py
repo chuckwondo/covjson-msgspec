@@ -477,10 +477,13 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
         if np.issubdtype(flat.dtype, np.number):
             gaps = mask | ~np.isfinite(flat)
         elif flat.dtype.kind == "O":
-            # Only a real float is at issue: a genuine ``"nan"`` string is a
-            # value ``str`` should keep.
+            # Anything float-convertible is asked whether it is finite, rather
+            # than a list of float types being enumerated: only ``np.float64``
+            # subclasses ``float``, so naming types misses the other NumPy
+            # precisions. A genuine ``"nan"`` string has no ``__float__``, so it
+            # stays the value ``str`` should keep.
             gaps = mask | np.array(
-                [isinstance(v, float) and not math.isfinite(v) for v in flat],
+                [hasattr(v, "__float__") and not math.isfinite(v) for v in flat],
                 dtype=bool,
             )
         else:
