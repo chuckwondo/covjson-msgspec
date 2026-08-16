@@ -483,6 +483,10 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
         # ``data_type`` is fixed for the whole array, so resolve the element
         # conversion once rather than re-dispatching on it per value.
         convert = _CONVERTERS[data_type]
+        # The type this conversion produces, asked of the conversion itself so
+        # the two cannot drift apart: each converter accepts ``0`` and returns
+        # its own element type (``_float_or_none(0)`` is ``0.0``).
+        target_element_type = type(convert(0))
         values: list[_Scalar | None]
 
         if (
@@ -490,7 +494,7 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
             # homogeneous, so one of them does not speak for the rest, and
             # because ``nonfinite`` cannot see a NaN inside it.
             flat.dtype.kind != "O"
-            and _native_element_type(flat) is _ELEMENT_TYPES[data_type]
+            and _native_element_type(flat) is target_element_type
             and not gaps.any()
         ):
             # ``tolist`` converts the whole array to native Python scalars in C,
@@ -1045,14 +1049,6 @@ def _float_or_none(value: Any) -> float | None:
 _CONVERTERS: Final[
     Mapping[Literal["float", "integer", "string"], Callable[[Any], _Scalar | None]]
 ] = {"float": _float_or_none, "integer": int, "string": str}
-
-# The Python type each ``dataType`` must end up holding, for deciding whether
-# `numpy.ndarray.tolist` already produces it (see `_native_element_type`).
-_ELEMENT_TYPES: Final[Mapping[Literal["float", "integer", "string"], type]] = {
-    "float": float,
-    "integer": int,
-    "string": str,
-}
 
 
 def _native_element_type(flat: npt.NDArray[Any]) -> type | None:
