@@ -502,22 +502,21 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
         # ``data_type`` is fixed for the whole array, so resolve the element
         # conversion once rather than re-dispatching on it per value.
         convert = _CONVERTERS[data_type]
-        values: tuple[_Scalar | None, ...]
+        values: list[_Scalar | None]
 
         if _NATIVE_TYPES.get(flat.dtype.kind) is convert and not gaps.any():
             # ``tolist`` converts the whole array to native Python scalars in C,
             # which is exactly what ``convert`` does one element at a time.
-            values = tuple(flat.tolist())
+            values = flat.tolist()
         else:
-            converted = [
+            values = [
                 None if gap or value is None else convert(value)
                 for value, gap in zip(flat, gaps, strict=True)
             ]
-            values = tuple(converted)
 
         return NdArray(
             data_type=data_type,
-            values=values,
+            values=tuple(values),
             shape=shape,
             axis_names=names,
         )
