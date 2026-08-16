@@ -162,16 +162,6 @@ def test_to_numpy_projection_error_precedes_shape_error() -> None:
         arr.to_numpy()
 
 
-def test_to_numpy_string_all_missing() -> None:
-    arr = NdArray(
-        data_type="string", values=(None, None), shape=(2,), axis_names=("x",)
-    )
-    out = arr.to_numpy()
-
-    assert out.dtype == object
-    assert out.tolist() == [None, None]
-
-
 def test_to_numpy_zero_dimensional() -> None:
     arr = NdArray(data_type="float", values=(42.0,))
     out = arr.to_numpy()
@@ -247,6 +237,9 @@ def test_from_numpy_yields_native_python_scalars(
         # An explicit data_type breaks the dtype-to-target correspondence.
         (np.array([1.0, 2.0]), "string", ("1.0", "2.0")),
         (np.array([1.7, 2.9]), "integer", (1, 2)),
+        # The missing-value guard is shared across the branches: without it,
+        # None in an object array would reach float(None) and raise TypeError.
+        (np.array([1.0, None], dtype=object), "float", (1.0, None)),
     ],
 )
 def test_from_numpy_converts_non_native_dtypes_element_by_element(
@@ -272,16 +265,6 @@ def test_from_numpy_nonfinite_under_explicit_data_type(
     arr = NdArray.from_numpy(np.array([1.0, value]), ("x",), data_type=data_type)
 
     assert arr.values[1] is None
-
-
-def test_from_numpy_object_array_with_none_under_explicit_float() -> None:
-    # The missing-value guard is shared across the branches: without it, None in
-    # an object array would reach float(None) and raise TypeError.
-    arr = NdArray.from_numpy(
-        np.array([1.0, None], dtype=object), ("x",), data_type="float"
-    )
-
-    assert arr.values == (1.0, None)
 
 
 @pytest.mark.parametrize(

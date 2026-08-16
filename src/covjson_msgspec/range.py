@@ -65,10 +65,7 @@ _ScalarT = TypeVar("_ScalarT", bound=_Scalar)
 
 # The Python conversion each ``dataType`` names, for building values from a
 # foreign source. Spelling the key type keeps a fourth ``dataType`` a type error
-# at the lookup rather than a runtime KeyError. ``NdArray.to_numpy`` deliberately
-# does not share this: it passes the type as a *type argument* to the generic
-# ``values_as``, where a union-valued table collapses the result to
-# ``tuple[None, ...]``.
+# at the lookup rather than a runtime KeyError.
 _CONVERTERS: Final[
     Mapping[Literal["float", "integer", "string"], Callable[[Any], _Scalar]]
 ] = {"float": float, "integer": int, "string": str}
