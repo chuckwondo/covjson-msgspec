@@ -97,6 +97,18 @@ without the decode-time payoff that justifies it for covjson-pydantic.
   (#89): the typed-projection tenet applied to range values, closing part of the
   static-element-type-precision gap versus covjson-pydantic while keeping the
   single non-generic class.
+- `values_as` is the single projection rule for reading values back out
+  (#110): `to_numpy` matches on `data_type` and delegates to it per arm rather
+  than hand-coercing with `float()` / `int()` / `str()`, so an unprojectable
+  value raises `msgspec.ValidationError` from either door instead of being
+  silently coerced (a `"1.5"` in a `"float"` range, a truncated `1.5` in an
+  `"integer"` one). A conforming value that NumPy's dtype cannot hold (an
+  integer beyond `int64`) stays NumPy's `OverflowError`: it is a representation
+  limit, not a nonconformant document. `validate(check_values=True)` keeps a
+  deliberately different, non-promoting rule, because it asks a *membership*
+  question rather than a *projection* one; an integer too large for any `float`
+  is conformant to it and unprojectable to `values_as`, and a test pins that
+  pair so the two rules are not accidentally unified.
 - Bare decode deterministically enforces the `float | int | str` union (nested
   arrays and booleans are rejected). This was true with the TypeVar bound too,
   but is now enforced directly by the field annotation (no cache, no ordering
