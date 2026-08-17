@@ -114,6 +114,12 @@ CLAUDE.md.
   the report exposes named accessors only (no `__iter__` / `__len__`, so each call
   site names its view) and `__bool__` raises via `NoReturn`; the JSON form becomes
   `{"issues": [...]}`
+- [ADR-0021](0021-durations-as-iso-8601-strings.md): a duration crosses the wire
+  as an ISO 8601 duration string formatted from the unit the source array
+  declares (`"P1Y"`, `"PT15M"`), converted in one shared home so the NumPy and
+  xarray bridges agree; CoverageJSON has no duration `dataType`, msgspec's own
+  `timedelta` encoding cannot express `P1Y`/`P1M`, and the mapping is
+  deliberately one-way
 
 Some decisions are recorded in ADRs that land with their implementation rather
 than here; see the issue tracker for the in-flight set.

@@ -42,6 +42,7 @@ from covjson_msgspec._best_effort import (
     collect_async,
     fail_fast,
 )
+from covjson_msgspec._duration import to_iso_durations
 from covjson_msgspec._fetch import (
     AsyncFetch,
     Fetch,
@@ -392,6 +393,11 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
         floats (NaN, infinities) all become ``None``, whatever the ``data_type``,
         so the result is always JSON-encodable.
 
+        A ``timedelta64`` array becomes ISO 8601 duration strings (``"P1D"``),
+        since CoverageJSON has no duration ``dataType``. That conversion has no
+        inverse: on the wire a duration range is indistinguishable from any
+        other string range, so `to_numpy` returns the strings as they are.
+
         Unlike a decode, this constructor rejects an ``axis_names`` that does not
         match the array's rank. Decoding stays permissive so a slightly
         nonconformant document still loads and
@@ -407,8 +413,8 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
             One name per dimension of ``array``.
         data_type
             The CoverageJSON ``dataType``. Inferred from the array's dtype when
-            omitted (floating to ``"float"``, integer to ``"integer"``,
-            otherwise ``"string"``).
+            omitted: floating to ``"float"``, integer to ``"integer"``, and
+            everything else, ``timedelta64`` included, to ``"string"``.
 
         Returns
         -------
@@ -420,9 +426,11 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
         ModuleNotFoundError
             If NumPy is not installed; install ``covjson-msgspec[numpy]``.
         ValueError
-            If ``axis_names`` does not give one name per dimension of ``array``,
-            or if an explicit ``data_type`` cannot represent the array's values
-            (``"float"`` or ``"integer"`` over a string array).
+            If ``axis_names`` does not give one name per dimension of ``array``;
+            if an explicit ``data_type`` cannot represent the array's values
+            (``"float"`` or ``"integer"`` over a string array, or either of
+            those over a ``timedelta64`` array); or if a ``timedelta64`` array
+            carries no unit, leaving its counts with nothing to be counts of.
 
         Examples
         --------
@@ -438,6 +446,12 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
         >>> NdArray.from_numpy(np.array(["a", "b"]), ("x",)).data_type
         'string'
 
+        So does a duration, which is carried as an ISO 8601 string:
+
+        >>> arr = NdArray.from_numpy(np.array([1, 2], dtype="timedelta64[D]"), ("t",))
+        >>> arr.data_type, arr.values
+        ('string', ('P1D', 'P2D'))
+
         One name per dimension, or it raises:
 
         >>> NdArray.from_numpy(np.array([[1.0, 2.0]]), ("x",))
@@ -450,8 +464,25 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
         except ModuleNotFoundError as exc:  # pragma: no cover - env-dependent
             raise ModuleNotFoundError(_NUMPY_HINT) from exc
 
+        # A duration is settled once, here, because two things follow from it:
+        # NumPy makes timedelta64 a subtype of np.integer, so the ladder below
+        # would otherwise call it "integer" and int() would then raise on the
+        # datetime.timedelta its elements yield; and CoverageJSON has no
+        # duration type, so "string" is the only dataType that can carry one.
+        duration = np.issubdtype(array.dtype, np.timedelta64)
+
+        if duration and data_type not in (None, "string"):
+            msg = (
+                "a timedelta64 array becomes an ISO 8601 duration string, so "
+                f"data_type={data_type!r} cannot represent it; convert the array "
+                'first, e.g. array.astype("int64")'
+            )
+            raise ValueError(msg)
+
         if data_type is None:
-            if np.issubdtype(array.dtype, np.floating):
+            if duration:
+                data_type = "string"
+            elif np.issubdtype(array.dtype, np.floating):
                 data_type = "float"
             elif np.issubdtype(array.dtype, np.integer):
                 data_type = "integer"
@@ -477,29 +508,34 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
         if np.issubdtype(flat.dtype, np.number):
             gaps = mask | ~np.isfinite(flat)
         elif flat.dtype.kind == "O":
-            # Anything float-convertible is asked whether it is finite, rather
-            # than a list of float types being enumerated: only ``np.float64``
-            # subclasses ``float``, so naming types misses the other NumPy
-            # precisions. A genuine ``"nan"`` string has no ``__float__``, so it
-            # stays the value ``str`` should keep.
-            gaps = mask | np.array(
-                [hasattr(v, "__float__") and not math.isfinite(v) for v in flat],
-                dtype=bool,
-            )
+            # Each element is asked whether it is a non-finite float by trying
+            # the conversion, rather than a list of float types being
+            # enumerated: only ``np.float64`` subclasses ``float``, so naming
+            # types misses the other NumPy precisions. Trying it is also the
+            # only honest question, because ``np.timedelta64`` and
+            # ``np.datetime64`` both carry a ``__float__`` that raises when it
+            # is called. A genuine ``"nan"`` string converts to no float at all,
+            # so it stays the value ``str`` should keep.
+            gaps = mask | np.array([_is_nonfinite(v) for v in flat], dtype=bool)
         else:
             gaps = mask
+
+        if duration:
+            # After the gap mask and never before: numpy.isfinite is what flags
+            # NaT, and it can only do that while these are still timedelta64.
+            flat = to_iso_durations(flat)
 
         # ``data_type`` is fixed for the whole array, so resolve the element
         # conversion once rather than re-dispatching on it per value.
         convert = _CONVERTERS[data_type]
         # ``tolist`` converts a whole array to Python scalars in C, which is what
         # ``convert`` does one at a time, but only for some dtypes: ``longdouble``
-        # shares kind "f" with ``float64`` yet has no lossless Python float, and
-        # ``timedelta64`` is an integer subtype yielding ``timedelta``. So ask
-        # ``tolist`` on one element, and compare against the type the converter
-        # produces, asked of the converter so the two cannot drift apart. An
-        # object array is excluded outright: its elements are not homogeneous, so
-        # one does not speak for the rest, and ``gaps`` cannot see a NaN in it.
+        # shares kind "f" with ``float64`` yet has no lossless Python float. So
+        # ask ``tolist`` on one element, and compare against the type the
+        # converter produces, asked of the converter so the two cannot drift
+        # apart. An object array is excluded outright: its elements are not
+        # homogeneous, so one does not speak for the rest, and ``gaps`` cannot
+        # see a NaN in it.
         head: list[object] = flat[:1].tolist()
         values: list[_Scalar | None]
 
@@ -1021,6 +1057,45 @@ def template_variables(template: str) -> Sequence[str]:
     ()
     """
     return tuple(_TEMPLATE_VARIABLE_RE.findall(template))
+
+
+def _is_nonfinite(value: Any) -> bool:
+    """Whether ``value`` is a float that is not finite.
+
+    The question is asked by attempting the conversion, not by looking for a
+    ``__float__`` attribute, because carrying one does not mean calling it
+    works: ``numpy.timedelta64`` and ``numpy.datetime64`` both have a
+    ``__float__`` that raises. Anything that cannot become a float is not a
+    non-finite float, so it survives as a value rather than being read as
+    missing data.
+
+    Parameters
+    ----------
+    value
+        Any value at all; nothing is assumed about it.
+
+    Returns
+    -------
+    bool
+        Whether the value converts to a float that is NaN or an infinity.
+
+    Examples
+    --------
+    >>> _is_nonfinite(float("nan")), _is_nonfinite(float("inf"))
+    (True, True)
+    >>> _is_nonfinite(1.5), _is_nonfinite(None)
+    (False, False)
+
+    A ``"nan"`` string is a string, and a duration is a duration:
+
+    >>> import numpy as np
+    >>> _is_nonfinite("nan"), _is_nonfinite(np.timedelta64(1, "D"))
+    (False, False)
+    """
+    try:
+        return not math.isfinite(value)
+    except TypeError:
+        return False
 
 
 def _float_or_none(value: Any) -> float | None:

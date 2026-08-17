@@ -53,6 +53,7 @@ from covjson_msgspec._bridging import (
     coordinate_systems,
     require_inline_ndarray,
 )
+from covjson_msgspec._duration import to_iso_durations
 from covjson_msgspec._i18n import display
 from covjson_msgspec.axis import Axis
 from covjson_msgspec.coverage import Coverage, CoverageCollection, Range
@@ -1902,10 +1903,11 @@ def _build_axes(
 def _axis_from_coord(coord: xr.DataArray, compact_regular: bool) -> Axis:
     """Build a primitive [`Axis`][covjson_msgspec.Axis] from a 1-D coordinate.
 
-    A time coordinate becomes a listed axis of ISO strings (`_time_to_iso`). A
-    numeric coordinate becomes a compact regular axis (start / stop / num) when
-    ``compact_regular`` is set and the values are evenly spaced (`_is_regular`),
-    otherwise a listed axis.
+    A numeric coordinate becomes a compact regular axis (start / stop / num)
+    when ``compact_regular`` is set and the values are evenly spaced
+    (`_is_regular`), otherwise a listed axis. A time or duration coordinate is
+    always listed: `_coord_values` has already rendered it as strings, and the
+    regular form is numeric, so `_is_regular` rejects them.
 
     Parameters
     ----------
@@ -1919,12 +1921,7 @@ def _axis_from_coord(coord: xr.DataArray, compact_regular: bool) -> Axis:
     Axis
         The coordinate as a listed or regular axis.
     """
-    if _is_time(coord):
-        return Axis.listed(tuple(_time_to_iso(coord)))
-
-    import numpy as np
-
-    values = np.atleast_1d(coord.values).tolist()
+    values = _coord_values(coord)
 
     if compact_regular and _is_regular(values):
         return Axis.regular(float(values[0]), float(values[-1]), len(values))
@@ -1983,11 +1980,13 @@ def _is_regular(values: Sequence[Any]) -> bool:
 
 
 def _coord_values(coord: xr.DataArray) -> Sequence[Any]:
-    """Read a coordinate's values into a sequence (time as ISO strings).
+    """Read a coordinate's values into a sequence, ready for a CoverageJSON axis.
 
-    A time coordinate is rendered as ISO strings (`_time_to_iso`); any other
-    coordinate is converted straight to a tuple. Used to gather a composite
-    axis's component columns in `_build_axes`.
+    A time coordinate is rendered as ISO 8601 strings (`_time_to_iso`) and a
+    duration coordinate as ISO 8601 durations (`to_iso_durations`); any other
+    coordinate is converted straight to a tuple. This is the one place a
+    coordinate's values are read, so `_axis_from_coord`, `_scalar`, and the
+    composite-axis columns in `_build_axes` all agree on the conversions.
 
     Parameters
     ----------
@@ -1997,19 +1996,24 @@ def _coord_values(coord: xr.DataArray) -> Sequence[Any]:
     Returns
     -------
     sequence
-        The coordinate's values (ISO strings for time, native Python values
-        otherwise).
+        The coordinate's values (ISO strings for a time or duration, native
+        Python values otherwise).
     """
     if _is_time(coord):
         return _time_to_iso(coord)
 
     import numpy as np
 
-    return tuple(np.atleast_1d(coord.values).tolist())
+    values = np.atleast_1d(coord.values)
+
+    if np.issubdtype(values.dtype, np.timedelta64):
+        return tuple(to_iso_durations(values).tolist())
+
+    return tuple(values.tolist())
 
 
 def _scalar(coord: xr.DataArray) -> Any:
-    """Read a 0-dimensional coordinate's single value (time as an ISO string).
+    """Read a 0-dimensional coordinate's single value.
 
     Parameters
     ----------
@@ -2019,10 +2023,11 @@ def _scalar(coord: xr.DataArray) -> Any:
     Returns
     -------
     Any
-        The lone value: an ISO string for a time coordinate, else the native
-        Python scalar.
+        The lone value, converted the same way `_coord_values` converts a
+        1-D coordinate's: an ISO 8601 string for a time or a duration, else the
+        native Python scalar.
     """
-    return _time_to_iso(coord)[0] if _is_time(coord) else coord.values.item()
+    return _coord_values(coord)[0]
 
 
 def _time_to_iso(coord: xr.DataArray) -> Sequence[str]:
