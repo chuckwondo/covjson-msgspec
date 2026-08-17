@@ -268,9 +268,19 @@ def test_from_numpy_yields_native_python_scalars(
             None,
             ("(1, 2.0)",),
         ),
-        # timedelta64 is an np.integer subtype, so it infers "integer"; tolist()
-        # would yield datetime.timedelta, which is not an integer at all.
-        (np.array([1, 2], dtype="timedelta64[D]"), "string", ("1 days", "2 days")),
+        # A duration is an ISO 8601 string whether or not "string" was asked
+        # for, so the explicit data_type changes nothing here.
+        (np.array([1, 2], dtype="timedelta64[D]"), "string", ("P1D", "P2D")),
+        # An object array carries no array-level unit to read, so a duration
+        # inside one falls back to str() rather than the ISO form. What matters
+        # is that neither of these dtypes raises: both have a __float__ that
+        # does, which the gap probe used to call.
+        (np.array([np.timedelta64(1, "D")], dtype=object), None, ("1 days",)),
+        (
+            np.array([np.datetime64("2020-01-01")], dtype=object),
+            None,
+            ("2020-01-01",),
+        ),
     ],
 )
 def test_from_numpy_converts_non_native_dtypes_element_by_element(
@@ -321,6 +331,66 @@ def test_from_numpy_explicit_data_type_override() -> None:
 
     assert arr.data_type == "string"
     assert arr.values == ("1", "2")
+
+
+@pytest.mark.parametrize(
+    ("array", "expected"),
+    [
+        # Each unit keeps its own designator rather than being normalized to
+        # seconds, so a nominal year stays a year instead of becoming 365 days.
+        (np.array([1], dtype="timedelta64[Y]"), ("P1Y",)),
+        (np.array([1], dtype="timedelta64[M]"), ("P1M",)),
+        (np.array([2], dtype="timedelta64[W]"), ("P2W",)),
+        (np.array([1], dtype="timedelta64[D]"), ("P1D",)),
+        (np.array([6], dtype="timedelta64[h]"), ("PT6H",)),
+        (np.array([90], dtype="timedelta64[s]"), ("PT90S",)),
+        # The dtype's multiple counts: one timedelta64[15m] is fifteen minutes.
+        (np.array([1, 2], dtype="timedelta64[15m]"), ("PT15M", "PT30M")),
+        # A sub-second unit has no ISO designator, so it becomes a fraction of
+        # a second, with trailing zeros trimmed rather than left to pad it out.
+        (np.array([1500], dtype="timedelta64[ms]"), ("PT1.5S",)),
+        (
+            np.array([1, 1500], dtype="timedelta64[ns]"),
+            ("PT0.000000001S", "PT0.0000015S"),
+        ),
+        (np.array([10**9], dtype="timedelta64[ns]"), ("PT1S",)),
+        # The sign leads the whole duration; "P-3D" would not parse.
+        (np.array([-3, 0], dtype="timedelta64[D]"), ("-P3D", "P0D")),
+        # NaT is missing data like any other gap. numpy.isfinite is what catches
+        # it, which only works while the values are still timedelta64, so this
+        # pins that the gap mask is built before the ISO conversion.
+        (np.array(["NaT", 1], dtype="timedelta64[D]"), (None, "P1D")),
+        (np.array([], dtype="timedelta64[D]"), ()),
+    ],
+)
+def test_from_numpy_durations_become_iso_8601(
+    array: np.ndarray, expected: tuple[str | None, ...]
+) -> None:
+    arr = NdArray.from_numpy(array, ("t",))
+
+    assert arr.data_type == "string"
+    assert arr.values == expected
+    assert msgspec.json.encode(arr)
+
+
+@pytest.mark.parametrize("data_type", ["integer", "float"])
+def test_from_numpy_rejects_numeric_data_type_for_durations(
+    data_type: Literal["integer", "float"],
+) -> None:
+    # numpy makes timedelta64 an np.integer subtype, so this used to infer
+    # "integer" and die on int(datetime.timedelta). Refusing names the remedy
+    # instead; a caller who wants the raw counts converts the array first.
+    with pytest.raises(ValueError, match="cannot represent it"):
+        NdArray.from_numpy(
+            np.array([1], dtype="timedelta64[D]"), ("t",), data_type=data_type
+        )
+
+
+def test_from_numpy_rejects_unitless_timedelta() -> None:
+    # An unsized timedelta64 reports unit "generic": the counts have nothing to
+    # be counts of, so there is no duration to write.
+    with pytest.raises(ValueError, match="no ISO 8601 duration form"):
+        NdArray.from_numpy(np.array([1], dtype="timedelta64"), ("t",))
 
 
 def test_roundtrip_float_preserves_values_and_shape() -> None:

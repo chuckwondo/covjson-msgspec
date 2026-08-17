@@ -74,6 +74,21 @@ markdown_extensions:
   - toc:
       permalink: true
 
+# A page missing from the nav is a page nobody can navigate to, and the default
+# level for this check is "info", which --strict does not fail on: ADR-0015
+# through ADR-0020 went unlisted that way. At "warn" the strict build in CI
+# catches the next one instead of shipping it.
+validation:
+  nav:
+    omitted_files: warn
+
+# Pages deliberately outside the nav: the ADR template is a copyable starting
+# point rather than a decision, and the comparison notes are a contributor
+# scratchpad until #22 writes the user-facing version.
+not_in_nav: |
+  adr/template.md
+  comparison/covjson-pydantic.md
+
 nav:
   - Home: index.md
   - Getting started: getting-started.md
@@ -123,3 +138,10 @@ nav:
           - "ADR-0012: Custom members dropped on decode": adr/0012-custom-members-dropped-on-decode.md
           - "ADR-0013: UNSET for inheritance members": adr/0013-unset-for-omittable-inheritance-members.md
           - "ADR-0014: Documentation toolchain": adr/0014-documentation-toolchain.md
+          - "ADR-0015: Bridge temporal classification": adr/0015-bridge-temporal-classification.md
+          - "ADR-0016: Read-only Mapping members": adr/0016-readonly-mapping-members.md
+          - "ADR-0017: Reference systems projection": adr/0017-reference-systems-permissive-core-projection.md
+          - "ADR-0018: Typed projection scope": adr/0018-typed-projection-scope.md
+          - "ADR-0019: Composite coordinates required": adr/0019-composite-coordinates-required.md
+          - "ADR-0020: validate() outcome model": adr/0020-validate-outcome-model.md
+          - "ADR-0021: Durations as ISO 8601 strings": adr/0021-durations-as-iso-8601-strings.md

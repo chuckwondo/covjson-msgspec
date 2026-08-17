@@ -790,6 +790,107 @@ def test_from_xarray_rejects_missing_time_coordinate() -> None:
         from_xarray(ds)
 
 
+def test_from_xarray_duration_data_variable() -> None:
+    # A duration data variable used to take the whole bridge down: from_xarray
+    # builds every range through NdArray.from_numpy, which read timedelta64 as
+    # an integer dtype and then raised on int(datetime.timedelta).
+    ds = xr.Dataset(
+        {"age": ("t", np.array([1, 2], dtype="timedelta64[D]"))},
+        coords={
+            "lon": 1.0,
+            "lat": 2.0,
+            "t": np.array(["2020-01-01", "2020-01-02"], dtype="datetime64[ns]"),
+        },
+    )
+    cov = from_xarray(ds)
+    age = cov.ranges["age"]
+
+    # Seconds rather than "P1D" because xarray normalizes every coarser-than-
+    # second duration dtype to timedelta64[s] when the Dataset is built, so the
+    # declared unit is already gone by the time the bridge sees the values.
+    assert isinstance(age, NdArray)
+    assert age.data_type == "string"
+    assert age.values == ("PT86400S", "PT172800S")
+
+
+@pytest.mark.parametrize(
+    ("unit", "expected"),
+    [
+        ("D", ("PT0S", "PT86400S")),
+        ("h", ("PT0S", "PT3600S")),
+        # A nanosecond coordinate is what xarray and pandas produce natively,
+        # and the one unit xarray leaves alone. Its values arrive from tolist()
+        # as plain ints, so before the shared duration conversion it was read as
+        # an evenly-spaced numeric axis and the unit left the document entirely.
+        ("ns", ("PT0S", "PT0.000000001S")),
+    ],
+)
+def test_from_xarray_duration_coordinate_is_a_listed_string_axis(
+    unit: str, expected: tuple[str, ...]
+) -> None:
+    ds = xr.Dataset(
+        {"v": ("lead", [1.0, 2.0])},
+        coords={
+            "lon": 1.0,
+            "lat": 2.0,
+            "lead": np.array([0, 1], dtype=f"timedelta64[{unit}]"),
+        },
+    )
+    axis = _dom(from_xarray(ds)).axes["lead"]
+
+    # A CoverageJSON regular axis is numeric (start / stop / num), so a duration
+    # can only ever be listed.
+    assert axis.values == expected
+    assert axis.start is None
+
+
+def test_from_xarray_duration_coordinate_round_trips_in_memory() -> None:
+    # The bridge used to store raw datetime.timedelta objects, which AxisValue
+    # does not admit. They encoded correctly because msgspec writes a timedelta
+    # as an ISO 8601 duration, so the drift only showed on the way back: one
+    # document with two in-memory shapes, timedelta going out and str coming in.
+    ds = xr.Dataset(
+        {"v": ("lead", [1.0, 2.0])},
+        coords={
+            "lon": 1.0,
+            "lat": 2.0,
+            "lead": np.array([0, 6], dtype="timedelta64[h]"),
+        },
+    )
+    cov = from_xarray(ds)
+    values = _dom(cov).axes["lead"].values
+
+    assert values is not None
+    assert all(type(v) is str for v in values)
+
+    back = msgspec.json.decode(msgspec.json.encode(cov), type=Coverage)
+
+    assert _dom(back).axes["lead"].values == values
+
+
+def test_to_xarray_duration_axis_is_a_string_coordinate() -> None:
+    # A duration axis comes back as strings, and identically whether or not the
+    # coverage has been through JSON. It used to differ: an unserialized
+    # coverage gave timedelta64 because Axis.values held an off-type timedelta,
+    # while the same coverage decoded from its own bytes gave strings. A time
+    # axis is the contrast, and the reason: its temporal reference system
+    # declares what it is, so _parse_times can restore it. Nothing declares a
+    # duration, so restoring one would mean sniffing strings for a leading "P".
+    ds = xr.Dataset(
+        {"v": ("lead", [1.0, 2.0])},
+        coords={
+            "lon": 1.0,
+            "lat": 2.0,
+            "lead": np.array([0, 3600], dtype="timedelta64[s]"),
+        },
+    )
+    cov = from_xarray(ds)
+    through_wire = msgspec.json.decode(msgspec.json.encode(cov), type=Coverage)
+
+    assert to_xarray(cov)["lead"].values.tolist() == ["PT0S", "PT3600S"]
+    assert to_xarray(through_wire)["lead"].values.tolist() == ["PT0S", "PT3600S"]
+
+
 def test_from_external_pointseries_infers_domain_type() -> None:
     # Scalar lon/lat with a time dimension and no vertical: an external dataset with
     # no domainType attribute infers PointSeries.
