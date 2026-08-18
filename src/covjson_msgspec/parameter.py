@@ -352,6 +352,14 @@ class ParameterGroup(CovJSONStruct, frozen=True, tag="ParameterGroup"):
     Traceback (most recent call last):
         ...
     ValueError: ParameterGroup requires `label` or `observed_property`
+
+    An empty ``members`` is rejected (spec 4: it must be a non-empty array), so a
+    group can never reference zero parameters:
+
+    >>> ParameterGroup(members=(), label={"en": "Wind"})
+    Traceback (most recent call last):
+        ...
+    ValueError: ParameterGroup `members` must be non-empty
     """
 
     members: tuple[str, ...]
@@ -361,6 +369,15 @@ class ParameterGroup(CovJSONStruct, frozen=True, tag="ParameterGroup"):
     observed_property: ObservedProperty | None = None
 
     def __post_init__(self) -> None:
+        # Spec 4: `members` MUST be a non-empty array. An empty one names
+        # nothing, and nothing says what it should have named, so there is no
+        # repair and the group is uninterpretable in isolation: construction,
+        # not validate() (ADR-0002). Checked first so the missing required
+        # member surfaces before the label rule.
+        if not self.members:
+            msg = "ParameterGroup `members` must be non-empty"
+            raise ValueError(msg)
+
         if self.label is None and self.observed_property is None:
             msg = "ParameterGroup requires `label` or `observed_property`"
             raise ValueError(msg)

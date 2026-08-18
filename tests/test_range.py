@@ -49,11 +49,11 @@ def test_ndarray_roundtrips() -> None:
 @pytest.mark.parametrize(
     "blob",
     [
-        b'{"type":"NdArray","dataType":"float","values":[[1,2]]}',
-        b'{"type":"NdArray","dataType":"float","values":[true]}',
+        '{"type":"NdArray","dataType":"float","values":[[1,2]]}',
+        '{"type":"NdArray","dataType":"float","values":[true]}',
     ],
 )
-def test_bare_ndarray_enforces_scalar_union_on_decode(blob: bytes) -> None:
+def test_bare_ndarray_enforces_scalar_union_on_decode(blob: str) -> None:
     # Verifies that removing Generic[T] did not loosen element-type enforcement:
     # msgspec still enforces tuple[float | int | str | None, ...] directly, so
     # nested arrays and booleans are rejected at decode time.
@@ -63,7 +63,7 @@ def test_bare_ndarray_enforces_scalar_union_on_decode(blob: bytes) -> None:
 
 def test_ndarray_zero_dimensional_defaults() -> None:
     arr = msgspec.json.decode(
-        b'{"type":"NdArray","dataType":"float","values":[42.0]}', type=NdArray
+        '{"type":"NdArray","dataType":"float","values":[42.0]}', type=NdArray
     )
     assert arr.shape == ()
     assert arr.axis_names == ()
@@ -143,21 +143,77 @@ def test_tiled_ndarray_rank_check() -> None:
         )
 
 
+def test_tiled_ndarray_requires_non_empty_shape() -> None:
+    # Spec 6.3: `shape` MUST be a non-empty array of integers.
+    with pytest.raises(ValueError, match="`shape` must be non-empty"):
+        TiledNdArray(
+            data_type="float",
+            axis_names=(),
+            shape=(),
+            tile_sets=(TileSet(tile_shape=(), url_template="u"),),
+        )
+
+
+def test_tiled_ndarray_requires_non_empty_tile_sets() -> None:
+    # Spec 6.3: `tileSets` MUST be a non-empty array of TileSet objects.
+    with pytest.raises(ValueError, match="`tileSets` must be non-empty"):
+        TiledNdArray(data_type="float", axis_names=("x",), shape=(2,), tile_sets=())
+
+
+@pytest.mark.parametrize(
+    ("blob", "expected"),
+    [
+        (
+            """
+            {
+              "type": "TiledNdArray",
+              "dataType": "float",
+              "axisNames": [],
+              "shape": [],
+              "tileSets": [{"tileShape": [], "urlTemplate": "t"}]
+            }
+            """,
+            "`shape` must be non-empty",
+        ),
+        (
+            """
+            {
+              "type": "TiledNdArray",
+              "dataType": "float",
+              "axisNames": ["x"],
+              "shape": [1],
+              "tileSets": []
+            }
+            """,
+            "`tileSets` must be non-empty",
+        ),
+    ],
+    ids=("empty-shape", "empty-tile-sets"),
+)
+def test_tiled_ndarray_non_empty_rules_apply_on_decode(
+    blob: str, expected: str
+) -> None:
+    # Both guards live in __post_init__, which msgspec runs during decoding, so
+    # each must reject a wire document and not only a direct construction.
+    with pytest.raises(ValueError, match=expected):
+        msgspec.json.decode(blob, type=TiledNdArray)
+
+
 def test_tile_shape_allows_null() -> None:
-    blob = b"""
-{
-  "type": "TiledNdArray",
-  "dataType": "float",
-  "axisNames": ["t", "y", "x"],
-  "shape": [4, 100, 100],
-  "tileSets": [
+    blob = """
     {
-      "tileShape": [null, 100, 100],
-      "urlTemplate": "http://ex/{t}.covjson"
+      "type": "TiledNdArray",
+      "dataType": "float",
+      "axisNames": ["t", "y", "x"],
+      "shape": [4, 100, 100],
+      "tileSets": [
+        {
+          "tileShape": [null, 100, 100],
+          "urlTemplate": "http://ex/{t}.covjson"
+        }
+      ]
     }
-  ]
-}
-"""
+    """
     tiled = msgspec.json.decode(blob, type=TiledNdArray)
     assert tiled.tile_sets[0].tile_shape == (None, 100, 100)
 
@@ -206,14 +262,6 @@ def test_assemble_handles_remainder_tiles() -> None:
     assert result.values == (0.0, 1.0, 2.0, 3.0, 4.0)
 
 
-def test_assemble_without_tilesets_errors() -> None:
-    empty: dict[str, bytes] = {}  # fetch is never reached
-    tiled = TiledNdArray(data_type="float", axis_names=("x",), shape=(2,), tile_sets=())
-
-    with pytest.raises(ValueError, match="no tileSets"):
-        tiled.assemble(store_fetcher(empty))
-
-
 def test_assemble_tileset_index_out_of_range_errors() -> None:
     empty: dict[str, bytes] = {}  # fetch is never reached
 
@@ -257,14 +305,6 @@ def test_assemble_async_default_picks_the_fewest_tiles() -> None:
     result = asyncio.run(tiled.assemble_async(async_store_fetcher(store))).array
 
     assert result.values == tuple(full.ravel(order="C").tolist())
-
-
-def test_assemble_async_without_tilesets_errors() -> None:
-    empty: dict[str, bytes] = {}  # fetch is never reached
-    tiled = TiledNdArray(data_type="float", axis_names=("x",), shape=(2,), tile_sets=())
-
-    with pytest.raises(ValueError, match="no tileSets"):
-        asyncio.run(tiled.assemble_async(async_store_fetcher(empty)))
 
 
 def test_assemble_async_tileset_index_out_of_range_errors() -> None:
@@ -409,19 +449,39 @@ def test_assemble_async_does_not_swallow_cancellation() -> None:
     ("blob", "typ"),
     [
         (
-            b'{"type":"NdArray","@context":"https://ex/ctx",'
-            b'"dataType":"float","values":[1.0]}',
+            """
+            {
+              "type": "NdArray",
+              "@context": "https://ex/ctx",
+              "dataType": "float",
+              "values": [1.0]
+            }
+            """,
             NdArray,
         ),
         (
-            b'{"type":"TiledNdArray","@context":"https://ex/ctx","dataType":"float",'
-            b'"axisNames":["x"],"shape":[1],"tileSets":[]}',
+            """
+            {
+              "type": "TiledNdArray",
+              "@context": "https://ex/ctx",
+              "dataType": "float",
+              "axisNames": ["x"],
+              "shape": [1],
+              "tileSets": [
+                {
+                  "tileShape": [1],
+                  "urlTemplate": "t/{x}"
+                }
+              ]
+            }
+            """,
             TiledNdArray,
         ),
     ],
+    ids=("ndarray", "tiled-ndarray"),
 )
 def test_standalone_range_root_preserves_context(
-    blob: bytes, typ: type[NdArray] | type[TiledNdArray]
+    blob: str, typ: type[NdArray] | type[TiledNdArray]
 ) -> None:
     # NdArray / TiledNdArray may stand alone as a document root (spec section 6),
     # so each carries the root JSON-LD @context (section 8).

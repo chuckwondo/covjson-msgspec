@@ -91,6 +91,22 @@ def test_parameter_group_requires_label_or_observed_property() -> None:
         ParameterGroup(members=("u", "v"))
 
 
+def test_parameter_group_requires_non_empty_members() -> None:
+    # Spec 4: `members` MUST be a non-empty array.
+    with pytest.raises(ValueError, match="`members` must be non-empty"):
+        ParameterGroup(members=(), label={"en": "wind"})
+
+
+def test_parameter_group_requires_non_empty_members_on_decode() -> None:
+    # The guard lives in __post_init__, which msgspec runs during decoding, so
+    # the rule must reject a wire document and not only a direct construction.
+    with pytest.raises(ValueError, match="`members` must be non-empty"):
+        msgspec.json.decode(
+            '{"type": "ParameterGroup", "label": {"en": "wind"}, "members": []}',
+            type=ParameterGroup,
+        )
+
+
 def test_symbol_is_hashable() -> None:
     # No dict members -> a frozen Symbol is hashable and usable in a set.
     a = Symbol(value="Cel", type_="http://example/Cel")
