@@ -108,11 +108,14 @@ stores it.
 
 ## Opt-in tiered validation, not `__post_init__`
 
-Two rules land at construction, in `__post_init__`, because a violation leaves the
-object meaningless in isolation: an `Axis` that supplies neither or both of
+Some rules land at construction, in `__post_init__`, because a violation leaves
+the object meaningless in isolation: an `Axis` that supplies neither or both of
 `values` and the `start`/`stop`/`num` triple ([exactly one form is
-required][spec-axis]), and a categorical `ObservedProperty` that omits its
-[`categories`][spec-parameter]. Both are local and O(1).
+required][spec-axis]), a categorical `ObservedProperty` that omits its
+[`categories`][spec-parameter], and a `ParameterGroup` whose
+[`members`][spec-paramgroup] array is empty. Each is local and O(1), and each
+fails [ADR-0018](../adr/0018-typed-projection-scope.md)'s "name the repair" test:
+zero or ambiguous repairs, so the check cannot wait for `validate()`.
 
 Everything cross-cutting or data-scanning waits for `validate()`, which is tiered
 along two axes, cost and severity:
@@ -208,6 +211,7 @@ fetcher above). Faithful union in storage, precise value when you ask.
 [spec-axis]: https://github.com/covjson/specification/blob/master/spec.md#611-axis-objects
 [spec-ndarray]: https://github.com/covjson/specification/blob/master/spec.md#62-ndarray-objects
 [spec-parameter]: https://github.com/covjson/specification/blob/master/spec.md#3-parameter-objects
+[spec-paramgroup]: https://github.com/covjson/specification/blob/master/spec.md#4-parametergroup-objects
 [spec-temporal]: https://github.com/covjson/specification/blob/master/spec.md#52-temporal-reference-systems
 [spec-custom]: https://github.com/covjson/specification/blob/master/spec.md#71-custom-members
 [rfc6901]: https://www.rfc-editor.org/rfc/rfc6901

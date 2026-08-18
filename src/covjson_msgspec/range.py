@@ -679,6 +679,16 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
     Traceback (most recent call last):
         ...
     ValueError: each tileSet's tileShape must have the same length as shape
+
+    Both ``shape`` and ``tile_sets`` are rejected empty (spec 6.3: each must be a
+    non-empty array), so a `TiledNdArray` always describes a real tiling:
+
+    >>> TiledNdArray(
+    ...     data_type="float", axis_names=("x",), shape=(2,), tile_sets=()
+    ... )
+    Traceback (most recent call last):
+        ...
+    ValueError: TiledNdArray `tileSets` must be non-empty
     """
 
     data_type: Literal["float", "integer", "string"]
@@ -689,6 +699,18 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
     context: JsonLdContext | UnsetType = msgspec.field(name="@context", default=UNSET)
 
     def __post_init__(self) -> None:
+        # Spec 6.3: `shape` MUST be a non-empty array and `tileSets` MUST be a
+        # non-empty array of TileSet objects. A rankless or tilesetless
+        # TiledNdArray describes no tiling at all, so both are structural errors
+        # rather than validate() findings (ADR-0002). Both are O(1).
+        if not self.shape:
+            msg = "TiledNdArray `shape` must be non-empty"
+            raise ValueError(msg)
+
+        if not self.tile_sets:
+            msg = "TiledNdArray `tileSets` must be non-empty"
+            raise ValueError(msg)
+
         # Checked at construction (unlike NdArray, which defers its shape/value
         # consistency to validate()): a tileShape that does not rank-match shape
         # cannot be interpreted as a tiling at all, so it is a structural error.
@@ -753,7 +775,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         Raises
         ------
         ValueError
-            If there are no tile sets, or if ``tileset`` is out of range.
+            If ``tileset`` is out of range.
         FetchError
             When the ``strategy`` halts on a failure (the default
             [`fail_fast`][covjson_msgspec.fail_fast] halts on the first), chained from
@@ -853,7 +875,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         Raises
         ------
         ValueError
-            If there are no tile sets, or if ``tileset`` is out of range.
+            If ``tileset`` is out of range.
         FetchError
             When the ``strategy`` halts on a failure (the default
             [`fail_fast`][covjson_msgspec.fail_fast] halts on the first), chained from
@@ -936,7 +958,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         Raises
         ------
         ValueError
-            If there are no tile sets, or if ``tileset`` is out of range.
+            If ``tileset`` is out of range.
 
         Examples
         --------
@@ -954,10 +976,6 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         >>> tiled._select_tile_set(0).url_template
         'a/{x}'
         """
-        if not self.tile_sets:
-            msg = "TiledNdArray has no tileSets to assemble from"
-            raise ValueError(msg)
-
         if tileset is None:
             return min(
                 self.tile_sets,
