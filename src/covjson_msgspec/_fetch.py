@@ -14,10 +14,13 @@ HTTP client, authentication, caching, retries, timeouts, or reading from a local
 mirror), so the library stays ignorant of the network. A fetcher backed by a
 ``dict`` of canned documents makes both features trivially testable offline.
 
-Spec: [NdArray / range URL references][spec-ranges] and
-[TiledNdArray objects][spec-tiled].
+Spec: [Coverage objects][spec-coverage] (a ``domain`` or a ``ranges`` member may
+be a URL rather than an inline object), [Resolving domain and range
+URLs][spec-resolving] (a client loads such a URL and treats the result as if it
+were embedded in its place), and [TiledNdArray objects][spec-tiled].
 
-[spec-ranges]: https://github.com/covjson/specification/blob/master/spec.md#92-ranges-object
+[spec-coverage]: https://github.com/covjson/specification/blob/master/spec.md#64-coverage-objects
+[spec-resolving]: https://github.com/covjson/specification/blob/master/spec.md#9-resolving-domain-and-range-urls
 [spec-tiled]: https://github.com/covjson/specification/blob/master/spec.md#63-tiledndarray-objects
 """
 

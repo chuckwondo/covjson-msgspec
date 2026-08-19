@@ -110,8 +110,8 @@ stores it.
 
 Some rules land at construction, in `__post_init__`, because a violation leaves
 the object meaningless in isolation: an `Axis` that supplies neither or both of
-`values` and the `start`/`stop`/`num` triple ([exactly one form is
-required][spec-axis]), a categorical `ObservedProperty` that omits its
+`values` and the `start`/`stop`/`num` triple ([the two forms][spec-axis], which
+we read as exclusive), a categorical `ObservedProperty` that omits its
 [`categories`][spec-parameter], and a `ParameterGroup` whose
 [`members`][spec-paramgroup] array is empty. Each is local and O(1), and each
 fails [ADR-0018](../adr/0018-typed-projection-scope.md)'s "name the repair" test:

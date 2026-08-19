@@ -377,11 +377,13 @@ class AxisPolygonPositionArity(_Issue, frozen=True, tag="axis.polygon-position-a
 class AxisPolygonRingTooShort(_Issue, frozen=True, tag="axis.polygon-ring-too-short"):
     """A ``"polygon"`` axis ring has fewer than the four positions a ring needs.
 
-    Spec 6.1.1 defers to GeoJSON for a polygon value's structure, and RFC 7946
-    (section 3.1.6) defines a linear ring as "a closed LineString with four or more
-    positions". A ring with fewer is not a linear ring, so it fails to be a GeoJSON
-    Polygon at all: an error (per ADR-0002), the same "fails to be the thing" shape
-    as `AxisBoundsLength`.
+    Common Domain Types 2.9 states it directly, as a definition rather than with a
+    keyword: "A LinearRing is an array of 4 or more ``[x,y]`` arrays". The same rule
+    reaches it the long way round, since spec 6.1.1 defers to GeoJSON for a polygon
+    value's structure and RFC 7946 (section 3.1.6) defines a linear ring as "a
+    closed LineString with four or more positions". A ring with fewer is not a
+    linear ring, so it fails to be a GeoJSON Polygon at all: an error (per
+    ADR-0002), the same "fails to be the thing" shape as `AxisBoundsLength`.
 
     The geo bridge tolerates some of these (shapely auto-closes a three-position
     ring) but rejects a ring of two, so the rule is a spec-conformance check that
@@ -401,11 +403,13 @@ class AxisPolygonRingTooShort(_Issue, frozen=True, tag="axis.polygon-ring-too-sh
 class AxisPolygonRingNotClosed(_Issue, frozen=True, tag="axis.polygon-ring-not-closed"):
     """A ``"polygon"`` axis ring's first and last positions are not identical.
 
-    Spec 6.1.1 defers to GeoJSON for a polygon value's structure, and RFC 7946
-    (section 3.1.6) requires a linear ring to be closed: "The first and last
-    positions are equivalent, and they MUST contain identical values." A ring whose
-    first and last positions differ violates that MUST and is an error (per
-    ADR-0002).
+    Common Domain Types 2.9 states it directly, as a definition rather than with a
+    keyword: "The first and last ``[x,y]`` elements are identical." The same rule
+    reaches it the long way round, since spec 6.1.1 defers to GeoJSON for a polygon
+    value's structure and RFC 7946 (section 3.1.6) requires a linear ring to be
+    closed: "The first and last positions are equivalent, and they MUST contain
+    identical values." A ring whose first and last positions differ violates that
+    MUST and is an error (per ADR-0002).
 
     The geo bridge silently repairs this (shapely auto-closes the ring), so nothing
     downstream breaks: the rule is a pure spec-conformance check.
@@ -523,14 +527,24 @@ class IdentifierMissingTargetConcept(
 
 
 class NdArrayShapeRank(_Issue, frozen=True, tag="ndarray.shape-rank"):
-    """An `NdArray`'s ``shape`` and ``axisNames`` differ in length."""
+    """An `NdArray`'s ``shape`` and ``axisNames`` differ in length.
+
+    Spec 6.2 states it outright: ``axisNames`` is "a string array of the same
+    length as ``"shape"``".
+    """
 
     def __str__(self) -> str:
         return "shape and axisNames must have the same length"
 
 
 class NdArrayValueCount(_Issue, frozen=True, tag="ndarray.value-count"):
-    """An `NdArray`'s value count disagrees with the product of its ``shape``."""
+    """An `NdArray`'s value count disagrees with the product of its ``shape``.
+
+    Spec 6.2 never states the count. It is entailed by the encoding the section
+    does define: an NdArray "represents a multidimensional (>= 0D) array ...
+    encoded as a flat one-dimensional array in row-major order", and such an
+    encoding of a ``shape`` holds exactly ``prod(shape)`` elements.
+    """
 
     expected: int
     shape: tuple[int, ...]
@@ -543,7 +557,11 @@ class NdArrayValueCount(_Issue, frozen=True, tag="ndarray.value-count"):
 
 
 class TiledNdArrayShapeRank(_Issue, frozen=True, tag="tiled-ndarray.shape-rank"):
-    """A `TiledNdArray`'s ``shape`` and ``axisNames`` differ in length."""
+    """A `TiledNdArray`'s ``shape`` and ``axisNames`` differ in length.
+
+    Spec 6.3, as for `NdArray`: ``axisNames`` is "a string array of the same
+    length as ``"shape"``".
+    """
 
     def __str__(self) -> str:
         return "shape and axisNames must have the same length"
@@ -552,7 +570,11 @@ class TiledNdArrayShapeRank(_Issue, frozen=True, tag="tiled-ndarray.shape-rank")
 class TiledNdArrayTileShapeTooLarge(
     _Issue, frozen=True, tag="tiled-ndarray.tile-shape-too-large"
 ):
-    """A ``tileShape`` element exceeds the corresponding ``shape`` element."""
+    """A ``tileShape`` element exceeds the corresponding ``shape`` element.
+
+    Spec 6.3: each ``tileShape`` element is "either null or an integer lower or
+    equal than the corresponding element in ``"shape"``".
+    """
 
     tile_dim: int
     dim: int
@@ -564,7 +586,12 @@ class TiledNdArrayTileShapeTooLarge(
 class TiledNdArrayTileShapeNotPositive(
     _Issue, frozen=True, tag="tiled-ndarray.tile-shape-not-positive"
 ):
-    """A ``tileShape`` element is not a positive integer."""
+    """A ``tileShape`` element is not a positive integer.
+
+    Spec 6.3 says only "integer" for a non-null tile size, so positivity is
+    entailed rather than stated: the section's tile-count formula divides the
+    axis size by the tile size, which a value of zero or less cannot satisfy.
+    """
 
     tile_dim: int
 
@@ -575,7 +602,11 @@ class TiledNdArrayTileShapeNotPositive(
 class TiledNdArrayUrlTemplateMissingVariable(
     _Issue, frozen=True, tag="tiled-ndarray.url-template-missing-variable"
 ):
-    """The ``urlTemplate`` omits a variable for a subdivided axis."""
+    """The ``urlTemplate`` omits a variable for a subdivided axis.
+
+    Spec 6.3: "The URI template MUST contain a variable for each axis name whose
+    corresponding element in ``"tileShape"`` is not null."
+    """
 
     axis: str
 
@@ -588,7 +619,12 @@ class TiledNdArrayUrlTemplateMissingVariable(
 class TiledNdArrayUrlTemplateUnknownVariable(
     _Issue, frozen=True, tag="tiled-ndarray.url-template-unknown-variable"
 ):
-    """The ``urlTemplate`` names a variable that is not a subdivided axis."""
+    """The ``urlTemplate`` names a variable that is not a subdivided axis.
+
+    The converse of `TiledNdArrayUrlTemplateMissingVariable`, which spec 6.3 does
+    not state: such a variable has no tile ordinal to expand it with, so
+    `TiledNdArray.assemble` would raise on it.
+    """
 
     variable: str
 
@@ -757,7 +793,15 @@ class ParameterCategoryEncodingUnknownId(
 
 
 class I18nInvalidLanguageTag(_Issue, frozen=True, tag="i18n.invalid-language-tag"):
-    """An i18n object key is not a valid BCP 47 language tag."""
+    """An i18n object key is not a valid BCP 47 language tag.
+
+    Spec 2 states no RFC 2119 keyword; it *defines* an i18n object as "a string
+    in multiple languages where each key is a language tag as defined in BCP 47"
+    (RFC 5646). This rule is entailed by that definition rather than stated by
+    it: a key that is not a language tag tags no language, so the object is not
+    the one section 2 defines. The special tag ``"und"`` is an ordinary 3-letter
+    subtag, so it needs no special case.
+    """
 
     lang: str
 
@@ -766,7 +810,13 @@ class I18nInvalidLanguageTag(_Issue, frozen=True, tag="i18n.invalid-language-tag
 
 
 class I18nEmpty(_Issue, frozen=True, tag="i18n.empty"):
-    """A present i18n object has no language-tagged entries."""
+    """A present i18n object has no language-tagged entries.
+
+    Entailed by the same keyword-free section 2 definition as
+    `I18nInvalidLanguageTag`: an object with no entries carries the string in no
+    language, so it is not the "string in multiple languages" that section
+    defines.
+    """
 
     def __str__(self) -> str:
         return "i18n object must have at least one language-tagged entry"
@@ -1756,11 +1806,10 @@ def _language_tag_issues(
 ) -> Iterator[Issue]:
     """Yield an i18n object's ``i18n.empty`` or ``i18n.invalid-language-tag`` issues.
 
-    Spec 2: an i18n object MUST have at least one entry, and every key MUST be
-    a BCP 47 language tag (RFC 5646), or the special tag ``"und"`` (itself an
-    ordinary 3-letter subtag, so it needs no special case). A present-but-empty
-    map (``{}``) is reported once as ``i18n.empty``; otherwise each malformed
-    key is reported via `_is_valid_language_tag`.
+    Both rules are entailed by section 2's keyword-free definition rather than
+    stated by it; `I18nEmpty` and `I18nInvalidLanguageTag` carry the derivation.
+    A present-but-empty map (``{}``) is reported once as ``i18n.empty``;
+    otherwise each malformed key is reported via `_is_valid_language_tag`.
 
     Parameters
     ----------
@@ -2375,7 +2424,7 @@ def _polygon_axis_issues(
 def _polygon_ring_issues(
     name: str, expected: int, ring: object, ring_path: tuple[str | int, ...]
 ) -> Iterator[Issue]:
-    """Yield the depth-3 spec 6.1.1 / RFC 7946 issues for one polygon linear ring.
+    """Yield the depth-3 issues for one polygon linear ring.
 
     Called only for a ring that has already passed `_is_position_array` (via
     `_is_polygon_array`), so ``ring`` is a non-empty sequence of non-empty position
@@ -2385,10 +2434,10 @@ def _polygon_ring_issues(
 
     * **position arity** (spec 6.1.1): each position's length equals ``expected``,
       the coordinate identifier count (`AxisPolygonPositionArity`, per position).
-    * **ring length** (RFC 7946 section 3.1.6): four or more positions
-      (`AxisPolygonRingTooShort`).
-    * **closure** (RFC 7946 section 3.1.6): the first and last positions are
-      identical (`AxisPolygonRingNotClosed`).
+    * **ring length** (Common Domain Types 2.9, and RFC 7946 section 3.1.6 via
+      spec 6.1.1): four or more positions (`AxisPolygonRingTooShort`).
+    * **closure** (same two sources): the first and last positions are identical
+      (`AxisPolygonRingNotClosed`).
 
     Parameters
     ----------
@@ -3103,13 +3152,15 @@ def _first_monotonic_break(
 def _validate_ndarray(arr: NdArray, path: tuple[str | int, ...]) -> Iterator[Issue]:
     """Yield an `NdArray`'s internal shape-consistency issues.
 
-    Two self-contained checks (no domain needed): ``shape`` and ``axisNames``
-    must have the same rank, and the number of ``values`` must equal the product
-    of ``shape`` (``math.prod(()) == 1``, so a 0-dimensional array must hold
-    exactly one value). Decoding is permissive about these: a rank or value-count
-    mismatch is an *internally inconsistent* but still interpretable array, so per
-    ADR-0002 it is reported here rather than rejected at construction, keeping a
-    repairable document loadable.
+    Two self-contained checks (no domain needed), both from spec 6.2 and both
+    quoted on their finding types: ``shape`` and ``axisNames`` must have the same
+    rank (`NdArrayShapeRank`, which the section states), and the number of
+    ``values`` must equal the product of ``shape`` (`NdArrayValueCount`, which it
+    entails; ``math.prod(()) == 1``, so a 0-dimensional array must hold exactly
+    one value). Decoding is permissive about these: a rank or value-count mismatch
+    is an *internally inconsistent* but still interpretable array, so per ADR-0002
+    it is reported here rather than rejected at construction, keeping a repairable
+    document loadable.
 
     Parameters
     ----------
@@ -3167,10 +3218,11 @@ def _tile_set_issues(
 ) -> Iterator[Issue]:
     """Yield one tile set's issues: out-of-range tile sizes and template variables.
 
-    The per-tile-set rules (see `_validate_tiled_ndarray` for the full set): each
-    non-null ``tileShape`` element must be a positive integer
-    (``tiled-ndarray.tile-shape-not-positive``) not exceeding its ``shape`` element
-    (``tiled-ndarray.tile-shape-too-large``); the ``urlTemplate`` must carry a
+    The per-tile-set rules, from spec 6.3's TileSet bullets (see
+    `_validate_tiled_ndarray` for the full set, and each finding type for the
+    section's wording): each non-null ``tileShape`` element must be a positive
+    integer (``tiled-ndarray.tile-shape-not-positive``) not exceeding its ``shape``
+    element (``tiled-ndarray.tile-shape-too-large``); the ``urlTemplate`` must carry a
     variable for each subdivided axis (``tiled-ndarray.url-template-missing-variable``)
     and, when ``rank_ok``, must not name a non-subdivided axis
     (``tiled-ndarray.url-template-unknown-variable``).
@@ -3211,8 +3263,9 @@ def _tile_set_issues(
     True
     """
     # __post_init__ guarantees tileShape rank-matches shape, so this zip is exact.
-    # A non-null tile size must be a positive integer (the tile layout divides each
-    # axis by it) not exceeding the corresponding axis.
+    # Spec 6.3 bounds a non-null tile size by its `shape` element and, by
+    # entailment, above zero; `TiledNdArrayTileShapeTooLarge` and
+    # `TiledNdArrayTileShapeNotPositive` carry the wording and the derivation.
     yield from (
         TiledNdArrayTileShapeTooLarge(
             tile_dim=tile_dim, dim=dim, at=_ptr(path, "tileSets", ts, "tileShape", i)
@@ -3268,25 +3321,27 @@ def _validate_tiled_ndarray(
 ) -> Iterator[Issue]:
     """Yield a `TiledNdArray`'s tile-set issues against the spec.
 
-    Several rules from the TiledNdArray spec, all error-severity (``tileShape``
-    rank-matching ``shape`` is a separate hard structural error raised in
-    `__post_init__`, so each ``tileShape``
-    here already aligns with ``shape``):
+    The rules from spec 6.3, plus one converse of our own, all error-severity
+    (``tileShape`` rank-matching ``shape`` is a separate hard structural error
+    raised in `__post_init__`, so each ``tileShape`` here already aligns with
+    ``shape``):
 
     * ``shape`` and ``axisNames`` must have the same length, as for `NdArray`
-      (else ``tiled-ndarray.shape-rank``);
-    * each non-null ``tileShape`` element must be a positive integer (else
-      ``tiled-ndarray.tile-shape-not-positive``) not exceeding the corresponding
-      ``shape`` element (else ``tiled-ndarray.tile-shape-too-large``); and
+      (`TiledNdArrayShapeRank`);
+    * each non-null ``tileShape`` element must not exceed the corresponding
+      ``shape`` element (`TiledNdArrayTileShapeTooLarge`, which the section
+      states) and must be positive (`TiledNdArrayTileShapeNotPositive`, which it
+      entails);
     * the ``urlTemplate`` must contain a variable for each axis whose
       ``tileShape`` element is non-null: the subdivided axes whose per-tile
-      ordinals the template interpolates (else
-      ``tiled-ndarray.url-template-missing-variable``); and
-    * conversely, the ``urlTemplate`` must not reference a variable that names no
-      subdivided axis (else ``tiled-ndarray.url-template-unknown-variable``):
-      such a variable cannot be expanded, so `assemble` would raise on it. This
-      reverse check is skipped once ``tiled-ndarray.shape-rank`` has fired, since
-      the axis/tile alignment is then unreliable.
+      ordinals the template interpolates
+      (`TiledNdArrayUrlTemplateMissingVariable`); and
+    * conversely (a rule section 6.3 does not state), the ``urlTemplate`` must
+      not reference a variable that names no subdivided axis
+      (`TiledNdArrayUrlTemplateUnknownVariable`): such a variable cannot be
+      expanded, so `assemble` would raise on it. This reverse check is skipped
+      once ``tiled-ndarray.shape-rank`` has fired, since the axis/tile alignment
+      is then unreliable.
 
     Parameters
     ----------

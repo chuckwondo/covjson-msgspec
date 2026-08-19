@@ -37,35 +37,37 @@ Most types transcribe their spec object field-for-field, with no notable modelin
 decision, so the mapping table and the [API reference](reference/coverage.md) cover
 them:
 
-- **[`Domain`](reference/domain.md)** ([§6.1][spec-domain]): a container of a
-  `domain_type`, a map of `axes`, and `referencing`; its interesting parts (the
-  axes and reference systems it holds) are covered elsewhere, and its
+- **[`Domain`](reference/domain.md)** ([Section 6.1][spec-domain]): a container
+  of a `domain_type`, a map of `axes`, and `referencing`; its interesting parts
+  (the axes and reference systems it holds) are covered elsewhere, and its
   per-domain-type builders follow the same narrow-builder pattern as `Axis`.
-- **[`TiledNdArray`](reference/range.md)** ([§6.3][spec-tiled]): the same range
-  family as `NdArray`, but with `values` split across tile documents. The struct is
-  straightforward; the interest is behavioral (assembling the tiles), covered in
-  the assembly guide.
-- **[Reference systems](reference/referencing.md)** ([§5][spec-refsystems]): a
-  permissive `ReferenceSystem` core that decodes any system (including a custom
-  §7.2 type), with an opt-in `refine()` projection to precise per-kind variants
-  (`GeographicCRS`, `TemporalRS`, `IdentifierRS`, ..., or an opaque `OpaqueRS`)
-  plus the categorical `Concept`.
-- **[`Parameter`](reference/parameter.md)** ([§3][spec-parameter]) and its parts
-  (`ObservedProperty`, `Category`, `CategoryEncoding`, `Unit`, `Symbol`): direct
-  transcriptions; the one local invariant is that a categorical `ObservedProperty`
-  must list its `categories`.
-- **[`ParameterGroup`](reference/parameter.md)** ([§4][spec-paramgroup]): a direct
-  transcription of the group's members.
-- **[`I18n`](reference/parameter.md)** ([§2][spec-i18n]): a language-tag to string
-  map; its one choice, langcode validation, is noted under Faithful by default.
+- **[`TiledNdArray`](reference/range.md)** ([Section 6.3][spec-tiled]): the same
+  range family as `NdArray`, but with `values` split across tile documents. The
+  struct is straightforward; the interest is behavioral (assembling the tiles),
+  covered in the assembly guide.
+- **[Reference systems](reference/referencing.md)**
+  ([Section 5][spec-refsystems]): a permissive `ReferenceSystem` core that
+  decodes any system (including a custom section 7.2 type), with an opt-in
+  `refine()` projection to precise per-kind variants (`GeographicCRS`,
+  `TemporalRS`, `IdentifierRS`, ..., or an opaque `OpaqueRS`) plus the
+  categorical `Concept`.
+- **[`Parameter`](reference/parameter.md)** ([Section 3][spec-parameter]) and
+  its parts (`ObservedProperty`, `Category`, `CategoryEncoding`, `Unit`,
+  `Symbol`): direct transcriptions; the one local invariant is that a
+  categorical `ObservedProperty` must list its `categories`.
+- **[`ParameterGroup`](reference/parameter.md)** ([Section 4][spec-paramgroup]):
+  a direct transcription of the group's members.
+- **[`I18n`](reference/parameter.md)** ([Section 2][spec-i18n]): a language-tag
+  to string map; its one choice, langcode validation, is noted under Faithful by
+  default.
 
 The sections below walk the remaining types, where mapping the JSON to a struct
 involved a real choice, showing the wire JSON alongside the struct.
 
 ## Coverage
 
-On the wire, a `Coverage` ([§6.4][spec-coverage]) is a `domain` paired with its
-`ranges`:
+On the wire, a `Coverage` ([Section 6.4][spec-coverage]) is a `domain` paired
+with its `ranges`:
 
 ```json
 {
@@ -132,8 +134,8 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
 
 ## CoverageCollection
 
-A `CoverageCollection` ([§6.5][spec-collection]) groups coverages and may declare
-shared members once:
+A `CoverageCollection` ([Section 6.5][spec-collection]) groups coverages and may
+declare shared members once:
 
 ```json
 {
@@ -182,9 +184,9 @@ silently graft inherited data onto the `null` member
 
 ## Axis
 
-An `Axis` ([§6.1.1][spec-axis]) is the most interesting mapping: the spec allows
-one axis object to take three different shapes. A *listed* axis gives explicit
-values:
+An `Axis` ([Section 6.1.1][spec-axis]) is the most interesting mapping: the spec
+allows one axis object to take three different shapes. A *listed* axis gives
+explicit values:
 
 ```json
 { "values": [50.0, 51.0, 52.0] }
@@ -206,20 +208,29 @@ and a *composite* axis carries tuples with named `coordinates`:
 }
 ```
 
-The spec requires **exactly one** of `values` (a non-empty array) or the
-`start` / `stop` / `num` triple; if `num` is 1 then `start` and `stop` MUST be
-equal; and an optional `bounds` array may accompany any form.
+The spec requires **either** `values` (a non-empty array) **or** the `start` /
+`stop` / `num` triple; `num` is an integer greater than zero, and if it is 1
+then `start` and `stop` MUST be equal; and an optional `bounds` array may
+accompany any form.
 
-Two rules we enforce are not stated that plainly, and it is worth being precise
-about where each comes from. A composite axis must list its `values`: that one
-the spec *entails* rather than states, because a `tuple` value MUST be an array
-while the `start` / `stop` / `num` notation yields only numbers, so nothing could
-satisfy both. A composite axis must supply `coordinates`: §6.1.1 defaults a
-missing `coordinates` to "a one-element array of the axis identifier", but a
-composite axis is keyed `"composite"`, so the default resolves to
-`("composite",)`, the kind rather than any component. It names nothing
-usable, so a composite must name its coordinates explicitly, and omission is
-rejected at construction (see
+Three rules we enforce are not stated that plainly, and it is worth being
+precise about where each comes from. The two forms are *exclusive*: section
+6.1.1 says "either ... or", never "exactly one" and never that carrying both is
+forbidden, so rejecting an axis with both is our reading. Three things settle
+it: the triple is introduced "as a compact notation for a regularly spaced
+numeric axis", which makes it an alternative encoding of the same content; "the
+array elements of `"values"` MAY be reconstructed with the formula ..." and "If
+`num = 1` then `"values"` is `[start]`" both presuppose `values` is absent and
+derivable; and the spec supplies no tiebreak for a document carrying both
+inconsistently, which a spec permitting both would have to. A composite axis
+must list its `values`: that one the spec *entails* rather than states, because
+a `tuple` value MUST be an array while the `start` / `stop` / `num` notation
+yields only numbers, so nothing could satisfy both. A composite axis must supply
+`coordinates`: section 6.1.1 defaults a missing `coordinates` to "a one-element
+array of the axis identifier", but a composite axis is keyed `"composite"`, so
+the default resolves to `("composite",)`, the kind rather than any component. It
+names nothing usable, so a composite must name its coordinates explicitly, and
+omission is rejected at construction (see
 [ADR-0019](adr/0019-composite-coordinates-required.md)).
 
 All three forms map to one permissive struct, because the forms share no `"type"`
@@ -265,7 +276,8 @@ class Axis(CovJSONStruct, frozen=True):
 
 ## NdArray
 
-An `NdArray` ([§6.2][spec-ndarray]) is a parameter's dense data, flattened:
+An `NdArray` ([Section 6.2][spec-ndarray]) is a parameter's dense data,
+flattened:
 
 ```json
 {
@@ -327,15 +339,16 @@ validated [with langcodes](adr/0005-langcodes-core-dependency.md).
 
 The deliberate, permanent exception is
 [custom members](adr/0012-custom-members-dropped-on-decode.md)
-([§7.1][spec-custom]): extension keys the spec permits but does not define, which
-decode drops rather than captures. A modeled spec member survives a decode /
-encode round trip; a custom member does not. To relay a document with its
-extensions intact, forward its raw bytes instead of decoding and re-encoding.
+([Section 7.1][spec-custom]): extension keys the spec permits but does not
+define, which decode drops rather than captures. A modeled spec member survives
+a decode / encode round trip; a custom member does not. To relay a document with
+its extensions intact, forward its raw bytes instead of decoding and
+re-encoding.
 
-The root JSON-LD [`@context`][spec-8] (§8) is a modeled member: it round-trips
-faithfully (an IRI string, an inline context object, an array of those, or
-`null`) rather than being dropped. Custom (URI) reference-system types
-([§7.2][spec-72]) also load: a reference system decodes into a permissive
+The root JSON-LD [`@context`][spec-8] (section 8) is a modeled member: it
+round-trips faithfully (an IRI string, an inline context object, an array of
+those, or `null`) rather than being dropped. Custom (URI) reference-system types
+([Section 7.2][spec-72]) also load: a reference system decodes into a permissive
 `ReferenceSystem`, which `refine()` projects to a precise per-kind variant (an
 opaque one for an unrecognized `type`). Its `type` round-trips; any custom
 members on it drop, as above.

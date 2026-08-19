@@ -175,7 +175,17 @@ class Axis(CovJSONStruct, frozen=True):
             self.start is not None and self.stop is not None and self.num is not None
         )
 
-        # Exactly one numeric form: `values` XOR the regular triple.
+        # Exactly one numeric form: `values` XOR the regular triple. Spec 6.1.1
+        # requires 'either a `"values"` member or ... all the members `"start"`,
+        # `"stop"`, and `"num"`'; it never says "exactly one", and never says
+        # which wins when both are present. The exclusive reading is inferred,
+        # from three things the section does say: the triple is introduced "as a
+        # compact notation for a regularly spaced numeric axis", i.e. an
+        # alternative encoding of the same content; the elements of `"values"`
+        # "MAY be reconstructed with the formula ..." and, for `num` of 1,
+        # '`"values"` is `[start]`', both of which presuppose `values` is absent
+        # and derivable; and it supplies no tiebreak for a document carrying both
+        # inconsistently, which a spec permitting both would have to.
         if has_values == has_regular:
             msg = "Axis requires exactly one of `values` or `start`/`stop`/`num`"
             raise ValueError(msg)
@@ -185,6 +195,7 @@ class Axis(CovJSONStruct, frozen=True):
             msg = "Axis `values` must be non-empty"
             raise ValueError(msg)
 
+        # Spec 6.1.1: `num` is "an integer greater than zero".
         if self.num is not None and self.num < 1:
             msg = "Axis `num` must be a positive integer"
             raise ValueError(msg)
