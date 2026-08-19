@@ -125,3 +125,36 @@ a custom `AxisOrderChecker`.
 [ADR-0002]: 0002-opt-in-tiered-validation.md
 [ADR-0006]: 0006-validation-findings-sum-type.md
 [ADR-0008]: 0008-temporal-conversion-result-projection.md
+
+## Amendment (#200): the seam's actual parameter type
+
+The signature quoted in the Decision was accurate when written and is not the
+one that shipped:
+
+```python
+AxisOrderChecker = Callable[
+    [Sequence[AxisValue], ResolvedReferenceSystem | None], int | None
+]
+```
+
+Nothing about the seam's contract changed. What changed is the *name* of the
+type in its second position. [ADR-0017] replaced the closed tagged union of
+reference-system variants with a permissive stored `ReferenceSystem` plus an
+opt-in `refine()` projection, so a document carrying a custom (section 7.2) type
+still decodes. That reused the name `ReferenceSystem` for the permissive stored
+form, and gave the closed union of clean per-kind variants (exactly what this
+ADR meant by `ReferenceSystem`) the name `ResolvedReferenceSystem`. `validate`
+refines before dispatching, so the seam still receives one precise variant,
+never the permissive core.
+
+Two consequences follow for this ADR's text. The Consequences bullet about
+"growing the `ReferenceSystem` union" now reads on `ResolvedReferenceSystem`,
+whose `assert_never` arm in `_ordering_kind` is what forces the decision. And
+that union gained a variant this ADR could not have classified: `OpaqueRS`, the
+refined form of a custom or malformed type. It is classified **unordered**, on
+the same reasoning as `IdentifierRS`: the library cannot know whether a type it
+does not recognize defines a natural ordering, and over-flagging aborts
+`validate(mode="raise")`. A caller who does know supplies an `AxisOrderChecker`,
+which is the escape hatch this ADR exists to provide.
+
+[ADR-0017]: 0017-reference-systems-permissive-core-projection.md

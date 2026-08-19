@@ -21,11 +21,15 @@ site (not deduplicated), so a caller who shares one URL across many collection
 members and wants to fetch it once wraps the fetcher in a cache: all caching is
 the fetcher's to own.
 
-Spec: [ranges object][spec-ranges] (a range may be a URL string) and
-[Coverage objects][spec-coverage] (a domain may be a URL string).
+Spec: [Coverage objects][spec-coverage] (section 6.4: a ``domain`` may be a URL
+string, and a ``ranges`` member "either an NdArray or TiledNdArray object or a URL
+resolving to a CoverageJSON document of such object") and [Resolving domain and
+range URLs][spec-resolving] (section 9: a client loads the URL and treats the
+loaded data "as if it was directly embedded in place of the URL", which is exactly
+what `resolve_references` returns).
 
-[spec-ranges]: https://github.com/covjson/specification/blob/master/spec.md#92-ranges-object
 [spec-coverage]: https://github.com/covjson/specification/blob/master/spec.md#64-coverage-objects
+[spec-resolving]: https://github.com/covjson/specification/blob/master/spec.md#9-resolving-domain-and-range-urls
 """
 
 from __future__ import annotations

@@ -45,9 +45,10 @@ def media_type(*profiles: str) -> str:
     With no arguments this is just `MEDIA_TYPE`. Given one or more URIs it appends
     the spec's optional ``profile`` parameter (RFC 6906): a quoted, space-separated
     list identifying the conventions a document follows. Handy for an outbound
-    ``Content-Type`` (see `encode_response`) or an ``Accept`` header. ``charset`` is
-    intentionally not supported: JSON media types define none, and the output is
-    always UTF-8.
+    ``Content-Type`` (see `encode_response`), or for the ``Accept`` header that
+    spec section 9 says a client fetching a referenced domain or range SHOULD
+    send. ``charset`` is intentionally not supported: JSON media types define
+    none, and the output is always UTF-8.
 
     Parameters
     ----------
