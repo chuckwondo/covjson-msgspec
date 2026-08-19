@@ -2,10 +2,7 @@
 
 ## Status
 
-Proposed
-
-<!-- DRAFT for review (issue #113). Not yet accepted; not linked from the issue
-until approved. -->
+Accepted
 
 ## Context
 
