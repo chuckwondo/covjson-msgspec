@@ -124,6 +124,11 @@ CLAUDE.md.
   xarray bridges agree; CoverageJSON has no duration `dataType`, msgspec's own
   `timedelta` encoding cannot express `P1Y`/`P1M`, and the mapping is
   deliberately one-way
+- [ADR-0022](0022-pinned-specification-revision.md): conformance is pinned to
+  `covjson/specification@2061005` (`spec.md` + `domain-types.md`); the upstream
+  `0.1.0` tag predates the normative rewrite and states no RFC 2119
+  requirements, and citing `master` live retargets every section number
+  silently, as a dead `#92-ranges-object` anchor proved
 
 Some decisions are recorded in ADRs that land with their implementation rather
 than here; see the issue tracker for the in-flight set.

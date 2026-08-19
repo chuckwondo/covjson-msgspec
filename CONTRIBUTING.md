@@ -128,6 +128,12 @@ docstrings and the hand-written pages share one set of conventions.
   (link its enum class instead).
 - Link the CoverageJSON spec from docstrings and comments where it teaches the
   wire format; centralize the spec and RFC links in the module docstring.
+- Every section number cites `covjson/specification@2061005` (`spec.md` +
+  `domain-types.md`), the revision this project conforms to
+  ([ADR-0022](docs/adr/0022-pinned-specification-revision.md)). Quote the pinned
+  text verbatim, and label what it does: stated with an RFC 2119 keyword, stated
+  without one, or entailed by what is stated. Do not assert a requirement level
+  from memory.
 - For syntax this does not spell out (admonitions, cross-reference forms, the
   reference-page `:::` stubs), see the
   [mkdocstrings](https://mkdocstrings.github.io/) docs (Material for MkDocs and

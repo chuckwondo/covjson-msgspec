@@ -145,3 +145,4 @@ nav:
           - "ADR-0019: Composite coordinates required": adr/0019-composite-coordinates-required.md
           - "ADR-0020: validate() outcome model": adr/0020-validate-outcome-model.md
           - "ADR-0021: Durations as ISO 8601 strings": adr/0021-durations-as-iso-8601-strings.md
+          - "ADR-0022: Pinned specification revision": adr/0022-pinned-specification-revision.md
