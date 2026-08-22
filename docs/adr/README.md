@@ -129,6 +129,12 @@ CLAUDE.md.
   `0.1.0` tag predates the normative rewrite and states no RFC 2119
   requirements, and citing `master` live retargets every section number
   silently, as a dead `#92-ranges-object` anchor proved
+- [ADR-0023](0023-axis-form-conflict-tier.md): an axis carrying both numeric
+  forms decodes and `validate()` reports it as `axis.form-conflict` (error);
+  construction keeps only Section 6.1.1's stated rule, that one complete form is
+  present. Measured across three implementations, only a *contradicting*
+  complete triple is ambiguous, and that is the one case an O(1) construction
+  check cannot detect, so it supersedes ADR-0018's placement of this invariant
 
 Some decisions are recorded in ADRs that land with their implementation rather
 than here; see the issue tracker for the in-flight set.

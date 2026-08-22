@@ -109,13 +109,16 @@ stores it.
 ## Opt-in tiered validation, not `__post_init__`
 
 Some rules land at construction, in `__post_init__`, because a violation leaves
-the object meaningless in isolation: an `Axis` that supplies neither or both of
-`values` and the `start`/`stop`/`num` triple ([the two forms][spec-axis], which
-we read as exclusive), a categorical `ObservedProperty` that omits its
+the object meaningless in isolation: an `Axis` that supplies neither complete
+form, `values` or the `start`/`stop`/`num` triple ([the two][spec-axis]), a
+categorical `ObservedProperty` that omits its
 [`categories`][spec-parameter], and a `ParameterGroup` whose
 [`members`][spec-paramgroup] array is empty. Each is local and O(1), and each
 fails [ADR-0018](../adr/0018-typed-projection-scope.md)'s "name the repair" test:
-zero or ambiguous repairs, so the check cannot wait for `validate()`.
+zero or ambiguous repairs, so the check cannot wait for `validate()`. An axis
+supplying *both* forms is the counter-case: it stays readable (`values` wins),
+so [ADR-0023](../adr/0023-axis-form-conflict-tier.md) reports it as
+`axis.form-conflict` instead of rejecting it.
 
 Everything cross-cutting or data-scanning waits for `validate()`, which is tiered
 along two axes, cost and severity:
@@ -193,9 +196,10 @@ a third form, a whole-struct `refine()`
 ([ADR-0017](../adr/0017-reference-systems-permissive-core-projection.md)) --
 because a custom `type` must load, so its core *cannot* enforce that a
 `TemporalRS` has a `calendar`, and `refine()` is the only place that guarantee
-exists. `Axis` gets no `refine()` precisely because its core already enforces its
-own invariants at construction, leaving a projection nothing to recover
-([ADR-0018](../adr/0018-typed-projection-scope.md)).
+exists. `Axis` gets no `refine()` precisely because its invariants are already
+enforced: at construction, or in `validate()` for form exclusivity
+([ADR-0023](../adr/0023-axis-form-conflict-tier.md)). A projection would have
+nothing to recover ([ADR-0018](../adr/0018-typed-projection-scope.md)).
 
 The same shape recurs beyond ranges. A `Coverage.domain` is typed `Domain | str`,
 mirroring the spec's allowance of

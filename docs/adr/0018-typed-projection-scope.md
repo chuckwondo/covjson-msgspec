@@ -2,9 +2,12 @@
 
 ## Status
 
-Accepted, except the composite-`coordinates` sub-decision in "Why this tightens
-decode where ADR-0017 loosened it" below, which is superseded by ADR-0019: a
-composite axis must supply `coordinates` at construction. The rest stands.
+Accepted, except two sub-decisions in "Why this tightens decode where ADR-0017
+loosened it" below. The composite-`coordinates` one is superseded by ADR-0019: a
+composite axis must supply `coordinates` at construction. Classifying "both axis
+forms present" as an ambiguous repair is superseded by ADR-0023: form
+exclusivity is a `validate()` error, not a construction rejection. The rest
+stands.
 
 ## Context
 
@@ -28,7 +31,7 @@ Four facts constrain the answer:
   closed; they are not.)
 - **An `Axis` is a product; a reference system is a sum.** A reference system
   varies on one axis, its tag, so `OpaqueRS` is `{type_}` and nothing else. An
-  `Axis` varies on two independent axes: the *form* (`values` XOR
+  `Axis` varies on two independent axes: the *form* (`values` or
   `start`/`stop`/`num`) and the *dataType* (primitive / tuple / polygon /
   custom). A custom-dataType axis still has a form, and both
   `{"dataType":"knmi:range","values":[...]}` and
@@ -59,7 +62,7 @@ than removing it:
 |---|---|---|---|
 | **ReferenceSystem** | a `TemporalRS` has a `calendar` | No, deliberately (ADR-0017 made it a `temporal.missing-calendar` validate error) | `refine()` is the **only** place the guarantee exists |
 | **NdArray** | values match `dataType` | No: O(n), so ADR-0002 defers it | `values_as` is the **only** place |
-| **Axis** | exactly one form; non-empty `values`; `num >= 1`; `num == 1` implies `start == stop`; composite implies `values` | **Yes**: `__post_init__` | would only re-state it |
+| **Axis** | at least one complete form; non-empty `values`; on a regular-form axis, `num >= 1` and `num == 1` implies `start == stop`; composite implies `values` | **Yes**: `__post_init__` (form exclusivity moved to `validate()`, ADR-0023) | would only re-state it |
 
 So: **no `Axis.refine()`**, and **`NdArray` keeps `values_as` with no
 whole-struct element-typed projection**, reaffirming ADR-0004's deferral.
@@ -95,7 +98,8 @@ To show the criterion is not special-pleading for this one guard, apply it to
 every local invariant the library already places, and check its verdict against
 where the code actually puts the check. It reproduces all of them. The
 invariants kept at construction each have zero or ambiguous repairs: both axis
-forms present (ambiguous), an empty `values` (none), and `num == 1` with
+forms present (ambiguous; **superseded by ADR-0023**), an empty `values`
+(none), and `num == 1` with
 `start != stop` (ambiguous). The invariants deferred to `validate()` each have
 exactly one repair: a `TemporalRS` without `calendar`, an axis value not
 matching its `dataType`, and a wrong-length `bounds` array. The new guard this

@@ -39,6 +39,7 @@ from covjson_msgspec.validation import (
     AxisCompositeArity,
     AxisCompositeValueShape,
     AxisCoordinatesNotOmitted,
+    AxisFormConflict,
     AxisNotMonotonic,
     AxisOrderChecker,
     AxisPolygonPositionArity,
@@ -1346,6 +1347,7 @@ _ISSUE_SAMPLES: tuple[Issue, ...] = (
     AxisPolygonRingTooShort(at="/", axis="composite", got=3),
     AxisPolygonRingNotClosed(at="/", axis="composite"),
     AxisBoundsLength(at="/", axis="x", expected=4, got=3),
+    AxisFormConflict(at="/", axis="x", members=("start", "num")),
     AxisCoordinatesNotOmitted(at="/", axis="x"),
     TemporalMissingCalendar(at="/"),
     IdentifierMissingTargetConcept(at="/"),
@@ -1921,6 +1923,69 @@ def test_coordinates_check_runs_without_check_values() -> None:
     ]
 
 
+@pytest.mark.parametrize(
+    ("start", "stop", "num", "members"),
+    [
+        pytest.param(None, None, 99, ("num",), id="stray-num"),
+        pytest.param(99.0, None, None, ("start",), id="stray-start"),
+        pytest.param(None, 99.0, None, ("stop",), id="stray-stop"),
+        pytest.param(0.0, 9.0, None, ("start", "stop"), id="start-stop"),
+        pytest.param(0.0, None, 3, ("start", "num"), id="start-num"),
+        pytest.param(None, 9.0, 3, ("stop", "num"), id="stop-num"),
+        # The triple disagrees with `values`: the shape implementations read
+        # differently (the JS reference reader materializes the triple).
+        pytest.param(0.0, 900.0, 3, ("start", "stop", "num"), id="disagreeing-triple"),
+        # The triple reproduces `values` exactly. Still reported: the two forms
+        # still collide, and #208 asks that no mixed form pass silently.
+        pytest.param(0.0, 5.0, 2, ("start", "stop", "num"), id="agreeing-triple"),
+        # Strays that violate the regular-form rules. `Axis.__post_init__` gates
+        # those rules on the axis's form actually being regular, so these reach
+        # the finding instead of a construction raise naming the wrong member.
+        pytest.param(None, None, 0, ("num",), id="stray-num-zero"),
+        pytest.param(
+            0.0, 900.0, 1, ("start", "stop", "num"), id="stray-triple-num-1-unequal"
+        ),
+    ],
+)
+def test_both_numeric_forms_is_reported(
+    start: float | None,
+    stop: float | None,
+    num: int | None,
+    members: tuple[str, ...],
+) -> None:
+    issues = _form_issues(Axis(values=(0.0, 5.0), start=start, stop=stop, num=num))
+
+    assert [i.code for i in issues] == ["axis.form-conflict"]
+    assert issues[0].members == members
+    # The pointer is the axis object: no single member is at fault.
+    assert issues[0].at == "/axes/a"
+
+
+@pytest.mark.parametrize(
+    "axis",
+    [
+        pytest.param(Axis.listed((0.0, 5.0)), id="values-only"),
+        pytest.param(Axis.regular(0.0, 10.0, 3), id="regular-only"),
+        # `bounds` is not part of either numeric form, so it never collides.
+        pytest.param(
+            Axis(values=(0.0, 5.0), bounds=(0.0, 2.5, 2.5, 5.0)), id="values-bounds"
+        ),
+    ],
+)
+def test_single_numeric_form_is_silent(axis: Axis) -> None:
+    assert _form_issues(axis) == []
+
+
+def test_form_conflict_check_runs_without_check_values() -> None:
+    # O(1) per axis, so it runs in the default pass rather than under
+    # `check_values`, like the bounds and coordinates checks.
+    axis = Axis(values=(0.0, 5.0), num=99)
+
+    assert [i.code for i in _form_issues(axis, check_values=False)] == [
+        "axis.form-conflict"
+    ]
+
+
 def _composite_issues(axis: Axis) -> list[Issue]:
     """The ``axis.composite-*`` issues a one-axis domain's ``axis`` draws."""
     domain = Domain(axes={"composite": axis}, referencing=_REF)
@@ -1940,6 +2005,17 @@ def _polygon_deep_issues(axis: Axis) -> list[Issue]:
         issue
         for issue in validate(domain, check_values=True).issues
         if issue.code.startswith("axis.polygon-")
+    ]
+
+
+def _form_issues(axis: Axis, *, check_values: bool = True) -> list[AxisFormConflict]:
+    """The ``axis.form-conflict`` issues a one-axis domain's ``axis`` draws."""
+    domain = Domain(axes={"a": axis}, referencing=_REF)
+
+    return [
+        issue
+        for issue in validate(domain, check_values=check_values).issues
+        if isinstance(issue, AxisFormConflict)
     ]
 
 
@@ -2054,6 +2130,7 @@ def _describe(issue: Issue) -> str:
             | AxisPolygonRingTooShort()
             | AxisPolygonRingNotClosed()
             | AxisBoundsLength()
+            | AxisFormConflict()
             | AxisCoordinatesNotOmitted()
         ):
             return "axis"

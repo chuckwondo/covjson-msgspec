@@ -146,3 +146,4 @@ nav:
           - "ADR-0020: validate() outcome model": adr/0020-validate-outcome-model.md
           - "ADR-0021: Durations as ISO 8601 strings": adr/0021-durations-as-iso-8601-strings.md
           - "ADR-0022: Pinned specification revision": adr/0022-pinned-specification-revision.md
+          - "ADR-0023: Axis form conflict tier": adr/0023-axis-form-conflict-tier.md
