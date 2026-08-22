@@ -123,7 +123,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
 
 !!! note "`UNSET` versus `None`, for msgspec newcomers"
 
-    `UNSET` is [msgspec](https://jcristharif.com/msgspec/)'s sentinel for a member
+    `UNSET` is [msgspec](https://msgspec.dev/)'s sentinel for a member
     that was *absent* from the JSON. A field typed `X | UnsetType` decodes to
     `UNSET` when the key is missing, to the value when the key is present, and
     *rejects* an explicit `null`; on encode, an `UNSET` field is omitted again.

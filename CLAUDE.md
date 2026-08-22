@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 `covjson-msgspec` is a fast, fully-typed [CoverageJSON](https://covjson.org/)
-library built on [msgspec](https://jcristharif.com/msgspec/). The
+library built on [msgspec](https://msgspec.dev/). The
 [documentation](docs/index.md) is the user-facing introduction and the design
 narrative; [`CONTRIBUTING.md`](CONTRIBUTING.md) is the contributor source of truth
 for setup, project layout, conventions, and process. This file is the agent-facing

@@ -1,7 +1,7 @@
 # covjson-msgspec
 
 Fast, fully-typed [CoverageJSON](https://covjson.org/) models built on
-[msgspec](https://jcristharif.com/msgspec/).
+[msgspec](https://msgspec.dev/).
 
 An alternative to [covjson-pydantic](https://github.com/KNMI/covjson-pydantic)
 that aims for:

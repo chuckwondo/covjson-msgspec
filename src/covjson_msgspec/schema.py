@@ -25,7 +25,7 @@ The generated schema is JSON Schema draft 2020-12, the dialect [OpenAPI
 documented at [msgspec][msgspec-schema].
 
 [openapi]: https://spec.openapis.org/oas/v3.1.0
-[msgspec-schema]: https://jcristharif.com/msgspec/
+[msgspec-schema]: https://msgspec.dev/jsonschema.html
 """
 
 from __future__ import annotations

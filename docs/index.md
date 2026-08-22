@@ -1,7 +1,7 @@
 # covjson-msgspec
 
 Fast, fully-typed [CoverageJSON](https://covjson.org/) models built on
-[msgspec](https://jcristharif.com/msgspec/).
+[msgspec](https://msgspec.dev/).
 
 [CoverageJSON](https://covjson.org/) is the OGC Community Standard for exchanging
 coverage data as JSON: grids, time series, point collections, trajectories,
