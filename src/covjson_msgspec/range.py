@@ -749,10 +749,11 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
             A callable mapping a tile's URL to its raw bytes. All I/O (and any
             caching, auth, or retries) lives in this callable.
         tileset
-            The index of the tile set to use. Every tile set reconstructs the
-            same array, so this only changes how many tiles are fetched, not the
-            result; by default the one with the fewest tiles (fewest fetches) is
-            chosen, and the first listed wins a tie.
+            The index of the tile set to use, negative counting from the end.
+            Every tile set reconstructs the same array, so this only changes how
+            many tiles are fetched, not the result; by default the one with the
+            fewest tiles (fewest fetches) is chosen, and the first listed wins a
+            tie.
         strategy
             How to respond to a tile that fails to fetch or decode. The default
             [`fail_fast`][covjson_msgspec.fail_fast] aborts on the first failure; a
@@ -774,8 +775,9 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
 
         Raises
         ------
-        ValueError
-            If ``tileset`` is out of range.
+        IndexError
+            If ``tileset`` is out of range (``-len(tile_sets)`` through
+            ``len(tile_sets) - 1``).
         FetchError
             When the ``strategy`` halts on a failure (the default
             [`fail_fast`][covjson_msgspec.fail_fast] halts on the first), chained from
@@ -859,10 +861,11 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
             is no built-in concurrency cap; wrap ``fetch`` in an `asyncio.Semaphore`
             to bound the fan-out (see `resolve_references_async`).
         tileset
-            The index of the tile set to use. Every tile set reconstructs the
-            same array, so this only changes how many tiles are fetched, not the
-            result; by default the one with the fewest tiles (fewest fetches) is
-            chosen, and the first listed wins a tie.
+            The index of the tile set to use, negative counting from the end.
+            Every tile set reconstructs the same array, so this only changes how
+            many tiles are fetched, not the result; by default the one with the
+            fewest tiles (fewest fetches) is chosen, and the first listed wins a
+            tie.
         strategy
             How to respond to a tile that fails to fetch or decode; see `assemble`.
 
@@ -874,8 +877,9 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
 
         Raises
         ------
-        ValueError
-            If ``tileset`` is out of range.
+        IndexError
+            If ``tileset`` is out of range (``-len(tile_sets)`` through
+            ``len(tile_sets) - 1``).
         FetchError
             When the ``strategy`` halts on a failure (the default
             [`fail_fast`][covjson_msgspec.fail_fast] halts on the first), chained from
@@ -942,13 +946,14 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         Shared by `assemble` and `assemble_async`. With ``tileset=None`` the tile
         set partitioning the array into the fewest tiles is chosen (the fewest
         fetches), the first one winning a tie; otherwise the tile set at that
-        index is returned.
+        index is returned, indexing as a Python sequence does (a negative index
+        counts from the end).
 
         Parameters
         ----------
         tileset
-            The index of the tile set to use, or ``None`` to pick the fewest-tile
-            one.
+            The index of the tile set to use, negative counting from the end, or
+            ``None`` to pick the fewest-tile one.
 
         Returns
         -------
@@ -957,8 +962,9 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
 
         Raises
         ------
-        ValueError
-            If ``tileset`` is out of range.
+        IndexError
+            If ``tileset`` is out of range (``-len(tile_sets)`` through
+            ``len(tile_sets) - 1``).
 
         Examples
         --------
@@ -975,6 +981,12 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         'b/{x}'
         >>> tiled._select_tile_set(0).url_template
         'a/{x}'
+        >>> tiled._select_tile_set(-1).url_template  # from the end
+        'b/{x}'
+        >>> tiled._select_tile_set(-3)
+        Traceback (most recent call last):
+            ...
+        IndexError: tileset index -3 is out of range; this TiledNdArray has 2 tileSet(s)
         """
         if tileset is None:
             return min(
@@ -983,13 +995,15 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
             )
 
         try:
+            # The tuple stays the single source of truth for the valid range
+            # (negatives included); the re-raise only improves the message.
             return self.tile_sets[tileset]
         except IndexError:
             msg = (
                 f"tileset index {tileset} is out of range; this TiledNdArray "
                 f"has {len(self.tile_sets)} tileSet(s)"
             )
-            raise ValueError(msg) from None
+            raise IndexError(msg) from None
 
     def _repr_html_(self) -> str:
         """Render an HTML summary of this tiled array for Jupyter.
