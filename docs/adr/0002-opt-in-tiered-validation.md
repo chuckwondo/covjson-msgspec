@@ -7,7 +7,7 @@ Accepted
 ## Context
 
 CoverageJSON has correctness rules at different scopes. Some are local to a
-single struct (an `Axis` needs exactly one form; a `Unit` needs a label or a
+single struct (an `Axis` needs one complete form; a `Unit` needs a label or a
 symbol; a `TiledNdArray` tile shape has a fixed rank). Others are cross-cutting
 and only checkable with a whole-document view (a domain's axes against its
 `domainType`, ranges aligned to their domain, parameter-group members against

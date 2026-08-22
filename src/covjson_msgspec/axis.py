@@ -1,7 +1,10 @@
 """Domain axes.
 
 An axis describes the coordinate values along one domain dimension. A single
-`Axis` type models every CoverageJSON shape, and exactly one form must be used:
+`Axis` type models every CoverageJSON shape. We read the two numeric forms as
+exclusive, but spec 6.1.1 does not state that, so an axis carrying both decodes
+and `covjson_msgspec.validate` reports it as ``axis.form-conflict``
+(`covjson_msgspec.validation.AxisFormConflict` carries the derivation):
 
 * **value-listing**: an explicit ``values`` array;
 * **regular**: ``start`` / ``stop`` / ``num``, the compact notation for a
@@ -55,7 +58,8 @@ PolygonCoords = Iterable[RingCoords]
 
 # Modeled as one permissive struct rather than a tagged union: the axis shapes
 # share no "type" discriminator and msgspec disallows untagged unions of
-# multiple structs. __post_init__ enforces that exactly one form is present.
+# multiple structs. __post_init__ enforces that at least one complete form is
+# present; their exclusivity is `validate`'s `axis.form-conflict` (ADR-0023).
 class Axis(CovJSONStruct, frozen=True):
     """A domain axis in any of its CoverageJSON shapes.
 
@@ -73,10 +77,20 @@ class Axis(CovJSONStruct, frozen=True):
     --------
     >>> Axis.regular(0.0, 270.0, 4).coordinate_values
     (0.0, 90.0, 180.0, 270.0)
-    >>> Axis(start=0.0, stop=10.0, num=3, values=(1, 2))  # two forms at once
+
+    An axis must supply one complete form. Neither form, or an incomplete
+    regular triple, yields no coordinate values at all and is rejected:
+
+    >>> Axis(start=0.0, num=3)  # no `stop`, so nothing is reconstructable
     Traceback (most recent call last):
         ...
-    ValueError: Axis requires exactly one of `values` or `start`/`stop`/`num`
+    ValueError: Axis requires `values` or all of `start`/`stop`/`num`
+
+    Carrying *both* forms is a different matter: the axis is readable (``values``
+    wins), so it decodes and `covjson_msgspec.validate` reports it (ADR-0023).
+
+    >>> Axis(start=0.0, stop=10.0, num=3, values=(1, 2)).coordinate_values
+    (1, 2)
 
     ``len()`` gives the coordinate count without materializing a regular
     axis's values. An axis must have at least one coordinate (spec 6.1.1: an
@@ -151,7 +165,7 @@ class Axis(CovJSONStruct, frozen=True):
 
     That rule is derived from the ``"tuple"`` / ``"polygon"`` value MUSTs, so it
     reaches only those two: the spec constrains no custom ``dataType``'s values,
-    and such an axis keeps both forms.
+    so such an axis may use either numeric form.
 
     >>> Axis(start=0.0, stop=10.0, num=3, data_type="knmi:range").coordinate_values
     (0.0, 5.0, 10.0)
@@ -174,20 +188,27 @@ class Axis(CovJSONStruct, frozen=True):
         has_regular = (
             self.start is not None and self.stop is not None and self.num is not None
         )
+        # The axis's form *is* regular, rather than merely carrying stray triple
+        # members beside `values`. The regular-form rules below gate on this, so
+        # that whether a both-forms axis loads never turns on the stray's
+        # magnitude: every such axis is `validate`'s `axis.form-conflict`,
+        # whether the stray reads `"num": 0` or `"num": 99` (ADR-0023).
+        is_regular = has_regular and not has_values
 
-        # Exactly one numeric form: `values` XOR the regular triple. Spec 6.1.1
-        # requires 'either a `"values"` member or ... all the members `"start"`,
-        # `"stop"`, and `"num"`'; it never says "exactly one", and never says
-        # which wins when both are present. The exclusive reading is inferred,
-        # from three things the section does say: the triple is introduced "as a
-        # compact notation for a regularly spaced numeric axis", i.e. an
-        # alternative encoding of the same content; the elements of `"values"`
-        # "MAY be reconstructed with the formula ..." and, for `num` of 1,
-        # '`"values"` is `[start]`', both of which presuppose `values` is absent
-        # and derivable; and it supplies no tiebreak for a document carrying both
-        # inconsistently, which a spec permitting both would have to.
-        if has_values == has_regular:
-            msg = "Axis requires exactly one of `values` or `start`/`stop`/`num`"
+        # At least one complete numeric form. Spec 6.1.1 states it: 'An axis
+        # object MUST have either a `"values"` member or, as a compact notation
+        # for a regularly spaced numeric axis, all the members `"start"`,
+        # `"stop"`, and `"num"`.' An axis satisfying neither yields no
+        # coordinate values at all, so no coherent axis of that shape exists,
+        # which is ADR-0002's criterion for rejecting at construction. Note this
+        # catches a *partial* triple too: `start` without `stop` reconstructs
+        # nothing.
+        #
+        # Their *exclusivity* is a separate rule, inferred rather than stated,
+        # and it lives in `validate` as `axis.form-conflict` (ADR-0023): an axis
+        # carrying both is readable, since `coordinate_values` takes `values`.
+        if not has_values and not has_regular:
+            msg = "Axis requires `values` or all of `start`/`stop`/`num`"
             raise ValueError(msg)
 
         # Spec 6.1.1: `values`, when given, is a non-empty array.
@@ -195,14 +216,20 @@ class Axis(CovJSONStruct, frozen=True):
             msg = "Axis `values` must be non-empty"
             raise ValueError(msg)
 
-        # Spec 6.1.1: `num` is "an integer greater than zero".
-        if self.num is not None and self.num < 1:
+        # Spec 6.1.1: `num` is "an integer greater than zero". Checked only once
+        # the axis is unambiguously regular. A stray `num` beside `values` is
+        # not this axis's form, and its only repair is deletion, so validating
+        # its value would tell a publisher to fix a member they should drop.
+        # The rule is deferred, not dropped: repair the conflict by dropping
+        # `values` and this fires on the resulting regular axis, while the
+        # document stays an error meanwhile via `axis.form-conflict`.
+        if is_regular and self.num is not None and self.num < 1:
             msg = "Axis `num` must be a positive integer"
             raise ValueError(msg)
 
-        # Spec 6.1.1: with `num` of 1, `start` and `stop` MUST be equal (regular
-        # form only; the XOR above owns a stray `start`/`num`).
-        if has_regular and self.num == 1 and self.start != self.stop:
+        # Spec 6.1.1: with `num` of 1, `start` and `stop` MUST be equal. Same
+        # gate, for the same reason.
+        if is_regular and self.num == 1 and self.start != self.stop:
             msg = "Axis with `num` of 1 requires equal `start` and `stop`"
             raise ValueError(msg)
 
@@ -240,6 +267,12 @@ class Axis(CovJSONStruct, frozen=True):
     def coordinate_values(self) -> Sequence[AxisValue]:
         """The explicit coordinate values, materializing the regular form.
 
+        ``values`` wins when an axis carries both forms. Spec 6.1.1 states no
+        tiebreak, but it introduces the triple "as a compact notation for a
+        regularly spaced numeric axis" whose elements "MAY be reconstructed",
+        making the triple the derived form. Such an axis is reported as
+        ``axis.form-conflict`` (ADR-0023); this is what it resolves to meanwhile.
+
         Returns
         -------
         sequence
@@ -252,6 +285,8 @@ class Axis(CovJSONStruct, frozen=True):
         (10, 20, 30)
         >>> Axis.regular(5.0, 5.0, 1).coordinate_values  # num 1: start == stop
         (5.0,)
+        >>> Axis(values=(1, 2), start=0.0, stop=10.0, num=3).coordinate_values
+        (1, 2)
         """
         if self.values is not None:
             return self.values
@@ -273,9 +308,12 @@ class Axis(CovJSONStruct, frozen=True):
         Unlike ``len(axis.coordinate_values)``, this never materializes a
         regular axis's values: it is O(1) in every form.
 
-        A valid axis is never empty (`__post_init__` rejects an empty
-        ``values`` array and a non-positive ``num``, per spec 6.1.1), so the
-        length is at least 1 and an `Axis` never evaluates falsy.
+        A valid axis is never empty, so the length is at least 1 and an `Axis`
+        never evaluates falsy. Both branches are covered: `__post_init__`
+        rejects an empty ``values`` array, and rejects a non-positive ``num`` on
+        a *regular* axis, which is the only kind this reads ``num`` for (per
+        spec 6.1.1; a stray non-positive ``num`` beside ``values`` is
+        `validate`'s ``axis.form-conflict``, and is never read here).
 
         Returns
         -------

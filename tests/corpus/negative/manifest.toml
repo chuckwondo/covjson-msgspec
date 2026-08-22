@@ -151,3 +151,9 @@ issues = [{ code = "axis.bounds-length", severity = "error" }]
 [[case]]
 file = "axis-coordinates-not-omitted.json"
 issues = [{ code = "axis.coordinates-not-omitted", severity = "error" }]
+
+# A stray `num` beside `values`, i.e. the partial triple #208 found: it decodes,
+# round-trips both forms intact, and is reported rather than rejected (ADR-0023).
+[[case]]
+file = "axis-form-conflict.json"
+issues = [{ code = "axis.form-conflict", severity = "error" }]

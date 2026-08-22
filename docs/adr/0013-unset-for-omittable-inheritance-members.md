@@ -118,10 +118,12 @@ inert members, harms nothing. `UNSET` earns its keep only where a `null` is
 harmful and unguarded.
 
 **Also convert the discriminators.** Rejected. Their forms are already guarded
-at construction. An `Axis` requires exactly one of `values` or the
-`start`/`stop`/`num` triple, so `"values": null` is rejected by `__post_init__`
-whenever no regular triple is present; it slips through only as a redundant
-no-op, when a valid regular triple already makes the axis interpretable.
+at construction. An `Axis` requires `values` or a complete `start`/`stop`/`num`
+triple, so `"values": null` is rejected by `__post_init__` whenever no complete
+triple is present; it slips through only as a redundant no-op, when a valid
+regular triple already makes the axis interpretable. (ADR-0023 later moved the
+forms' *exclusivity* to `validate()`; this argument rests on the neither-form
+branch, which stayed at construction.)
 `ObservedProperty` guards `categories` against its categorical flag likewise.
 So `UNSET` there buys only the rejection of a redundant `null` on an
 already-interpretable object: the same inert-null trade as the scalars, on a few

@@ -150,8 +150,9 @@ is `OpaqueRS` with `type_` preserved and the specific diagnosis in `validate()`.
   whole-struct projection was already weighed and deferred by ADR-0004 (its
   value-level `values_as` covers the common need). Tracked in #123, and settled
   by [ADR-0018][adr18]: neither gains one, because a projection earns its keep
-  only where it recovers a guarantee nothing else enforces, and `Axis` already
-  enforces its own at construction.
+  only where it recovers a guarantee nothing else enforces, and `Axis`'s are
+  enforced already, at construction or (for form exclusivity, per ADR-0023) in
+  `validate()`.
 
 [spec-5]: https://github.com/covjson/specification/blob/master/spec.md#5-reference-system-objects
 [spec-72]: https://github.com/covjson/specification/blob/master/spec.md#72-custom-types

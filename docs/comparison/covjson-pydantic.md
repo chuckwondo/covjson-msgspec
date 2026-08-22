@@ -40,8 +40,13 @@ Versions compared: covjson-pydantic `domain.py` / `base_models.py` as of
 **covjson-msgspec: one permissive struct plus an open dict.**
 
 - A single `Axis` struct models all three forms (value-listing, regular,
-  composite); `__post_init__` enforces that exactly one form is present (a
-  cheap, local, O(1) invariant).
+  composite); `__post_init__` enforces that one *complete* form is present (a
+  cheap, local, O(1) invariant), and `validate()` reports an axis carrying both
+  as `axis.form-conflict` (ADR-0023). On the axis *form* rules the construction
+  boundary is the same one covjson-pydantic draws: measured against 0.8.0, both
+  libraries reject an axis with neither form and one with a partial triple, and
+  both resolve an axis carrying both to `values`. covjson-pydantic keeps the
+  stray members as `extra` and reports nothing.
 - `Axis` is not generic: `values` is `tuple[AxisValue, ...]` where `AxisValue =
   float | int | str | tuple[Any, ...]`.
 - `Domain.axes` is `dict[str, Axis]`, so any axis name is representable.

@@ -17,14 +17,60 @@ def test_listed_axis_roundtrips() -> None:
     assert back.coordinate_values == (10, 20, 30)
 
 
-def test_axis_rejects_both_forms() -> None:
-    with pytest.raises(ValueError, match="exactly one"):
-        Axis(values=(1, 2), start=0.0, stop=1.0, num=2)
+@pytest.mark.parametrize(
+    ("start", "stop", "num"),
+    [
+        pytest.param(None, None, None, id="neither-form"),
+        pytest.param(0.0, None, None, id="start-only"),
+        pytest.param(None, 10.0, None, id="stop-only"),
+        pytest.param(None, None, 3, id="num-only"),
+        pytest.param(0.0, 10.0, None, id="no-num"),
+        pytest.param(0.0, None, 3, id="no-stop"),
+        pytest.param(None, 10.0, 3, id="no-start"),
+    ],
+)
+def test_axis_rejects_no_complete_form(
+    start: float | None, stop: float | None, num: int | None
+) -> None:
+    # Spec 6.1.1 states an axis MUST have `values` or all three of
+    # `start`/`stop`/`num`. Neither form, and an incomplete triple, both yield no
+    # coordinate values at all, so they are rejected at construction (ADR-0002).
+    # An incomplete triple is the case #208 found: it must not fall between the
+    # two branches.
+    with pytest.raises(ValueError, match="requires `values` or all of"):
+        Axis(start=start, stop=stop, num=num)
 
 
-def test_axis_rejects_neither_form() -> None:
-    with pytest.raises(ValueError, match="exactly one"):
-        Axis()
+def test_axis_rejects_no_complete_form_on_decode() -> None:
+    # The same guard fires when the partial triple arrives via decode.
+    with pytest.raises(
+        (msgspec.ValidationError, ValueError), match="requires `values` or all of"
+    ):
+        msgspec.json.decode(b'{"start": 0.0, "num": 3}', type=Axis)
+
+
+@pytest.mark.parametrize(
+    ("start", "stop", "num"),
+    [
+        pytest.param(None, None, 99, id="stray-num"),
+        pytest.param(0.0, 900.0, 3, id="disagreeing-triple"),
+        pytest.param(0.0, 5.0, 2, id="agreeing-triple"),
+    ],
+)
+def test_axis_accepts_both_forms_and_prefers_values(
+    start: float | None, stop: float | None, num: int | None
+) -> None:
+    # Exclusivity is inferred, not stated, and an axis carrying both stays
+    # readable, so it loads and `validate` reports it as `axis.form-conflict`
+    # instead (ADR-0023). `values` wins, agreeing triple or not. Every subset of
+    # the triple is enumerated in test_validation.py's reported-cases table.
+    ax = Axis(values=(0.0, 5.0), start=start, stop=stop, num=num)
+
+    assert ax.coordinate_values == (0.0, 5.0)
+
+    # The stray members survive the round trip: decode is byte-faithful, so a
+    # non-conformant document is reported rather than silently normalized.
+    assert msgspec.json.decode(msgspec.json.encode(ax), type=Axis) == ax
 
 
 def test_axis_rejects_empty_values() -> None:

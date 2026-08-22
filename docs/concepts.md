@@ -123,7 +123,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
 
 !!! note "`UNSET` versus `None`, for msgspec newcomers"
 
-    `UNSET` is [msgspec](https://jcristharif.com/msgspec/)'s sentinel for a member
+    `UNSET` is [msgspec](https://msgspec.dev/)'s sentinel for a member
     that was *absent* from the JSON. A field typed `X | UnsetType` decodes to
     `UNSET` when the key is missing, to the value when the key is present, and
     *rejects* an explicit `null`; on encode, an `UNSET` field is omitted again.
@@ -216,13 +216,16 @@ accompany any form.
 Three rules we enforce are not stated that plainly, and it is worth being
 precise about where each comes from. The two forms are *exclusive*: section
 6.1.1 says "either ... or", never "exactly one" and never that carrying both is
-forbidden, so rejecting an axis with both is our reading. Three things settle
+forbidden, so flagging an axis with both is our reading. Three things settle
 it: the triple is introduced "as a compact notation for a regularly spaced
 numeric axis", which makes it an alternative encoding of the same content; "the
 array elements of `"values"` MAY be reconstructed with the formula ..." and "If
 `num = 1` then `"values"` is `[start]`" both presuppose `values` is absent and
 derivable; and the spec supplies no tiebreak for a document carrying both
-inconsistently, which a spec permitting both would have to. A composite axis
+inconsistently, which a spec permitting both would have to. Such an axis still
+reads (`values` wins), so it is `validate()`'s `axis.form-conflict` rather than
+a decode rejection ([ADR-0023](adr/0023-axis-form-conflict-tier.md)). A
+composite axis
 must list its `values`: that one the spec *entails* rather than states, because
 a `tuple` value MUST be an array while the `start` / `stop` / `num` notation
 yields only numbers, so nothing could satisfy both. A composite axis must supply
@@ -248,21 +251,32 @@ class Axis(CovJSONStruct, frozen=True):
 
     def __post_init__(self) -> None:
         # Enforce the rules that leave an axis uninterpretable if violated:
-        # exactly one of values / start-stop-num, non-empty values, and
-        # num == 1 implies start == stop (all stated by 6.1.1); a composite
-        # axis lists its values (entailed by 6.1.1, not stated); a composite
-        # axis supplies coordinates (inferred; see ADR-0019).
+        # values or all of start-stop-num, and non-empty values (both stated
+        # by 6.1.1); on a regular-form axis, num >= 1 and num == 1 implies
+        # start == stop; a composite axis lists its values (entailed by
+        # 6.1.1, not stated); a composite axis supplies coordinates
+        # (inferred; see ADR-0019). Their *exclusivity* is inferred and stays
+        # readable, so validate() owns it (ADR-0023).
         ...
 ```
 
-- Every field is optional, and `__post_init__` enforces the "exactly one form"
-  MUST (and the `num == 1 ⇒ start == stop` MUST) at construction. These are local,
+- Every field is optional, and `__post_init__` enforces at construction that one
+  complete form is present (the MUST section 6.1.1 states). On an axis whose
+  form *is* regular it also enforces `num >= 1` and the `num == 1 implies
+  start == stop` MUST; beside `values` those members are strays whose only
+  repair is deletion, so `validate()` reports the conflict instead
+  ([ADR-0023](adr/0023-axis-form-conflict-tier.md)). These are local,
   O(1) invariants that leave the axis uninterpretable if violated, so they belong
   at construction rather than in `validate()`
   ([ADR-0002](adr/0002-opt-in-tiered-validation.md) draws that line). Cheapness
   alone is not the test: an axis whose `bounds` length is wrong is just as cheap
   to spot, but stays interpretable (only the bounds are junk), so it is
   `validate()`'s job.
+- The two forms being *exclusive* is our reading rather than a stated rule, and
+  an axis carrying both stays readable, so it decodes and `validate()` reports
+  it as `axis.form-conflict`
+  ([ADR-0023](adr/0023-axis-form-conflict-tier.md)). `coordinate_values`
+  resolves such an axis to `values`.
 - You do not build an `Axis` by hand from raw fields: the named builders
   `Axis.listed`, `Axis.regular`, `Axis.tuple_`, and `Axis.polygon` construct a
   valid form directly, so an illegal combination is never expressible.
@@ -270,9 +284,10 @@ class Axis(CovJSONStruct, frozen=True):
   same "typed projection over a faithful core" choice made for `NdArray`
   ([ADR-0004](adr/0004-ndarray-single-non-generic-class.md)). `Axis` deliberately
   has no `refine()` counterpart to `ReferenceSystem`'s: a projection earns its
-  keep only where it recovers a guarantee nothing else enforces, and `Axis`
-  already enforces its own above
-  ([ADR-0018](adr/0018-typed-projection-scope.md)).
+  keep only where it recovers a guarantee nothing else enforces, and `Axis`'s
+  are enforced already, at construction or (for form exclusivity) in
+  `validate()` ([ADR-0018](adr/0018-typed-projection-scope.md),
+  [ADR-0023](adr/0023-axis-form-conflict-tier.md)).
 
 ## NdArray
 

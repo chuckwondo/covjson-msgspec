@@ -101,6 +101,9 @@ from covjson_msgspec.referencing import (
 )
 from covjson_msgspec.temporal import Malformed, Moment, TemporalResult, resolve
 
+# Spec 6.1.1's compact-notation members, in the order the section lists them.
+RegularAxisMember = Literal["start", "stop", "num"]
+
 
 class Severity(enum.StrEnum):
     """How serious a validation `Issue` is."""
@@ -452,6 +455,49 @@ class AxisBoundsLength(_Issue, frozen=True, tag="axis.bounds-length"):
         return (
             f"axis {self.axis!r} has {self.got} bounds but must have "
             f"{self.expected} (two per axis value)"
+        )
+
+
+class AxisFormConflict(_Issue, frozen=True, tag="axis.form-conflict"):
+    """An axis carries ``values`` alongside part or all of the regular form.
+
+    Spec 6.1.1 (Axis Objects) requires "either a ``"values"`` member or, as a
+    compact notation for a regularly spaced numeric axis, all the members
+    ``"start"``, ``"stop"``, and ``"num"``". It never says "exactly one", and
+    never says which form wins when both are present, so exclusivity is entailed
+    rather than stated. Three things the section does say entail it: the triple
+    is introduced "as a compact notation for a regularly spaced numeric axis",
+    i.e. an alternative encoding of the same content; the elements of
+    ``"values"`` "MAY be reconstructed with the formula ..." and, for ``num`` of
+    1, ``"values"`` "is ``[start]``", both of which presuppose ``values`` is
+    absent and derivable; and it supplies no tiebreak for a document carrying
+    both inconsistently, which a specification permitting both would have to.
+
+    An axis carrying both stays readable, since
+    [`coordinate_values`][covjson_msgspec.Axis.coordinate_values] takes
+    ``values``, so it is reported here rather than rejected at construction
+    (ADR-0023).
+
+    It is an error rather than a warning because of one shape in the class: a
+    *complete* triple that contradicts ``values`` is not interoperable, since
+    the JavaScript reference reader materializes the triple and discards
+    ``values`` while this library and covjson-pydantic keep ``values``, so the
+    same document is read as different data. The other mixed shapes (a partial
+    triple, or a complete one that reproduces ``values``) are read identically
+    by all three. Telling them apart means reconstructing the triple and
+    comparing floats, which this O(1) check cannot do, so the whole class is
+    reported at error severity (ADR-0002, ADR-0023).
+    """
+
+    axis: str
+    members: tuple[RegularAxisMember, ...]
+
+    def __str__(self) -> str:
+        listed = ", ".join(f"`{member}`" for member in self.members)
+
+        return (
+            f"axis {self.axis!r} carries `values` and {listed}; "
+            f"use one form or the other"
         )
 
 
@@ -844,6 +890,7 @@ Issue = (
     | AxisPolygonRingTooShort
     | AxisPolygonRingNotClosed
     | AxisBoundsLength
+    | AxisFormConflict
     | AxisCoordinatesNotOmitted
     | TemporalMissingCalendar
     | IdentifierMissingTargetConcept
@@ -1161,7 +1208,8 @@ def validate(
     parameter groups reference known members, a coverage and domain carry the
     ``parameters`` / ``referencing`` the spec requires (resolving collection-level
     inheritance first), a `TiledNdArray`'s tile sets are well-formed, an axis's
-    ``bounds`` (when present) has the spec-defined length of twice the axis, and
+    ``bounds`` (when present) has the spec-defined length of twice the axis, an
+    axis uses one numeric form rather than both, and
     (with ``check_values=True``) every value matches its range's ``dataType``,
     categorical codes are defined, temporal values are well-formed, and each
     ordered primitive axis is monotonic. Reach for it when you need those
@@ -2040,9 +2088,11 @@ def _validate_domain(
     First, when the effective ``domain_type`` is absent, a
     `DomainMissingDomainType` warning (Spec 6.1 RECOMMENDS one). Then, resolves
     ``domain_type`` to a `DomainTypeRule` and, when one applies, yields the
-    violations `_domain_issues` finds. Then, unconditionally (it is O(1) per
+    violations `_domain_issues` finds. Then, unconditionally (both are O(1) per
     axis), an ``axis.bounds-length`` error for each axis whose ``bounds`` length
-    is not twice the axis length (`_axis_bounds_issues`). Then, when
+    is not twice the axis length (`_axis_bounds_issues`), and an
+    ``axis.form-conflict`` error for each axis carrying ``values`` alongside part
+    or all of the regular triple (`_axis_form_issues`). Then, when
     ``check_values``, the axis value-scans (a time-axis value outside the
     Gregorian lexical forms via `_temporal_form_issues`, and a non-monotonic
     ordered axis via `_axis_monotonic_issues`); then a missing-referencing issue
@@ -2118,6 +2168,7 @@ def _validate_domain(
     # These axis tests are O(1) per axis, so unlike the value-scans below, they run
     # unconditionally rather than under `check_values`. They sit under `axes`, so
     # they come before the referencing checks to keep issues in document order.
+    yield from _axis_form_issues(domain, path)
     yield from _axis_bounds_issues(domain, path)
     yield from _axis_coordinates_issues(domain, path)
 
@@ -2630,6 +2681,92 @@ def _axis_bounds_issues(
         )
         for name, axis in domain.axes.items()
         if (bounds := axis.bounds) is not None and len(bounds) != 2 * len(axis)
+    )
+
+
+def _regular_members(axis: Axis) -> tuple[RegularAxisMember, ...]:
+    """The regular-form members an axis carries, in spec 6.1.1's order.
+
+    Named separately from the ``values`` test so `_axis_form_issues` can report
+    *which* members collide: a stray ``num`` and a full triple are the same
+    finding but not the same repair. Empty for a value-listing axis.
+
+    Parameters
+    ----------
+    axis
+        The axis to inspect.
+
+    Returns
+    -------
+    tuple of str
+        The wire names of the present members, a subset of ``start``, ``stop``,
+        ``num``, in that order.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis
+    >>> _regular_members(Axis.listed((1.0, 2.0)))
+    ()
+    >>> _regular_members(Axis(values=(1.0, 2.0), num=99))
+    ('num',)
+    >>> _regular_members(Axis.regular(0.0, 10.0, 3))
+    ('start', 'stop', 'num')
+    """
+    pairs: tuple[tuple[RegularAxisMember, float | None], ...] = (
+        ("start", axis.start),
+        ("stop", axis.stop),
+        ("num", axis.num),
+    )
+
+    return tuple(member for member, value in pairs if value is not None)
+
+
+def _axis_form_issues(
+    domain: Domain, path: tuple[str | int, ...]
+) -> Iterator[AxisFormConflict]:
+    """Yield an ``axis.form-conflict`` error per axis carrying both numeric forms.
+
+    Spec 6.1.1 offers ``values`` or the ``start`` / ``stop`` / ``num`` triple; we
+    read them as exclusive, which the section entails rather than states
+    (`AxisFormConflict` carries the derivation). An axis carrying ``values``
+    alongside *any* triple member is reported, complete triple or not: the rule
+    is about the two forms colliding, not about the triple being well formed, and
+    `Axis.__post_init__` already rejects a partial triple standing alone. Both
+    tests are O(1) per axis, so the caller runs this unconditionally rather than
+    under ``check_values``.
+
+    The pointer is the axis object, not one member: no single member is at fault
+    when two forms collide.
+
+    Parameters
+    ----------
+    domain
+        The domain whose axes are checked.
+    path
+        The reference-token path to ``domain``, extended per issue via `_ptr`.
+
+    Yields
+    ------
+    AxisFormConflict
+        One error per axis carrying ``values`` and at least one of ``start``,
+        ``stop``, ``num``, naming the colliding members.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain
+    >>> dom = Domain(
+    ...     axes={
+    ...         "x": Axis(values=(1.0, 2.0), num=99),
+    ...         "y": Axis.listed((1.0, 2.0)),
+    ...     }
+    ... )
+    >>> [(i.axis, i.members) for i in _axis_form_issues(dom, ())]
+    [('x', ('num',))]
+    """
+    return (
+        AxisFormConflict(at=_ptr(path, "axes", name), axis=name, members=members)
+        for name, axis in domain.axes.items()
+        if axis.values is not None and (members := _regular_members(axis))
     )
 
 
