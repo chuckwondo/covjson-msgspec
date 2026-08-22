@@ -218,7 +218,9 @@ def test_tile_shape_allows_null() -> None:
     assert tiled.tile_sets[0].tile_shape == (None, 100, 100)
 
 
-@pytest.mark.parametrize("index", range(len(_spec_tiled().tile_sets)))
+@pytest.mark.parametrize(
+    "index", range(-len(_spec_tiled().tile_sets), len(_spec_tiled().tile_sets))
+)
 def test_assemble_reconstructs_full_array_for_each_tileset(index: int) -> None:
     full = np.arange(100, dtype=float).reshape(2, 5, 10)
     tiled = _spec_tiled()
@@ -262,11 +264,12 @@ def test_assemble_handles_remainder_tiles() -> None:
     assert result.values == (0.0, 1.0, 2.0, 3.0, 4.0)
 
 
-def test_assemble_tileset_index_out_of_range_errors() -> None:
+@pytest.mark.parametrize("index", (5, -5))
+def test_assemble_tileset_index_out_of_range_errors(index: int) -> None:
     empty: dict[str, bytes] = {}  # fetch is never reached
 
-    with pytest.raises(ValueError, match="out of range"):
-        _spec_tiled().assemble(store_fetcher(empty), tileset=5)
+    with pytest.raises(IndexError, match="out of range"):
+        _spec_tiled().assemble(store_fetcher(empty), tileset=index)
 
 
 def test_assemble_invalid_tile_document_reports_url() -> None:
@@ -282,7 +285,9 @@ def test_assemble_invalid_tile_document_reports_url() -> None:
     assert excinfo.value.failures[0].url == "0.covjson"
 
 
-@pytest.mark.parametrize("index", range(len(_spec_tiled().tile_sets)))
+@pytest.mark.parametrize(
+    "index", range(-len(_spec_tiled().tile_sets), len(_spec_tiled().tile_sets))
+)
 def test_assemble_async_matches_sync_for_each_tileset(index: int) -> None:
     full = np.arange(100, dtype=float).reshape(2, 5, 10)
     tiled = _spec_tiled()
@@ -307,12 +312,13 @@ def test_assemble_async_default_picks_the_fewest_tiles() -> None:
     assert result.values == tuple(full.ravel(order="C").tolist())
 
 
-def test_assemble_async_tileset_index_out_of_range_errors() -> None:
+@pytest.mark.parametrize("index", (5, -5))
+def test_assemble_async_tileset_index_out_of_range_errors(index: int) -> None:
     empty: dict[str, bytes] = {}  # fetch is never reached
     fetch = async_store_fetcher(empty)
 
-    with pytest.raises(ValueError, match="out of range"):
-        asyncio.run(_spec_tiled().assemble_async(fetch, tileset=5))
+    with pytest.raises(IndexError, match="out of range"):
+        asyncio.run(_spec_tiled().assemble_async(fetch, tileset=index))
 
 
 def test_assemble_async_invalid_tile_document_reports_url() -> None:
