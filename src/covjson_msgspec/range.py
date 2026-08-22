@@ -750,10 +750,13 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
             caching, auth, or retries) lives in this callable.
         tileset
             The index of the tile set to use, negative counting from the end.
-            Every tile set reconstructs the same array, so this only changes how
-            many tiles are fetched, not the result; by default the one with the
-            fewest tiles (fewest fetches) is chosen, and the first listed wins a
-            tie.
+            Every tile set tiles the same ``shape`` (spec 6.3), so this normally
+            changes only how many tiles are fetched, not the result; by default
+            the one with the fewest tiles (fewest fetches) is chosen, and the
+            first listed wins a tie. Spec 6.3 constrains the tiling, not the tile
+            values: it never states that two tile sets carry the same value for a
+            position, and confirming they do would mean fetching every tile of
+            every set. Where they differ, this choice changes the result.
         strategy
             How to respond to a tile that fails to fetch or decode. The default
             [`fail_fast`][covjson_msgspec.fail_fast] aborts on the first failure; a
@@ -861,11 +864,8 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
             is no built-in concurrency cap; wrap ``fetch`` in an `asyncio.Semaphore`
             to bound the fan-out (see `resolve_references_async`).
         tileset
-            The index of the tile set to use, negative counting from the end.
-            Every tile set reconstructs the same array, so this only changes how
-            many tiles are fetched, not the result; by default the one with the
-            fewest tiles (fewest fetches) is chosen, and the first listed wins a
-            tie.
+            The index of the tile set to use, negative counting from the end;
+            see `assemble`.
         strategy
             How to respond to a tile that fails to fetch or decode; see `assemble`.
 
