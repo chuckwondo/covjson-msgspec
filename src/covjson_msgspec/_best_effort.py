@@ -43,11 +43,11 @@ from covjson_msgspec._fetch import ReferencedDocumentError
 class FailureKind(StrEnum):
     """How recoverable a fetch failure is, so a strategy can react to it.
 
-    A *decode* failure (the fetched bytes are not valid CoverageJSON) is
-    ``UNRECOVERABLE``: retrying the same URL will not help. Any other failure a
-    caller's fetcher raises (a network error, a missing key) is treated as
-    ``TRANSIENT``: it might succeed on a retry, and a strategy may reasonably
-    tolerate it.
+    A *document* failure (the fetched bytes are not valid CoverageJSON, or are not
+    the document the fetching site required) is ``UNRECOVERABLE``: retrying the
+    same URL will not help. Any other failure a caller's fetcher raises (a network
+    error, a missing key) is treated as ``TRANSIENT``: it might succeed on a retry,
+    and a strategy may reasonably tolerate it.
 
     Examples
     --------
@@ -419,11 +419,12 @@ async def collect_async(
 def _classify(exc: Exception) -> FailureKind:
     """Classify a caught exception as an unrecoverable or transient failure.
 
-    A `ReferencedDocumentError` means the fetched bytes did not decode, which
-    retrying cannot fix, so it is `FailureKind.UNRECOVERABLE`. Every other
-    exception (a fetcher's own network or lookup error) is `FailureKind.TRANSIENT`.
-    Matching the precise decode type matters because a fetcher may itself raise a
-    bare `ValueError`, which must not be mistaken for a decode failure.
+    A `ReferencedDocumentError` means the fetched document is not the one the site
+    required, which retrying cannot fix, so it is `FailureKind.UNRECOVERABLE`.
+    Every other exception (a fetcher's own network or lookup error) is
+    `FailureKind.TRANSIENT`. Matching the precise document type matters because a
+    fetcher may itself raise a bare `ValueError`, which must not be mistaken for a
+    failure of the document.
 
     Parameters
     ----------
@@ -433,7 +434,7 @@ def _classify(exc: Exception) -> FailureKind:
     Returns
     -------
     FailureKind
-        `FailureKind.UNRECOVERABLE` for a decode failure, else
+        `FailureKind.UNRECOVERABLE` for a failure of the document, else
         `FailureKind.TRANSIENT`.
 
     Examples

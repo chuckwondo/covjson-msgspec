@@ -237,7 +237,7 @@ def tiled_ndarray_html(array: TiledNdArray) -> str:
     >>> "TiledNdArray" in tiled_ndarray_html(tiled)
     True
     """
-    from covjson_msgspec.range import tile_count
+    from covjson_msgspec.range import is_countable_tile_shape, tile_count
 
     summary = [
         ("Data type", array.data_type),
@@ -246,10 +246,18 @@ def tiled_ndarray_html(array: TiledNdArray) -> str:
         ("Tile sets", str(len(array.tile_sets))),
     ]
 
+    # `tile_count` divides each `shape` element by the corresponding `tileShape`
+    # element, so a non-positive entry has no count to render. Such a tile shape
+    # still decodes, because positivity is the
+    # `tiled-ndarray.tile-shape-not-positive` finding rather than a construction
+    # invariant, and a repr is exactly when a reader is trying to see the
+    # malformed array, so it names the gap rather than raising at it.
     rows = [
         [
             _shape_text(tile_set.tile_shape),
-            str(tile_count(array.shape, tile_set.tile_shape)),
+            str(tile_count(array.shape, tile_set.tile_shape))
+            if is_countable_tile_shape(tile_set.tile_shape)
+            else "undefined",
             tile_set.url_template,
         ]
         for tile_set in array.tile_sets

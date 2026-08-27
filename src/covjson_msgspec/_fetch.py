@@ -42,15 +42,16 @@ _T = TypeVar("_T")
 
 
 class ReferencedDocumentError(ValueError):
-    """A document fetched from a URL did not decode to valid CoverageJSON.
+    """A document fetched from a URL is not the CoverageJSON that was expected.
 
-    Raised while resolving a URL reference or assembling a tiled array when the
+    Raised while resolving a URL reference or assembling a tiled array: either the
     bytes returned for a referenced document are not valid CoverageJSON of the
-    expected type. It subclasses `ValueError` (so ``except ValueError`` keeps
-    working), while the dedicated type distinguishes a *decode* failure (the
-    document is malformed, so retrying will not help) from a *fetch* failure a
-    caller's own fetcher may raise (which may be transient, and may itself be a
-    bare `ValueError`).
+    expected type, or they decoded but do not meet what the referring document
+    requires of them (a tile that does not match its slot). It subclasses
+    `ValueError` (so ``except ValueError`` keeps working), while the dedicated type
+    distinguishes a failure in the *document* (it is the wrong thing, so retrying
+    the same URL will not help) from a *fetch* failure a caller's own fetcher may
+    raise (which may be transient, and may itself be a bare `ValueError`).
     """
 
 

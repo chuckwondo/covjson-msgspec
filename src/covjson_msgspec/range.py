@@ -2,8 +2,9 @@
 
 A range is either an `NdArray` (inline values, optionally with a ``shape`` and
 ``axis_names``) or a `TiledNdArray` (the values are split across external tiles
-referenced by URL). Given a user-supplied fetcher, `TiledNdArray.assemble`
-retrieves those tiles and stitches them back into a single inline `NdArray`.
+referenced by URL). Given a user-supplied fetcher,
+[`assemble`][covjson_msgspec.TiledNdArray.assemble] retrieves those tiles and stitches
+them back into a single inline `NdArray`.
 
 ``NdArray.values`` is a flat tuple of ``float | int | str | None`` (``None``
 marks missing data). The exact element type within that union depends on the
@@ -27,7 +28,14 @@ from __future__ import annotations
 import itertools
 import math
 import re
-from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+from collections.abc import (
+    Callable,
+    Collection,
+    Iterable,
+    Iterator,
+    Mapping,
+    Sequence,
+)
 from typing import TYPE_CHECKING, Any, Final, Literal, TypeVar, assert_never, cast
 
 import msgspec
@@ -46,6 +54,7 @@ from covjson_msgspec._duration import to_iso_durations
 from covjson_msgspec._fetch import (
     AsyncFetch,
     Fetch,
+    ReferencedDocumentError,
     fetch_and_decode,
     fetch_and_decode_async,
 )
@@ -596,8 +605,8 @@ class TileFailure(FetchFailure, frozen=True, kw_only=True):
     Extends `FetchFailure` (the URL, [`FailureKind`][covjson_msgspec.FailureKind], and
     message) with ``offsets``, the tile's start index along *each* axis of the full
     array (one entry per axis, ``0`` on axes the tile set does not subdivide). Collected
-    by `TiledNdArray.assemble` when a best-effort strategy tolerates the failure;
-    see `AssembleReport`.
+    by [`assemble`][covjson_msgspec.TiledNdArray.assemble] when a best-effort strategy
+    tolerates the failure; see `AssembleReport`.
 
     Examples
     --------
@@ -623,7 +632,7 @@ class TileFailure(FetchFailure, frozen=True, kw_only=True):
 class AssembleReport(msgspec.Struct, frozen=True):
     """A tiled assembly's array plus any tiles a best-effort strategy tolerated.
 
-    Returned by `TiledNdArray.assemble` and
+    Returned by [`assemble`][covjson_msgspec.TiledNdArray.assemble] and
     [`assemble_async`][covjson_msgspec.TiledNdArray.assemble_async].  ``array`` holds
     every tile that loaded, with ``None`` at positions whose tile failed under a
     collecting strategy (a still-valid `NdArray`); ``failures`` reports those failed
@@ -780,13 +789,29 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         ------
         IndexError
             If ``tileset`` is out of range (``-len(tile_sets)`` through
-            ``len(tile_sets) - 1``).
+            ``len(tile_sets) - 1``). Only that argument raises one: a tile
+            document that does not match its slot is reported, never placed.
+        ValueError
+            If the tiling cannot be laid out at all: ``axisNames`` and ``shape``
+            differ in length (``tiled-ndarray.shape-rank``), a ``tileShape`` entry
+            is not positive (``tiled-ndarray.tile-shape-not-positive``), the
+            ``urlTemplate`` names a variable that is not a subdivided axis, leaving
+            it nothing to expand (``tiled-ndarray.url-template-unknown-variable``),
+            or it does not expand to a distinct URL per tile, so tiles would
+            share a document. Each is raised before any fetch, so no ``strategy``
+            applies. The first three are
+            [`validate`][covjson_msgspec.validate] findings, so a clean report
+            rules them out ahead of time; the fourth is not, because a duplicated
+            ``axisNames`` entry also produces it and no finding reports that.
         FetchError
             When the ``strategy`` halts on a failure (the default
             [`fail_fast`][covjson_msgspec.fail_fast] halts on the first), chained from
-            the underlying fetch or
-            [`ReferencedDocumentError`][covjson_msgspec.ReferencedDocumentError] decode
-            exception.
+            the underlying fetch exception, or from the
+            [`ReferencedDocumentError`][covjson_msgspec.ReferencedDocumentError] for a
+            tile document that failed to decode, or that decoded but does not match
+            its slot (spec 6.3: a tile's ``dataType`` and ``axisNames`` are those of
+            the array, and its ``shape`` is the tile set's ``tileShape``, with
+            ``null`` standing for the whole axis and the last tile truncated).
 
         Examples
         --------
@@ -820,19 +845,20 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         >>> [failure.url for failure in partial.failures]
         ['1.covjson']
         """
-        # Three phases: (1) lay out each tile's URL and offset, (2) fetch and
-        # decode every tile through the strategy, (3) place the tiles into the
+        # Three phases: (1) lay out each tile's URL and offset, (2) fetch, decode,
+        # and check every tile through the strategy, (3) place the tiles into the
         # full array. The async variant reuses phases 1 and 3.
-        layout = _tile_layout(
-            self.shape, self.axis_names, self._select_tile_set(tileset)
-        )
+        tile_set = self._select_tile_set(tileset)
+        layout = _tile_layout(self.shape, self.axis_names, tile_set)
 
         def fetch_one(
             item: tuple[str, Sequence[int]],
         ) -> tuple[Sequence[int], NdArray]:
             url, offsets = item
+            tile = fetch_and_decode(fetch, url, _TILE_DECODER)
+            _check_tile(self, tile_set, url, offsets, tile)
 
-            return offsets, fetch_and_decode(fetch, url, _TILE_DECODER)
+            return offsets, tile
 
         payloads, failures = collect(layout, fetch_one, _tile_failure, strategy)
         array = _assemble_tiles(self.data_type, self.axis_names, self.shape, payloads)
@@ -878,14 +904,12 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         Raises
         ------
         IndexError
-            If ``tileset`` is out of range (``-len(tile_sets)`` through
-            ``len(tile_sets) - 1``).
+            As for `assemble`: ``tileset`` is out of range.
+        ValueError
+            As for `assemble`: the tiling cannot be laid out, raised before any
+            fetch, so no ``strategy`` applies.
         FetchError
-            When the ``strategy`` halts on a failure (the default
-            [`fail_fast`][covjson_msgspec.fail_fast] halts on the first), chained from
-            the underlying fetch or
-            [`ReferencedDocumentError`][covjson_msgspec.ReferencedDocumentError] decode
-            exception.
+            As for `assemble`: the ``strategy`` halted on a failure.
 
         Examples
         --------
@@ -922,16 +946,17 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         >>> [failure.url for failure in partial.failures]
         ['1.covjson']
         """
-        layout = _tile_layout(
-            self.shape, self.axis_names, self._select_tile_set(tileset)
-        )
+        tile_set = self._select_tile_set(tileset)
+        layout = _tile_layout(self.shape, self.axis_names, tile_set)
 
         async def fetch_one(
             item: tuple[str, Sequence[int]],
         ) -> tuple[Sequence[int], NdArray]:
             url, offsets = item
+            tile = await fetch_and_decode_async(fetch, url, _TILE_DECODER)
+            _check_tile(self, tile_set, url, offsets, tile)
 
-            return offsets, await fetch_and_decode_async(fetch, url, _TILE_DECODER)
+            return offsets, tile
 
         payloads, failures = await collect_async(
             layout, fetch_one, _tile_failure, strategy
@@ -965,6 +990,9 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         IndexError
             If ``tileset`` is out of range (``-len(tile_sets)`` through
             ``len(tile_sets) - 1``).
+        ValueError
+            If ``tileset`` is ``None`` and any tile set has a non-positive
+            ``tileShape`` entry, leaving it no tile count to be compared by.
 
         Examples
         --------
@@ -989,6 +1017,13 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         IndexError: tileset index -3 is out of range; this TiledNdArray has 2 tileSet(s)
         """
         if tileset is None:
+            # Choosing by fewest tiles counts every tile set, so each needs a
+            # defined count. An explicit index counts nothing, so it leaves a
+            # sibling tile set's defect alone and only the chosen one is checked,
+            # by `_tile_layout`.
+            for candidate in self.tile_sets:
+                _check_tile_shape(candidate.tile_shape)
+
             return min(
                 self.tile_sets,
                 key=lambda candidate: tile_count(self.shape, candidate.tile_shape),
@@ -1029,8 +1064,8 @@ def tile_count(shape: Sequence[int], tile_shape: Sequence[int | None]) -> int:
     The product over the subdivided axes of how many tiles each is divided into
     (integer ``ceil(size / tile_size)``); an axis with a ``None`` tile size is
     whole and contributes a single tile. This is the number of fetches
-    `TiledNdArray.assemble` performs for a tile set, so `TiledNdArray` selects
-    the tile set with the fewest by default.
+    [`assemble`][covjson_msgspec.TiledNdArray.assemble] performs for a tile set, so
+    `TiledNdArray` selects the tile set with the fewest by default.
 
     Parameters
     ----------
@@ -1060,6 +1095,41 @@ def tile_count(shape: Sequence[int], tile_shape: Sequence[int | None]) -> int:
         -(-size // tile) if tile is not None else 1
         for size, tile in zip(shape, tile_shape, strict=True)
     )
+
+
+def is_countable_tile_shape(tile_shape: Sequence[int | None]) -> bool:
+    """Whether a tile shape defines a tile count at all.
+
+    ``None`` means the axis is whole (one tile); any other entry is a divisor, so
+    zero or less defines no count. `tile_count` divides by these entries and
+    `_tile_layout` enumerates from them, and both are reached from a decoded
+    `TiledNdArray`, where positivity is the
+    [`validate`][covjson_msgspec.validate] finding
+    ``tiled-ndarray.tile-shape-not-positive`` rather than a construction
+    invariant. Shared so the rule has one home:
+    [`assemble`][covjson_msgspec.TiledNdArray.assemble] rejects an uncountable tiling,
+    while ``_repr_html_`` renders it as undefined.
+
+    Parameters
+    ----------
+    tile_shape
+        A tile set's ``tile_shape``.
+
+    Returns
+    -------
+    bool
+        ``True`` when every entry is ``None`` or positive.
+
+    Examples
+    --------
+    >>> is_countable_tile_shape((1, None))
+    True
+    >>> is_countable_tile_shape((0,))
+    False
+    >>> is_countable_tile_shape((-1,))
+    False
+    """
+    return all(size is None or size > 0 for size in tile_shape)
 
 
 def template_variables(template: str) -> Sequence[str]:
@@ -1199,19 +1269,70 @@ def _expand_url_template(template: str, variables: Mapping[str, int]) -> str:
     >>> _expand_url_template("tiles/{t}.covjson", {})
     Traceback (most recent call last):
         ...
-    ValueError: url template 'tiles/{t}.covjson' references unknown variable 't'
+    ValueError: url template 'tiles/{t}.covjson' references unknown variable
+    't'; the tiling cannot be laid out
     """
 
     def _substitute(match: re.Match[str]) -> str:
         name = match.group(1)
 
         if name not in variables:
-            msg = f"url template {template!r} references unknown variable {name!r}"
+            msg = (
+                f"url template {template!r} references unknown variable "
+                f"{name!r}; the tiling cannot be laid out"
+            )
             raise ValueError(msg)
 
         return str(variables[name])
 
     return _TEMPLATE_VARIABLE_RE.sub(_substitute, template)
+
+
+def _check_tile_shape(tile_shape: Sequence[int | None]) -> None:
+    """Raise unless every tile size is ``None`` (whole axis) or positive.
+
+    A tile size of zero or less gives an axis no defined tile count: `tile_count`
+    divides by it, and `_tile_layout` would enumerate no tiles at all. Spec 6.3
+    says only "integer" for a non-null tile size, so positivity is entailed rather
+    than stated (`TiledNdArrayTileShapeNotPositive` carries the derivation), and
+    [`validate`][covjson_msgspec.validate] reports the violation as
+    ``tiled-ndarray.tile-shape-not-positive``.
+
+    [`assemble`][covjson_msgspec.TiledNdArray.assemble] does not require a clean report
+    first, so this guards the two places assembly depends on the count.
+    `tile_count` is deliberately left unguarded: it also feeds ``_repr_html_``,
+    which must render a malformed array rather than raise at it, so that caller
+    tests the tile shape itself and names the count undefined.
+
+    Parameters
+    ----------
+    tile_shape
+        A tile set's ``tile_shape``.
+
+    Raises
+    ------
+    ValueError
+        If any entry is neither ``None`` nor a positive integer.
+
+    Examples
+    --------
+    A null entry (the axis is whole) and a positive one both pass:
+
+    >>> _check_tile_shape((1, None))
+
+    >>> _check_tile_shape((0,))
+    Traceback (most recent call last):
+        ...
+    ValueError: tileShape (0,) has a non-positive entry; the tiling cannot be
+    laid out
+    """
+    if not is_countable_tile_shape(tile_shape):
+        msg = (
+            f"tileShape {tuple(tile_shape)} has a non-positive entry; "
+            f"the tiling cannot be laid out"
+        )
+
+        raise ValueError(msg)
 
 
 def _tile_layout(
@@ -1228,6 +1349,25 @@ def _tile_layout(
     ordinals, and its offsets are the per-axis start indices
     (``ordinal * tile_size``).
 
+    Three properties this needs are not construction invariants, so a decoded
+    `TiledNdArray` may lack any of them and is rejected here: ``axisNames``
+    rank-matching ``shape`` (``tiled-ndarray.shape-rank``), without which an axis
+    cannot be named for its tile ordinal; a positive tile size
+    (``tiled-ndarray.tile-shape-not-positive``), without which the tile count is
+    undefined; and a template that expands to a distinct URL per tile, without
+    which tiles share a document.
+
+    Only the first two have a [`validate`][covjson_msgspec.validate] finding
+    covering them exactly. The third is checked against the layout rather than the
+    template, because two defects produce it: a subdivided axis whose ordinal the
+    template never interpolates (which *is*
+    ``tiled-ndarray.url-template-missing-variable``), and a duplicated entry in
+    ``axisNames``, which no finding reports and whose ordinals collapse into one
+    substitution. Rejecting up front keeps
+    [`assemble`][covjson_msgspec.TiledNdArray.assemble] from raising a bare
+    `ZeroDivisionError`, from silently laying out no tiles at all, and from
+    filling distinct cells with one repeated document.
+
     Parameters
     ----------
     shape
@@ -1243,12 +1383,61 @@ def _tile_layout(
         One ``(url, offsets)`` pair per tile, where ``offsets`` is the tile's
         start index along each axis.
 
+    Raises
+    ------
+    ValueError
+        If ``axis_names`` and ``shape`` differ in length, a ``tile_shape`` entry
+        is neither ``None`` nor positive, the ``url_template`` names a variable
+        that is not a subdivided axis (raised from `_expand_url_template` while
+        expanding), or it does not expand to a distinct URL per tile.
+
     Examples
     --------
     >>> tile_set = TileSet(tile_shape=(1,), url_template="{x}.covjson")
     >>> _tile_layout((2,), ("x",), tile_set)
     (('0.covjson', (0,)), ('1.covjson', (1,)))
+
+    A tiling that cannot be laid out is rejected rather than half-enumerated:
+
+    >>> _tile_layout((2,), ("x", "y"), tile_set)
+    Traceback (most recent call last):
+        ...
+    ValueError: axisNames has 2 name(s) but shape has 1; the tiling cannot be
+    laid out
+    >>> _tile_layout((2,), ("x",), TileSet(tile_shape=(0,), url_template="u"))
+    Traceback (most recent call last):
+        ...
+    ValueError: tileShape (0,) has a non-positive entry; the tiling cannot be
+    laid out
+
+    A template that does not vary per tile would fill distinct cells with one
+    repeated document:
+
+    >>> _tile_layout((2,), ("x",), TileSet(tile_shape=(1,), url_template="t.cov"))
+    Traceback (most recent call last):
+        ...
+    ValueError: urlTemplate 't.cov' expands 2 tiles to 1 distinct URL(s), so
+    tiles would share a document; the tiling cannot be laid out
+
+    A duplicated axis name does the same, though its ordinals *are* interpolated:
+
+    >>> tiles = TileSet(tile_shape=(1, 1), url_template="{x}.cov")
+    >>> _tile_layout((2, 2), ("x", "x"), tiles)
+    Traceback (most recent call last):
+        ...
+    ValueError: urlTemplate '{x}.cov' expands 4 tiles to 2 distinct URL(s), so
+    tiles would share a document; the tiling cannot be laid out
     """
+    if len(axis_names) != len(shape):
+        msg = (
+            f"axisNames has {len(axis_names)} name(s) but shape has {len(shape)}; "
+            f"the tiling cannot be laid out"
+        )
+
+        raise ValueError(msg)
+
+    _check_tile_shape(tile_set.tile_shape)
+
     per_axis: list[list[tuple[int, int | None]]] = []
 
     for size, tile_size in zip(shape, tile_set.tile_shape, strict=True):
@@ -1269,7 +1458,219 @@ def _tile_layout(
         }
         layout.append((_expand_url_template(tile_set.url_template, variables), offsets))
 
+    # The property that matters is that each slot gets its own document, which is
+    # what a per-tile URL buys. Checking the URLs rather than the template's
+    # variables catches every way the template can fail to distinguish a slot: an
+    # axis whose ordinal it never interpolates, and a duplicated axis name, whose
+    # ordinals collapse into one substitution above.
+    if len(distinct := {url for url, _ in layout}) != len(layout):
+        msg = (
+            f"urlTemplate {tile_set.url_template!r} expands {len(layout)} tiles to "
+            f"{len(distinct)} distinct URL(s), so tiles would share a document; "
+            f"the tiling cannot be laid out"
+        )
+
+        raise ValueError(msg)
+
     return tuple(layout)
+
+
+def _expected_tile_shape(
+    shape: Sequence[int],
+    tile_shape: Sequence[int | None],
+    offsets: Sequence[int],
+) -> tuple[int, ...]:
+    """Return the shape a tile must have to fill the slot at ``offsets``.
+
+    Spec 6.3 states that each tile document's ``shape`` value is "an integer
+    equal, or lower if an edge tile, to the corresponding element in
+    ``"tileShape"`` while replacing null with the corresponding element of
+    ``"shape"``". The edge-tile value is entailed rather than stated: the section
+    licenses "lower" without naming it, and the cells left on the axis are the
+    only value that lets the tiling cover the array. So each element is the tile
+    size (the whole axis where it is null), capped by the cells remaining from
+    ``offsets`` on.
+
+    Capping also keeps a ``tileShape`` element larger than its ``shape`` element
+    inside the array. That shape is a
+    [`validate`][covjson_msgspec.validate] finding
+    (``tiled-ndarray.tile-shape-too-large``), and
+    [`assemble`][covjson_msgspec.TiledNdArray.assemble] does not require a clean report
+    before assembling.
+
+    Parameters
+    ----------
+    shape
+        The full array shape.
+    tile_shape
+        A tile set's ``tile_shape``, rank-matched to ``shape``.
+    offsets
+        The tile's start index along each axis, as `_tile_layout` computes it.
+
+    Returns
+    -------
+    tuple of int
+        The expected tile shape, one element per axis.
+
+    Examples
+    --------
+    A whole tile, then the short edge tile left over on the same axis:
+
+    >>> _expected_tile_shape((5,), (2,), (0,))
+    (2,)
+    >>> _expected_tile_shape((5,), (2,), (4,))
+    (1,)
+
+    A ``None`` tile size spans its axis, so the slot is the whole extent:
+
+    >>> _expected_tile_shape((2, 5), (1, None), (1, 0))
+    (1, 5)
+    """
+    return tuple(
+        min(size if tile_size is None else tile_size, size - offset)
+        for size, tile_size, offset in zip(shape, tile_shape, offsets, strict=True)
+    )
+
+
+def _tile_mismatches(
+    arr: TiledNdArray, expected: tuple[int, ...], tile: NdArray
+) -> Iterator[str]:
+    """Yield how a fetched tile departs from what its `TiledNdArray` requires.
+
+    Spec 6.3 states one MUST over every tile document: each URI "MUST resolve to
+    an NdArray CoverageJSON document where the members ``"dataType"`` and
+    ``"axisNames"`` are identical to the ones of the TiledNdArray object, and
+    where each value of ``"shape"``" matches its slot (see `_expected_tile_shape`).
+    Each clause it violates yields one phrase, describing what was expected
+    against what arrived.
+
+    The value count is checked too, which spec 6.3 does not state: `NdArray`
+    defers ``shape`` / ``values`` consistency to
+    [`validate`][covjson_msgspec.validate], so a fetched tile can carry an
+    inconsistent pair, and `_assemble_tiles` walks the two together.
+
+    That count is checked against the *slot*, so it is skipped once the shape is
+    wrong: a tile that is merely the wrong size, its own ``shape`` and ``values``
+    agreeing, would otherwise also be reported for a count it never claimed.
+
+    Parameters
+    ----------
+    arr
+        The tiled array the tile was fetched for.
+    expected
+        The slot's expected shape, from `_expected_tile_shape`.
+    tile
+        The decoded tile document.
+
+    Yields
+    ------
+    str
+        One phrase per violated clause, in check order; nothing at all for a
+        conformant tile.
+
+    Examples
+    --------
+    >>> arr = TiledNdArray(
+    ...     data_type="float",
+    ...     axis_names=("x",),
+    ...     shape=(2,),
+    ...     tile_sets=(TileSet(tile_shape=(1,), url_template="{x}.covjson"),),
+    ... )
+    >>> tile = NdArray(
+    ...     data_type="float", values=(1.0, 2.0), shape=(2,), axis_names=("x",)
+    ... )
+    >>> list(_tile_mismatches(arr, (1,), tile))
+    ['expected shape (1,), got (2,)']
+
+    A tile that matches its slot yields nothing:
+
+    >>> ok = NdArray(
+    ...     data_type="float", values=(1.0,), shape=(1,), axis_names=("x",)
+    ... )
+    >>> list(_tile_mismatches(arr, (1,), ok))
+    []
+    """
+    if tile.data_type != arr.data_type:
+        yield f"expected dataType {arr.data_type!r}, got {tile.data_type!r}"
+
+    if tile.axis_names != arr.axis_names:
+        yield f"expected axisNames {arr.axis_names}, got {tile.axis_names}"
+
+    if tile.shape != expected:
+        yield f"expected shape {expected}, got {tile.shape}"
+
+    elif len(tile.values) != (count := math.prod(expected)):
+        yield (
+            f"expected {count} value(s) for shape {expected}, got {len(tile.values)}"
+        )
+
+
+def _check_tile(
+    arr: TiledNdArray,
+    tile_set: TileSet,
+    url: str,
+    offsets: Sequence[int],
+    tile: NdArray,
+) -> None:
+    """Raise unless a fetched tile matches the slot it was fetched for.
+
+    The effectful edge over `_tile_mismatches`: it resolves the slot's expected
+    shape, and turns any mismatch into the `ReferencedDocumentError` that
+    [`assemble`][covjson_msgspec.TiledNdArray.assemble] classifies as
+    [`FailureKind.UNRECOVERABLE`][covjson_msgspec.FailureKind] and reports as a
+    `TileFailure`. Refetching the same URL cannot fix a nonconformant document, so
+    that classification is the accurate one.
+
+    Called per tile after decoding and before placement, so `_assemble_tiles`
+    only ever sees tiles that match their slots: two tiles of one tile set can
+    then never write the same cell, since `_tile_layout` starts them on a
+    partition of each axis.
+
+    Parameters
+    ----------
+    arr
+        The tiled array the tile was fetched for.
+    tile_set
+        The tile set being assembled, supplying the tile size per axis.
+    url
+        The URL the tile came from, for the message.
+    offsets
+        The tile's start index along each axis.
+    tile
+        The decoded tile document.
+
+    Raises
+    ------
+    ReferencedDocumentError
+        If the tile's ``dataType``, ``axisNames``, ``shape``, or value count
+        departs from what ``arr`` requires of it.
+
+    Examples
+    --------
+    >>> arr = TiledNdArray(
+    ...     data_type="float",
+    ...     axis_names=("x",),
+    ...     shape=(2,),
+    ...     tile_sets=(TileSet(tile_shape=(1,), url_template="{x}.covjson"),),
+    ... )
+    >>> tile = NdArray(
+    ...     data_type="float", values=(1.0, 2.0), shape=(2,), axis_names=("x",)
+    ... )
+    >>> _check_tile(arr, arr.tile_sets[0], "0.covjson", (0,), tile)
+    Traceback (most recent call last):
+        ...
+    covjson_msgspec._fetch.ReferencedDocumentError: tile fetched from
+    '0.covjson' does not match its slot: expected shape (1,), got (2,)
+    """
+    expected = _expected_tile_shape(arr.shape, tile_set.tile_shape, offsets)
+
+    if mismatches := tuple(_tile_mismatches(arr, expected, tile)):
+        msg = (
+            f"tile fetched from {url!r} does not match its slot: "
+            f"{'; '.join(mismatches)}"
+        )
+
+        raise ReferencedDocumentError(msg)
 
 
 def _assemble_tiles(
@@ -1285,6 +1686,11 @@ def _assemble_tiles(
     the same row-major order as its flat values). Positions not covered by any
     tile stay ``None`` (missing).
 
+    Every tile has passed `_check_tile`, so placement cannot fail: each matches
+    its slot exactly, which keeps the strict ``zip`` calls exact and every index
+    in range, and makes two tiles of one tile set unable to write the same cell,
+    since `_tile_layout` starts them on a partition of each axis.
+
     Parameters
     ----------
     data_type
@@ -1295,7 +1701,7 @@ def _assemble_tiles(
         The assembled array's full shape.
     tiles
         ``(offsets, tile)`` pairs: each tile's start index per axis and its
-        decoded `NdArray`.
+        decoded `NdArray`, each already checked to match its slot.
 
     Returns
     -------

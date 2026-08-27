@@ -20,3 +20,25 @@ error-strategy machinery: pass a `FailureStrategy` to decide how to react to a
 failed tile fetch, and read any `TileFailure`s off the `AssembleReport`. Bound
 concurrency in the fetcher, exactly as for references. See the
 [ranges reference](../reference/range.md).
+
+A tile is checked against the slot it was fetched for before it is placed: spec
+6.3 requires each tile document's `dataType` and `axisNames` to be the array's,
+and its `shape` to match the tile set's `tileShape`, where a `null` entry stands
+for the whole axis. The last tile along an axis is truncated to the cells left.
+A tile that does not match its slot is handled like a failed fetch, and never
+placed: the default `fail_fast` raises, and a collecting strategy reports it as
+a `TileFailure`. So a tile larger than its slot cannot overwrite the cells
+belonging to its neighbors, and one smaller cannot leave a gap that would be
+indistinguishable from missing data.
+
+A tiling that cannot be laid out at all is different: it raises `ValueError`
+before any tile is fetched, so no `FailureStrategy` sees it. The causes are
+`axisNames` not matching `shape`, a non-positive `tileShape` entry, and a
+`urlTemplate` that does not resolve a distinct URL per tile. Most are
+[`validate`](validation.md) findings, so a clean report rules those out first;
+a `urlTemplate` defeated by a repeated `axisNames` entry is not reported by
+`validate`, so only assembly catches it.
+
+Two other failures also arrive before any strategy applies: an out-of-range
+`tileset` raises `IndexError`, and choosing the default tile set requires every
+tile set to have a countable `tileShape`, not only the one selected.

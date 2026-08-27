@@ -177,6 +177,28 @@ def test_tiled_ndarray_repr_lists_tile_sets() -> None:
     assert ">4<" in html
 
 
+@pytest.mark.parametrize("tile_size", [0, -1])
+def test_tiled_ndarray_repr_survives_a_tiling_with_no_tile_count(
+    tile_size: int,
+) -> None:
+    tiled = TiledNdArray(
+        data_type="float",
+        axis_names=("x",),
+        shape=(2,),
+        tile_sets=(TileSet(tile_shape=(tile_size,), url_template="{x}.covjson"),),
+    )
+
+    # A non-positive tile size decodes: positivity is the validate() finding
+    # tiled-ndarray.tile-shape-not-positive, not a construction invariant. It
+    # divides into no tile count, though, and a repr is when a reader is trying
+    # to see the malformed array, so it must report the gap rather than raise a
+    # ZeroDivisionError at them.
+    html = _render(tiled)
+
+    assert "TiledNdArray" in html
+    assert ">undefined<" in html
+
+
 def test_parameter_repr_continuous_shows_unit() -> None:
     param = Parameter.continuous(
         ObservedProperty(label=i18n("Air temperature")),
