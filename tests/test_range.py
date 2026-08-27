@@ -402,6 +402,224 @@ def test_assemble_collect_all_classifies_fetch_vs_decode() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("values", "shape", "data_type", "axis_names", "detail"),
+    [
+        # Wider than its slot: placed, this would overwrite its neighbor's cell.
+        ((10.0, 99.0), (2,), "float", ("x",), "expected shape (1,), got (2,)"),
+        # Wider still: placed, this would run off the end of the array.
+        ((10.0, 20.0, 30.0), (3,), "float", ("x",), "expected shape (1,), got (3,)"),
+        # The right shape, but not the values to fill it.
+        ((10.0, 20.0), (1,), "float", ("x",), "expected 1 value(s) for shape (1,)"),
+        # The wrong rank entirely.
+        ((10.0,), (1, 1), "float", ("x", "y"), "expected axisNames ('x',)"),
+        # Spec 6.3 requires each tile's dataType to be the array's ...
+        ((10,), (1,), "integer", ("x",), "expected dataType 'float'"),
+        # ... and likewise its axisNames.
+        ((10.0,), (1,), "float", ("y",), "expected axisNames ('x',), got ('y',)"),
+    ],
+)
+def test_assemble_rejects_tile_that_does_not_match_its_slot(
+    values: tuple[float | int, ...],
+    shape: tuple[int, ...],
+    data_type: Literal["float", "integer", "string"],
+    axis_names: tuple[str, ...],
+    detail: str,
+) -> None:
+    tiled = _one_d_tiled(2)
+    store = {
+        "0.covjson": _tile_bytes(
+            values, shape, data_type=data_type, axis_names=axis_names
+        ),
+        "1.covjson": _scalar_tile(20.0),
+    }
+
+    # A tile that does not match its slot is unrecoverable, exactly as an
+    # undecodable one is: fail_fast raises a FetchError naming the tile's URL,
+    # rather than placing the tile and corrupting the array around it.
+    with pytest.raises(FetchError) as excinfo:
+        tiled.assemble(store_fetcher(store))
+
+    assert isinstance(excinfo.value.__cause__, ReferencedDocumentError)
+    assert excinfo.value.failures[0].kind is FailureKind.UNRECOVERABLE
+    assert excinfo.value.failures[0].url == "0.covjson"
+    assert detail in excinfo.value.failures[0].message
+
+
+def test_assemble_rejects_tile_shorter_than_its_slot() -> None:
+    tiled = TiledNdArray(
+        data_type="float",
+        axis_names=("x",),
+        shape=(5,),
+        tile_sets=(TileSet(tile_shape=(2,), url_template="{x}.covjson"),),
+    )
+    # fail_fast halts on the first tile, so only "0.covjson" is ever fetched.
+    # Edge truncation end to end is test_assemble_handles_remainder_tiles.
+    store = {"0.covjson": _tile_bytes((0.0,), (1,))}  # this slot holds two cells
+
+    # Spec 6.3 lets a tile be short only at an edge. Tolerating a short tile
+    # elsewhere would leave a hole indistinguishable from one whose tile never
+    # loaded, so it is reported like any other nonconformant tile.
+    with pytest.raises(FetchError) as excinfo:
+        tiled.assemble(store_fetcher(store))
+
+    assert excinfo.value.failures[0].url == "0.covjson"
+    assert "expected shape (2,), got (1,)" in excinfo.value.failures[0].message
+
+
+def test_assemble_collect_all_reports_tile_that_does_not_match_its_slot() -> None:
+    tiled = _one_d_tiled(2)
+    store = {
+        "0.covjson": _tile_bytes((10.0, 99.0), (2,)),  # would overwrite tile 1
+        "1.covjson": _scalar_tile(20.0),
+    }
+
+    result = tiled.assemble(store_fetcher(store), strategy=collect_all)
+
+    # The oversized tile is dropped rather than placed, so tile 1's value stands
+    # and the assembled array no longer depends on the order the tiles arrive in.
+    assert result.array.values == (None, 20.0)
+    assert [failure.url for failure in result.failures] == ["0.covjson"]
+    assert result.failures[0].kind is FailureKind.UNRECOVERABLE
+    assert result.failures[0].offsets == (0,)
+
+
+def test_assemble_reports_only_the_shape_for_a_wrong_sized_tile() -> None:
+    tiled = _one_d_tiled(2)
+    store = {
+        "0.covjson": _tile_bytes((10.0, 99.0), (2,)),  # two values, shape (2,)
+        "1.covjson": _scalar_tile(20.0),
+    }
+
+    result = tiled.assemble(store_fetcher(store), strategy=collect_all)
+
+    # This tile's own shape and values agree; it is simply sized for a slot two
+    # cells wide. The value count is measured against the slot, so checking it
+    # here as well would accuse the tile of a count it never claimed. Pinned with
+    # `endswith` so a second phrase cannot creep in behind the shape.
+    assert result.failures[0].message.endswith("expected shape (1,), got (2,)")
+
+
+def test_assemble_async_rejects_tile_that_does_not_match_its_slot() -> None:
+    tiled = _one_d_tiled(2)
+    store = {
+        "0.covjson": _tile_bytes((10.0, 99.0), (2,)),
+        "1.covjson": _scalar_tile(20.0),
+    }
+
+    with pytest.raises(FetchError) as excinfo:
+        asyncio.run(tiled.assemble_async(async_store_fetcher(store)))
+
+    assert isinstance(excinfo.value.__cause__, ReferencedDocumentError)
+    assert excinfo.value.failures[0].kind is FailureKind.UNRECOVERABLE
+    assert excinfo.value.failures[0].url == "0.covjson"
+
+
+@pytest.mark.parametrize(
+    ("axis_names", "tile_shape", "template", "detail"),
+    [
+        (("x", "y"), (1,), "{x}.covjson", "axisNames has 2 name(s) but shape has 1"),
+        (("x",), (0,), "{x}.covjson", "tileShape (0,) has a non-positive entry"),
+        (("x",), (-1,), "{x}.covjson", "tileShape (-1,) has a non-positive entry"),
+    ],
+)
+def test_assemble_rejects_a_tiling_it_cannot_lay_out(
+    axis_names: tuple[str, ...],
+    tile_shape: tuple[int | None, ...],
+    template: str,
+    detail: str,
+) -> None:
+    tiled = TiledNdArray(
+        data_type="float",
+        axis_names=axis_names,
+        shape=(2,),
+        tile_sets=(TileSet(tile_shape=tile_shape, url_template=template),),
+    )
+
+    # These decode (validate reports them as tiled-ndarray.shape-rank and
+    # tiled-ndarray.tile-shape-not-positive), but no tiling follows from either:
+    # one cannot name an axis for its ordinal, the other has no tile count. Both
+    # are caught before any fetch, so no strategy can turn them into failures.
+    # A negative tile size would otherwise assemble to a hole-filled array with
+    # nothing reported at all.
+    with pytest.raises(ValueError) as excinfo:
+        tiled.assemble(store_fetcher({}))
+
+    assert detail in str(excinfo.value)
+
+    with pytest.raises(ValueError) as excinfo:
+        asyncio.run(tiled.assemble_async(async_store_fetcher({})))
+
+    assert detail in str(excinfo.value)
+
+
+def test_assemble_rejects_an_uncountable_tile_set_chosen_explicitly() -> None:
+    tiled = TiledNdArray(
+        data_type="float",
+        axis_names=("x",),
+        shape=(2,),
+        tile_sets=(
+            TileSet(tile_shape=(1,), url_template="a{x}.covjson"),
+            TileSet(tile_shape=(0,), url_template="b{x}.covjson"),
+        ),
+    )
+
+    # An explicit index never counts a tile set, so `_select_tile_set` cannot
+    # reject this one; the guard that does is `_tile_layout`'s. Without a case
+    # that picks a bad tile set by index, deleting that guard leaves the suite
+    # green while assembly falls back to enumerating zero tiles.
+    with pytest.raises(ValueError, match="non-positive entry"):
+        tiled.assemble(store_fetcher({}), 1)
+
+
+@pytest.mark.parametrize(
+    ("axis_names", "url_template"),
+    [
+        # x is subdivided but its ordinal is never interpolated.
+        (("t", "x"), "{t}.covjson"),
+        # Both ordinals are interpolated, but into the same variable, so the
+        # substitution mapping collapses and half the URLs repeat.
+        (("x", "x"), "{x}.covjson"),
+    ],
+    ids=("no-variable-for-axis", "duplicate-axis-name"),
+)
+def test_assemble_rejects_a_template_that_repeats_a_tile(
+    axis_names: tuple[str, ...], url_template: str
+) -> None:
+    tiled = TiledNdArray(
+        data_type="float",
+        axis_names=axis_names,
+        shape=(2, 2),
+        tile_sets=(TileSet(tile_shape=(1, 1), url_template=url_template),),
+    )
+
+    # Four slots but only two URLs, and each fetched tile matches its slot's
+    # expected shape (1, 1), so `_check_tile` would pass all four and the array
+    # would silently read as two documents each standing in for two cells.
+    with pytest.raises(ValueError, match="distinct URL"):
+        tiled.assemble(store_fetcher({}))
+
+
+@pytest.mark.parametrize("index", range(len(_spec_tiled().tile_sets)))
+def test_assemble_fetches_a_distinct_document_per_slot(index: int) -> None:
+    tiled = _spec_tiled()
+    store = _tile_store(np.arange(100, dtype=float).reshape(2, 5, 10), tiled, index)
+    requested: list[str] = []
+
+    def fetch(url: str) -> bytes:
+        requested.append(url)
+
+        return store[url]
+
+    tiled.assemble(fetch, index)
+
+    # The property the layout guard exists for, asserted directly rather than
+    # through a template that happens to violate it: every slot resolves to its
+    # own document, so no URL is requested twice and every tile is used once.
+    assert len(set(requested)) == len(requested)
+    assert set(requested) == set(store)
+
+
 def test_assemble_is_lazy_and_stops_fetching_on_halt() -> None:
     tiled = _one_d_tiled(5)
     seen: list[str] = []
@@ -549,6 +767,23 @@ def _one_d_tiled(size: int) -> TiledNdArray:
 
 def _scalar_tile(value: float) -> bytes:
     """Encode a single-element float tile, as `_one_d_tiled` expects per position."""
-    tile = NdArray(data_type="float", values=(value,), shape=(1,), axis_names=("x",))
+    return _tile_bytes((value,), (1,))
+
+
+def _tile_bytes(
+    values: tuple[float | int, ...],
+    shape: tuple[int, ...],
+    *,
+    data_type: Literal["float", "integer", "string"] = "float",
+    axis_names: tuple[str, ...] = ("x",),
+) -> bytes:
+    """Encode an arbitrary tile document, including a deliberately malformed one.
+
+    The general form of `_scalar_tile`: every member a tile set constrains is a
+    parameter, so a test can hand `assemble` a tile that does not match its slot.
+    """
+    tile = NdArray(
+        data_type=data_type, values=values, shape=shape, axis_names=axis_names
+    )
 
     return encode(tile)
