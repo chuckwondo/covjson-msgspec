@@ -76,6 +76,7 @@ from covjson_msgspec.validation import (
     TiledNdArrayUrlTemplateUnknownVariable,
     require_monotonic,
 )
+from fetchers import store_fetcher
 
 # A minimal valid referencing array. Domains and coverages built for the
 # axis/range checks below carry it so they isolate the one issue under test
@@ -1018,6 +1019,136 @@ def test_tiled_ndarray_well_formed_is_clean() -> None:
     )
 
     assert validate(arr).issues == ()
+
+
+# `tiled-ndarray.tile-shape-too-large` is deliberately absent: `assemble` does not
+# refuse it, it caps the last tile to the cells the axis has left, so it is a
+# validate()-only rule with no assembly counterpart to agree with.
+@pytest.mark.parametrize(
+    ("axis_names", "shape", "tile_shape", "url_template", "code"),
+    [
+        (("x", "y"), (2,), (1,), "{x}.covjson", "tiled-ndarray.shape-rank"),
+        (("x",), (2,), (0,), "{x}.covjson", "tiled-ndarray.tile-shape-not-positive"),
+        (
+            ("x",),
+            (2,),
+            (1,),
+            "{z}.covjson",
+            "tiled-ndarray.url-template-unknown-variable",
+        ),
+        # A non-positive extent on a subdivided axis lays out no tiles, so only
+        # an up-front template check reaches these two. Before the rules were
+        # shared, `assemble` accepted both while `validate` flagged them (#221).
+        (
+            ("x",),
+            (0,),
+            (1,),
+            "{z}.covjson",
+            "tiled-ndarray.url-template-unknown-variable",
+        ),
+        (
+            ("x",),
+            (-1,),
+            (1,),
+            "{z}.covjson",
+            "tiled-ndarray.url-template-unknown-variable",
+        ),
+        # Not one of the shared rules: `assemble` refuses this through the
+        # distinct-URL check, which is deliberately its own. The two are
+        # incomparable, so this row holds only because the variable-less axis
+        # carries two tiles and they collide. When it carries one they do not --
+        # see test_validate_reports_a_single_tile_axis_assemble_accepts.
+        (
+            ("t", "x"),
+            (2, 2),
+            (1, None),
+            "tile.covjson",
+            "tiled-ndarray.url-template-missing-variable",
+        ),
+    ],
+    ids=(
+        "shape-rank",
+        "tile-shape-not-positive",
+        "url-template-unknown-variable",
+        "unknown-variable-zero-extent",
+        "unknown-variable-negative-extent",
+        "url-template-missing-variable",
+    ),
+)
+def test_validate_and_assemble_agree_on_a_malformed_tiling(
+    axis_names: tuple[str, ...],
+    shape: tuple[int, ...],
+    tile_shape: tuple[int | None, ...],
+    url_template: str,
+    code: str,
+) -> None:
+    # The invariant tying the two consumers of `_tiling`: a tiling
+    # `validate` reports under a shared rule is one `assemble` refuses to lay out.
+    arr = TiledNdArray(
+        data_type="float",
+        axis_names=axis_names,
+        shape=shape,
+        tile_sets=(TileSet(tile_shape=tile_shape, url_template=url_template),),
+    )
+
+    assert code in {issue.code for issue in validate(arr).issues}
+
+    # Every rule raises before any fetch, so the store is never read.
+    with pytest.raises(ValueError, match="the tiling cannot be laid out"):
+        arr.assemble(store_fetcher({}))
+
+
+def test_validate_reports_a_single_tile_axis_assemble_accepts() -> None:
+    # The direction the distinct-URL check cannot cover. ``x`` is subdivided, so
+    # spec 6.3 requires a template variable for it, but one cell at tile size 1
+    # is one tile, so its ordinal never varies and no two URLs collide. The two
+    # consumers answer different questions here and both answer correctly:
+    # `validate` judges conformance and reports the MUST, while `assemble` judges
+    # whether a tiling lays out, and this one lays out to the right array.
+    arr = TiledNdArray(
+        data_type="float",
+        axis_names=("t", "x"),
+        shape=(2, 1),
+        tile_sets=(TileSet(tile_shape=(1, 1), url_template="{t}.cov"),),
+    )
+
+    assert "tiled-ndarray.url-template-missing-variable" in {
+        issue.code for issue in validate(arr).issues
+    }
+
+    store = {
+        f"{ordinal}.cov": msgspec.json.encode(
+            NdArray(
+                data_type="float",
+                values=(value,),
+                shape=(1, 1),
+                axis_names=("t", "x"),
+            )
+        )
+        for ordinal, value in enumerate((10.0, 20.0))
+    }
+    report = arr.assemble(store_fetcher(store))
+
+    assert report.array.values == (10.0, 20.0)
+    assert report.failures == ()
+
+
+def test_validate_is_silent_on_a_duplicated_axis_name() -> None:
+    # The direction that deliberately does not hold. A repeated `axisNames` entry
+    # satisfies every finding (each ordinal *is* interpolated) while collapsing
+    # four slots onto two documents, which only `assemble`'s distinct-URL check
+    # catches. If `validate` ever grows a finding for it, this test is the notice.
+    arr = TiledNdArray(
+        data_type="float",
+        axis_names=("x", "x"),
+        shape=(2, 2),
+        tile_sets=(TileSet(tile_shape=(1, 1), url_template="{x}.covjson"),),
+    )
+
+    assert validate(arr).issues == ()
+
+    with pytest.raises(ValueError, match="distinct URL"):
+        arr.assemble(store_fetcher({}))
 
 
 def test_tiled_ndarray_range_inside_coverage_is_validated() -> None:

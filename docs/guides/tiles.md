@@ -33,11 +33,14 @@ indistinguishable from missing data.
 
 A tiling that cannot be laid out at all is different: it raises `ValueError`
 before any tile is fetched, so no `FailureStrategy` sees it. The causes are
-`axisNames` not matching `shape`, a non-positive `tileShape` entry, and a
-`urlTemplate` that does not resolve a distinct URL per tile. Most are
-[`validate`](validation.md) findings, so a clean report rules those out first;
-a `urlTemplate` defeated by a repeated `axisNames` entry is not reported by
-`validate`, so only assembly catches it.
+`axisNames` not matching `shape`, a non-positive `tileShape` entry, a
+`urlTemplate` naming a variable that is not a subdivided axis, and a
+`urlTemplate` that does not resolve a distinct URL per tile. The first three are
+[`validate`](validation.md) findings, so a clean report rules them out first.
+The fourth has no finding of its own, though its usual cause does: a subdivided
+axis the template carries no variable for is reported as
+`url-template-missing-variable`. Only a `urlTemplate` defeated by a repeated
+`axisNames` entry escapes `validate` entirely, so assembly alone catches that.
 
 Two other failures also arrive before any strategy applies: an out-of-range
 `tileset` raises `IndexError`, and choosing the default tile set requires every

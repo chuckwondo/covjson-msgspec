@@ -521,6 +521,14 @@ def test_assemble_async_rejects_tile_that_does_not_match_its_slot() -> None:
         (("x", "y"), (1,), "{x}.covjson", "axisNames has 2 name(s) but shape has 1"),
         (("x",), (0,), "{x}.covjson", "tileShape (0,) has a non-positive entry"),
         (("x",), (-1,), "{x}.covjson", "tileShape (-1,) has a non-positive entry"),
+        (("x",), (1,), "{z}.covjson", "references unknown variable(s) 'z'"),
+        # Every unknown is named, so one pass repairs the template.
+        (
+            ("x",),
+            (1,),
+            "{b}-{a}-{x}.covjson",
+            "references unknown variable(s) 'b', 'a'",
+        ),
     ],
 )
 def test_assemble_rejects_a_tiling_it_cannot_lay_out(
@@ -536,12 +544,14 @@ def test_assemble_rejects_a_tiling_it_cannot_lay_out(
         tile_sets=(TileSet(tile_shape=tile_shape, url_template=template),),
     )
 
-    # These decode (validate reports them as tiled-ndarray.shape-rank and
-    # tiled-ndarray.tile-shape-not-positive), but no tiling follows from either:
-    # one cannot name an axis for its ordinal, the other has no tile count. Both
-    # are caught before any fetch, so no strategy can turn them into failures.
-    # A negative tile size would otherwise assemble to a hole-filled array with
-    # nothing reported at all.
+    # These decode (validate reports them as tiled-ndarray.shape-rank,
+    # tiled-ndarray.tile-shape-not-positive and
+    # tiled-ndarray.url-template-unknown-variable), but no tiling follows from
+    # any of them: one cannot name an axis for its ordinal, one has no tile
+    # count, and one has no ordinal to expand its variable with. All are caught
+    # before any fetch, so no strategy can turn them into failures. A negative
+    # tile size would otherwise assemble to a hole-filled array with nothing
+    # reported at all.
     with pytest.raises(ValueError) as excinfo:
         tiled.assemble(store_fetcher({}))
 
