@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import itertools
 import math
-import re
 from collections.abc import (
     Callable,
     Collection,
@@ -59,6 +58,11 @@ from covjson_msgspec._fetch import (
     fetch_and_decode_async,
 )
 from covjson_msgspec._ndindex import ravel_index, strides
+from covjson_msgspec._tiling import (
+    expand_url_template,
+    non_positive_tile_sizes,
+    variables_not_subdivided,
+)
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -1054,11 +1058,8 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
 # decodes one on its own); the decoder is built once and reused.
 _TILE_DECODER: Final[msgspec.json.Decoder[NdArray]] = msgspec.json.Decoder(NdArray)
 
-# A single Level 1 RFC 6570 expression, e.g. ``{t}`` in a tile url template.
-_TEMPLATE_VARIABLE_RE = re.compile(r"\{([^{}]+)\}")
 
-
-def tile_count(shape: Sequence[int], tile_shape: Sequence[int | None]) -> int:
+def tile_count(array_shape: Sequence[int], tile_shape: Sequence[int | None]) -> int:
     """Return how many tiles a tile set partitions an array into.
 
     The product over the subdivided axes of how many tiles each is divided into
@@ -1069,11 +1070,11 @@ def tile_count(shape: Sequence[int], tile_shape: Sequence[int | None]) -> int:
 
     Parameters
     ----------
-    shape
+    array_shape
         The full array shape.
     tile_shape
         A tile set's ``tile_shape`` (per-axis tile size, ``None`` where whole),
-        rank-matched to ``shape``.
+        rank-matched to ``array_shape``.
 
     Returns
     -------
@@ -1088,77 +1089,20 @@ def tile_count(shape: Sequence[int], tile_shape: Sequence[int | None]) -> int:
     12
     >>> tile_count((2, 5, 10), (None, None, None))
     1
+
+    The division is exact, so an extent too large for a float to distinguish
+    still counts correctly:
+
+    >>> tile_count((10**18 + 1,), (10**18,))
+    2
     """
-    # -(-size // tile) is exact integer ceil-division (matching `_tile_layout`);
-    # a None axis is whole and contributes a single tile.
+    # -(-size // tile) is exact integer ceil-division. `math.ceil(size / tile)`
+    # would divide in floating point first, collapsing the example above to one
+    # tile. A None axis is whole and contributes a single tile.
     return math.prod(
         -(-size // tile) if tile is not None else 1
-        for size, tile in zip(shape, tile_shape, strict=True)
+        for size, tile in zip(array_shape, tile_shape, strict=True)
     )
-
-
-def is_countable_tile_shape(tile_shape: Sequence[int | None]) -> bool:
-    """Whether a tile shape defines a tile count at all.
-
-    ``None`` means the axis is whole (one tile); any other entry is a divisor, so
-    zero or less defines no count. `tile_count` divides by these entries and
-    `_tile_layout` enumerates from them, and both are reached from a decoded
-    `TiledNdArray`, where positivity is the
-    [`validate`][covjson_msgspec.validate] finding
-    ``tiled-ndarray.tile-shape-not-positive`` rather than a construction
-    invariant. Shared so the rule has one home:
-    [`assemble`][covjson_msgspec.TiledNdArray.assemble] rejects an uncountable tiling,
-    while ``_repr_html_`` renders it as undefined.
-
-    Parameters
-    ----------
-    tile_shape
-        A tile set's ``tile_shape``.
-
-    Returns
-    -------
-    bool
-        ``True`` when every entry is ``None`` or positive.
-
-    Examples
-    --------
-    >>> is_countable_tile_shape((1, None))
-    True
-    >>> is_countable_tile_shape((0,))
-    False
-    >>> is_countable_tile_shape((-1,))
-    False
-    """
-    return all(size is None or size > 0 for size in tile_shape)
-
-
-def template_variables(template: str) -> Sequence[str]:
-    """Return the variable names in a Level 1 RFC 6570 URL template, in order.
-
-    Each ``{name}`` expression contributes its bare ``name``; a template with no
-    expressions yields ``()``. CoverageJSON tile ``urlTemplate`` values are Level 1
-    (simple ``{var}`` expansion), so these names are the axes a template addresses:
-    tile assembly substitutes them, and `validation` checks that every subdivided
-    axis has one.
-
-    Parameters
-    ----------
-    template
-        A url template, e.g. ``"tiles/{y}-{x}.covjson"``.
-
-    Returns
-    -------
-    sequence of str
-        The variable names, in order of appearance (duplicates kept).
-
-    Examples
-    --------
-    >>> template_variables("tiles/{y}-{x}.covjson")
-    ('y', 'x')
-    >>> template_variables("all.covjson")
-    ()
-    """
-    return tuple(_TEMPLATE_VARIABLE_RE.findall(template))
 
 
 def _is_nonfinite(value: Any) -> bool:
@@ -1238,68 +1182,17 @@ _CONVERTERS: Final[
 ] = {"float": _float_or_none, "integer": int, "string": str}
 
 
-def _expand_url_template(template: str, variables: Mapping[str, int]) -> str:
-    """Expand a Level 1 RFC 6570 URL template with integer tile indices.
-
-    Substitutes each ``{name}`` in ``template`` with ``variables[name]``.
-    CoverageJSON tile templates are Level 1 (simple ``{var}`` expansion only) and
-    the values are non-negative tile ordinals, so no percent-encoding is needed.
-
-    Parameters
-    ----------
-    template
-        The url template, e.g. ``"tiles/{y}-{x}.covjson"``.
-    variables
-        The tile ordinal for each partitioned axis name.
-
-    Returns
-    -------
-    str
-        The expanded URL.
-
-    Raises
-    ------
-    ValueError
-        If the template references a variable absent from ``variables``.
-
-    Examples
-    --------
-    >>> _expand_url_template("tiles/{y}-{x}.covjson", {"y": 0, "x": 3})
-    'tiles/0-3.covjson'
-    >>> _expand_url_template("tiles/{t}.covjson", {})
-    Traceback (most recent call last):
-        ...
-    ValueError: url template 'tiles/{t}.covjson' references unknown variable
-    't'; the tiling cannot be laid out
-    """
-
-    def _substitute(match: re.Match[str]) -> str:
-        name = match.group(1)
-
-        if name not in variables:
-            msg = (
-                f"url template {template!r} references unknown variable "
-                f"{name!r}; the tiling cannot be laid out"
-            )
-            raise ValueError(msg)
-
-        return str(variables[name])
-
-    return _TEMPLATE_VARIABLE_RE.sub(_substitute, template)
-
-
 def _check_tile_shape(tile_shape: Sequence[int | None]) -> None:
     """Raise unless every tile size is ``None`` (whole axis) or positive.
 
-    A tile size of zero or less gives an axis no defined tile count: `tile_count`
-    divides by it, and `_tile_layout` would enumerate no tiles at all. Spec 6.3
-    says only "integer" for a non-null tile size, so positivity is entailed rather
-    than stated (`TiledNdArrayTileShapeNotPositive` carries the derivation), and
-    [`validate`][covjson_msgspec.validate] reports the violation as
-    ``tiled-ndarray.tile-shape-not-positive``.
-
+    The rule is `non_positive_tile_sizes` and this is assembly's response to it: a
+    tile size of zero or less gives an axis no defined tile count, so `tile_count`
+    divides by it and `_tile_layout` would enumerate no tiles at all.
+    [`validate`][covjson_msgspec.validate]'s response to the same rule is
+    ``tiled-ndarray.tile-shape-not-positive``, and
     [`assemble`][covjson_msgspec.TiledNdArray.assemble] does not require a clean report
     first, so this guards the two places assembly depends on the count.
+
     `tile_count` is deliberately left unguarded: it also feeds ``_repr_html_``,
     which must render a malformed array rather than raise at it, so that caller
     tests the tile shape itself and names the count undefined.
@@ -1326,7 +1219,7 @@ def _check_tile_shape(tile_shape: Sequence[int | None]) -> None:
     ValueError: tileShape (0,) has a non-positive entry; the tiling cannot be
     laid out
     """
-    if not is_countable_tile_shape(tile_shape):
+    if non_positive_tile_sizes(tile_shape):
         msg = (
             f"tileShape {tuple(tile_shape)} has a non-positive entry; "
             f"the tiling cannot be laid out"
@@ -1335,8 +1228,114 @@ def _check_tile_shape(tile_shape: Sequence[int | None]) -> None:
         raise ValueError(msg)
 
 
+def _offsets_by_axis(
+    array_shape: Sequence[int], tile_shape: Sequence[int | None]
+) -> Sequence[Sequence[int]]:
+    """Return the tile start indices each axis is divided into, one tuple per axis.
+
+    A subdivided axis is cut every ``tile_size`` cells, so its starts are
+    ``0, tile_size, 2 * tile_size, ...`` up to its size, the last tile truncated
+    to the cells left. An unpartitioned axis (a ``None`` tile size) spans the
+    whole axis, so its only start is 0. The cartesian product over the result
+    enumerates every tile, which is what `_tile_layout` does with it.
+
+    Parameters
+    ----------
+    array_shape
+        The full array shape.
+    tile_shape
+        A tile set's ``tile_shape``, rank-matched to ``array_shape``, whose non-null
+        entries the caller has already checked are positive.
+
+    Returns
+    -------
+    sequence of sequence of int
+        Each axis's tile start indices, aligned with ``array_shape``.
+
+    Examples
+    --------
+    Five cells in tiles of two start at 0, 2 and 4 (the last holds one cell); a
+    null tile size leaves the axis whole:
+
+    >>> _offsets_by_axis((5, 4), (2, None))
+    ((0, 2, 4), (0,))
+
+    A subdivided axis with no cells contributes no starts at all, so the product
+    over the axes enumerates no tiles. A whole axis always contributes its one
+    start, however few cells it spans:
+
+    >>> _offsets_by_axis((0, 4), (1, 2))
+    ((), (0, 2))
+    >>> _offsets_by_axis((0, 4), (None, 2))
+    ((0,), (0, 2))
+    """
+    return tuple(
+        (0,) if tile_size is None else tuple(range(0, size, tile_size))
+        for size, tile_size in zip(array_shape, tile_shape, strict=True)
+    )
+
+
+def _tile_url(
+    axis_names: Sequence[str], offsets: Sequence[int], tile_set: TileSet
+) -> str:
+    """Return the URL of the tile whose per-axis start indices are ``offsets``.
+
+    A subdivided axis's starts are the multiples of its tile size that
+    `_offsets_by_axis` produced, so dividing a start by that tile size recovers
+    which tile it is along that axis. That ordinal is what the ``urlTemplate``
+    interpolates. An unpartitioned axis (a ``None`` tile size) spans the whole
+    axis, so it has no ordinal and contributes no variable.
+
+    Callers establish that ``axis_names``, ``offsets`` and the tile shape are
+    rank-matched, that each offset is a multiple of its tile size, and that the
+    template names only subdivided axes. `_tile_layout` establishes all three;
+    an offset that is not a multiple floors to the wrong ordinal rather than
+    failing, so this is a precondition and not a check.
+
+    Parameters
+    ----------
+    axis_names
+        The axis names, aligned with ``offsets`` and the tile shape.
+    offsets
+        The tile's start index along each axis, one combination of what
+        `_offsets_by_axis` returns.
+    tile_set
+        The tile set being laid out, for its ``tile_shape`` and ``url_template``.
+
+    Returns
+    -------
+    str
+        The tile's URL.
+
+    Examples
+    --------
+    ``t`` starts at 30 with a tile size of 10, so it is tile 3; ``x`` is whole,
+    so the template carries no variable for it:
+
+    >>> tile_set = TileSet(tile_shape=(10, None), url_template="{t}.cov")
+    >>> _tile_url(("t", "x"), (30, 0), tile_set)
+    '3.cov'
+
+    With both axes subdivided, each divides by its own tile size (30 over 10,
+    and 8 over 4):
+
+    >>> tile_set = TileSet(tile_shape=(10, 4), url_template="{t}-{x}.cov")
+    >>> _tile_url(("t", "x"), (30, 8), tile_set)
+    '3-2.cov'
+    """
+    variables = {
+        name: offset // tile_size
+        for name, offset, tile_size in zip(
+            axis_names, offsets, tile_set.tile_shape, strict=True
+        )
+        if tile_size is not None
+    }
+
+    return expand_url_template(tile_set.url_template, variables)
+
+
 def _tile_layout(
-    shape: Sequence[int],
+    array_shape: Sequence[int],
     axis_names: Sequence[str],
     tile_set: TileSet,
 ) -> Sequence[tuple[str, Sequence[int]]]:
@@ -1349,31 +1348,41 @@ def _tile_layout(
     ordinals, and its offsets are the per-axis start indices
     (``ordinal * tile_size``).
 
-    Three properties this needs are not construction invariants, so a decoded
-    `TiledNdArray` may lack any of them and is rejected here: ``axisNames``
-    rank-matching ``shape`` (``tiled-ndarray.shape-rank``), without which an axis
-    cannot be named for its tile ordinal; a positive tile size
-    (``tiled-ndarray.tile-shape-not-positive``), without which the tile count is
-    undefined; and a template that expands to a distinct URL per tile, without
-    which tiles share a document.
+    Four properties this needs are not construction invariants, so a decoded
+    `TiledNdArray` may lack any of them and is rejected here, before any fetch:
+    ``axisNames`` rank-matching ``shape``, without which an axis cannot be named
+    for its tile ordinal; a positive tile size (`non_positive_tile_sizes`),
+    without which the tile count is undefined; a template naming only subdivided
+    axes (`variables_not_subdivided`), since a variable with no subdivided axis
+    has no ordinal to expand it with; and a template that expands to a distinct
+    URL per tile, without which tiles share a document.
 
-    Only the first two have a [`validate`][covjson_msgspec.validate] finding
-    covering them exactly. The third is checked against the layout rather than the
-    template, because two defects produce it: a subdivided axis whose ordinal the
-    template never interpolates (which *is*
-    ``tiled-ndarray.url-template-missing-variable``), and a duplicated entry in
-    ``axisNames``, which no finding reports and whose ordinals collapse into one
-    substitution. Rejecting up front keeps
-    [`assemble`][covjson_msgspec.TiledNdArray.assemble] from raising a bare
-    `ZeroDivisionError`, from silently laying out no tiles at all, and from
-    filling distinct cells with one repeated document.
+    The first three are [`validate`][covjson_msgspec.validate] findings too, reported
+    as ``tiled-ndarray.shape-rank``, ``tiled-ndarray.tile-shape-not-positive`` and
+    ``tiled-ndarray.url-template-unknown-variable``, so a clean report rules them
+    out ahead of time. The middle two read their rule from `_tiling`, so
+    the two consumers cannot drift; the rank check is a plain length comparison
+    each side makes for itself.
+
+    The fourth is this function's alone and is deliberately *not* shared: it is
+    checked against the layout rather than the template, so it also catches a
+    duplicated entry in ``axisNames``, whose ordinals collapse into one
+    substitution and which no finding reports. It and
+    ``tiled-ndarray.url-template-missing-variable`` are incomparable rather than
+    ordered, so neither stands in for the other: a duplicated name defeats the
+    finding but not this check, while an axis subdivided into a single tile
+    breaks the finding's MUST without ever colliding on a URL.
+
+    Rejecting up front keeps [`assemble`][covjson_msgspec.TiledNdArray.assemble] from
+    raising a bare `ZeroDivisionError`, from silently laying out no tiles at all,
+    and from filling distinct cells with one repeated document.
 
     Parameters
     ----------
-    shape
+    array_shape
         The full array shape.
     axis_names
-        The axis names, aligned with ``shape``.
+        The axis names, aligned with ``array_shape``.
     tile_set
         The tile set to enumerate.
 
@@ -1386,10 +1395,7 @@ def _tile_layout(
     Raises
     ------
     ValueError
-        If ``axis_names`` and ``shape`` differ in length, a ``tile_shape`` entry
-        is neither ``None`` nor positive, the ``url_template`` names a variable
-        that is not a subdivided axis (raised from `_expand_url_template` while
-        expanding), or it does not expand to a distinct URL per tile.
+        If any of the four properties above does not hold.
 
     Examples
     --------
@@ -1397,40 +1403,20 @@ def _tile_layout(
     >>> _tile_layout((2,), ("x",), tile_set)
     (('0.covjson', (0,)), ('1.covjson', (1,)))
 
-    A tiling that cannot be laid out is rejected rather than half-enumerated:
+    Over more than one axis the tiles are the cartesian product, with the last
+    axis varying fastest. Cutting ``t`` into single rows and ``x`` into pairs of
+    columns gives four tiles, and note that an offset is a start index rather
+    than an ordinal: ``x``'s second tile starts at column 2 but interpolates as 1.
 
-    >>> _tile_layout((2,), ("x", "y"), tile_set)
-    Traceback (most recent call last):
-        ...
-    ValueError: axisNames has 2 name(s) but shape has 1; the tiling cannot be
-    laid out
-    >>> _tile_layout((2,), ("x",), TileSet(tile_shape=(0,), url_template="u"))
-    Traceback (most recent call last):
-        ...
-    ValueError: tileShape (0,) has a non-positive entry; the tiling cannot be
-    laid out
-
-    A template that does not vary per tile would fill distinct cells with one
-    repeated document:
-
-    >>> _tile_layout((2,), ("x",), TileSet(tile_shape=(1,), url_template="t.cov"))
-    Traceback (most recent call last):
-        ...
-    ValueError: urlTemplate 't.cov' expands 2 tiles to 1 distinct URL(s), so
-    tiles would share a document; the tiling cannot be laid out
-
-    A duplicated axis name does the same, though its ordinals *are* interpolated:
-
-    >>> tiles = TileSet(tile_shape=(1, 1), url_template="{x}.cov")
-    >>> _tile_layout((2, 2), ("x", "x"), tiles)
-    Traceback (most recent call last):
-        ...
-    ValueError: urlTemplate '{x}.cov' expands 4 tiles to 2 distinct URL(s), so
-    tiles would share a document; the tiling cannot be laid out
+    >>> grid = TileSet(tile_shape=(1, 2), url_template="{t}-{x}.cov")
+    >>> _tile_layout((2, 3), ("t", "x"), grid)
+    (('0-0.cov', (0, 0)), ('0-1.cov', (0, 2)),
+     ('1-0.cov', (1, 0)), ('1-1.cov', (1, 2)))
     """
-    if len(axis_names) != len(shape):
+    if len(axis_names) != len(array_shape):
         msg = (
-            f"axisNames has {len(axis_names)} name(s) but shape has {len(shape)}; "
+            f"axisNames has {len(axis_names)} name(s) but shape has "
+            f"{len(array_shape)}; "
             f"the tiling cannot be laid out"
         )
 
@@ -1438,25 +1424,29 @@ def _tile_layout(
 
     _check_tile_shape(tile_set.tile_shape)
 
-    per_axis: list[list[tuple[int, int | None]]] = []
+    # Checked before enumerating, not while expanding: a tiling that lays out no
+    # tiles at all (a non-positive extent on a subdivided axis) would otherwise
+    # never reach the substitution, so `assemble` would accept a template
+    # `validate` rejects.
+    if unknown := variables_not_subdivided(
+        axis_names, tile_set.tile_shape, tile_set.url_template
+    ):
+        msg = (
+            f"url template {tile_set.url_template!r} references unknown "
+            f"variable(s) {', '.join(map(repr, unknown))}; "
+            f"the tiling cannot be laid out"
+        )
 
-    for size, tile_size in zip(shape, tile_set.tile_shape, strict=True):
-        if tile_size is None:
-            per_axis.append([(0, None)])
-        else:
-            count = -(-size // tile_size)
-            per_axis.append([(o * tile_size, o) for o in range(count)])
+        raise ValueError(msg)
 
-    layout: list[tuple[str, tuple[int, ...]]] = []
-
-    for combination in itertools.product(*per_axis):
-        offsets = tuple(offset for offset, _ in combination)
-        variables = {
-            name: ordinal
-            for name, (_, ordinal) in zip(axis_names, combination, strict=True)
-            if ordinal is not None
-        }
-        layout.append((_expand_url_template(tile_set.url_template, variables), offsets))
+    # One tile per way of picking a start from each axis, so each combination the
+    # product yields is already that tile's offsets.
+    layout = tuple(
+        (_tile_url(axis_names, offsets, tile_set), offsets)
+        for offsets in itertools.product(
+            *_offsets_by_axis(array_shape, tile_set.tile_shape)
+        )
+    )
 
     # The property that matters is that each slot gets its own document, which is
     # what a per-tile URL buys. Checking the URLs rather than the template's
@@ -1472,11 +1462,11 @@ def _tile_layout(
 
         raise ValueError(msg)
 
-    return tuple(layout)
+    return layout
 
 
 def _expected_tile_shape(
-    shape: Sequence[int],
+    array_shape: Sequence[int],
     tile_shape: Sequence[int | None],
     offsets: Sequence[int],
 ) -> tuple[int, ...]:
@@ -1500,10 +1490,10 @@ def _expected_tile_shape(
 
     Parameters
     ----------
-    shape
+    array_shape
         The full array shape.
     tile_shape
-        A tile set's ``tile_shape``, rank-matched to ``shape``.
+        A tile set's ``tile_shape``, rank-matched to ``array_shape``.
     offsets
         The tile's start index along each axis, as `_tile_layout` computes it.
 
@@ -1528,7 +1518,9 @@ def _expected_tile_shape(
     """
     return tuple(
         min(size if tile_size is None else tile_size, size - offset)
-        for size, tile_size, offset in zip(shape, tile_shape, offsets, strict=True)
+        for size, tile_size, offset in zip(
+            array_shape, tile_shape, offsets, strict=True
+        )
     )
 
 
@@ -1676,7 +1668,7 @@ def _check_tile(
 def _assemble_tiles(
     data_type: Literal["float", "integer", "string"],
     axis_names: Sequence[str],
-    shape: Sequence[int],
+    array_shape: Sequence[int],
     tiles: Collection[tuple[Sequence[int], NdArray]],
 ) -> NdArray:
     """Place fetched tiles into one full-shape `NdArray`.
@@ -1697,7 +1689,7 @@ def _assemble_tiles(
         The assembled array's ``dataType``.
     axis_names
         The assembled array's axis names.
-    shape
+    array_shape
         The assembled array's full shape.
     tiles
         ``(offsets, tile)`` pairs: each tile's start index per axis and its
@@ -1715,8 +1707,8 @@ def _assemble_tiles(
     >>> _assemble_tiles("float", ("x",), (2,), [((0,), a), ((1,), b)]).values
     (1.0, 2.0)
     """
-    full_strides = strides(shape)
-    values: list[_Scalar | None] = [None] * math.prod(shape)
+    full_strides = strides(array_shape)
+    values: list[_Scalar | None] = [None] * math.prod(array_shape)
 
     for offsets, tile in tiles:
         axis_ranges = [
@@ -1732,7 +1724,7 @@ def _assemble_tiles(
     return NdArray(
         data_type=data_type,
         values=tuple(values),
-        shape=tuple(shape),
+        shape=tuple(array_shape),
         axis_names=tuple(axis_names),
     )
 

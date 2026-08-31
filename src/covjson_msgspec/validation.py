@@ -72,6 +72,11 @@ from covjson_msgspec._bridging import (
     is_standard_calendar,
 )
 from covjson_msgspec._reference_invariants import missing_required_member
+from covjson_msgspec._tiling import (
+    axes_missing_variables,
+    non_positive_tile_sizes,
+    variables_not_subdivided,
+)
 from covjson_msgspec.axis import Axis, AxisValue
 from covjson_msgspec.coverage import (
     Coverage,
@@ -87,7 +92,7 @@ from covjson_msgspec.parameter import (
     ParameterGroup,
     Unit,
 )
-from covjson_msgspec.range import NdArray, TiledNdArray, TileSet, template_variables
+from covjson_msgspec.range import NdArray, TiledNdArray, TileSet
 from covjson_msgspec.referencing import (
     Concept,
     GeographicCRS,
@@ -3417,39 +3422,32 @@ def _tile_set_issues(
         TiledNdArrayTileShapeNotPositive(
             tile_dim=tile_dim, at=_ptr(path, "tileSets", ts, "tileShape", i)
         )
-        for i, tile_dim in enumerate(tile_set.tile_shape)
-        if tile_dim is not None and tile_dim < 1
+        for i, tile_dim in non_positive_tile_sizes(tile_set.tile_shape)
     )
 
-    present_names = template_variables(tile_set.url_template)
-    present = set(present_names)
-
-    # A subdivided axis (non-null tileShape) MUST have a template variable. When
-    # axisNames does not rank-match shape, this zip is intentionally non-strict so
-    # it cannot raise: validate() reports issues rather than raising.
+    # A subdivided axis (non-null tileShape) MUST have a template variable.
+    # `axes_missing_variables` reads a rank-mismatched pairing non-strictly, so it
+    # cannot raise here: validate() reports issues rather than raising.
     yield from (
         TiledNdArrayUrlTemplateMissingVariable(
             axis=name, at=_ptr(path, "tileSets", ts, "urlTemplate")
         )
-        for name, tile_dim in zip(arr.axis_names, tile_set.tile_shape, strict=False)
-        if tile_dim is not None and name not in present
+        for name in axes_missing_variables(
+            arr.axis_names, tile_set.tile_shape, tile_set.url_template
+        )
     )
 
     # The reverse: a template variable that names no subdivided axis cannot be
-    # expanded, so `assemble` would raise on it. Skipped on a rank mismatch, where
-    # the set of subdivided axes is unreliable (see ``rank_ok``).
+    # expanded, so `assemble` rejects it by the same rule. Skipped on a rank
+    # mismatch, where the set of subdivided axes is unreliable (see ``rank_ok``).
     if rank_ok:
-        subdivided = {
-            name
-            for name, tile_dim in zip(arr.axis_names, tile_set.tile_shape, strict=True)
-            if tile_dim is not None
-        }
         yield from (
             TiledNdArrayUrlTemplateUnknownVariable(
                 variable=name, at=_ptr(path, "tileSets", ts, "urlTemplate")
             )
-            for name in dict.fromkeys(present_names)
-            if name not in subdivided
+            for name in variables_not_subdivided(
+                arr.axis_names, tile_set.tile_shape, tile_set.url_template
+            )
         )
 
 

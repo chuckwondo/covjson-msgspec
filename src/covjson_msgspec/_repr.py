@@ -20,6 +20,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 from covjson_msgspec._i18n import display
+from covjson_msgspec._tiling import non_positive_tile_sizes
 
 if TYPE_CHECKING:
     from covjson_msgspec.axis import Axis
@@ -237,27 +238,16 @@ def tiled_ndarray_html(array: TiledNdArray) -> str:
     >>> "TiledNdArray" in tiled_ndarray_html(tiled)
     True
     """
-    from covjson_msgspec.range import is_countable_tile_shape, tile_count
-
     summary = [
         ("Data type", array.data_type),
         ("Shape", _shape_text(array.shape)),
         ("Axis names", ", ".join(array.axis_names)),
         ("Tile sets", str(len(array.tile_sets))),
     ]
-
-    # `tile_count` divides each `shape` element by the corresponding `tileShape`
-    # element, so a non-positive entry has no count to render. Such a tile shape
-    # still decodes, because positivity is the
-    # `tiled-ndarray.tile-shape-not-positive` finding rather than a construction
-    # invariant, and a repr is exactly when a reader is trying to see the
-    # malformed array, so it names the gap rather than raising at it.
     rows = [
         [
             _shape_text(tile_set.tile_shape),
-            str(tile_count(array.shape, tile_set.tile_shape))
-            if is_countable_tile_shape(tile_set.tile_shape)
-            else "undefined",
+            _tile_count_text(array.shape, tile_set.tile_shape),
             tile_set.url_template,
         ]
         for tile_set in array.tile_sets
@@ -727,6 +717,43 @@ def _shape_text(shape: tuple[int | None, ...]) -> str:
     'scalar'
     """
     return str(shape) if shape else "scalar"
+
+
+def _tile_count_text(shape: tuple[int, ...], tile_shape: tuple[int | None, ...]) -> str:
+    """Render how many tiles a tile set covers an array in, naming an absent count.
+
+    `tile_count` divides each ``shape`` element by the corresponding ``tileShape``
+    element, so a non-positive entry has no count to render. Such a tile shape
+    still decodes, because positivity is the
+    ``tiled-ndarray.tile-shape-not-positive`` finding rather than a construction
+    invariant, and a repr is exactly when a reader is trying to see the malformed
+    array, so it names the gap rather than raising at it.
+
+    Parameters
+    ----------
+    shape
+        The full array shape.
+    tile_shape
+        A tile set's ``tile_shape``.
+
+    Returns
+    -------
+    str
+        The tile count, or ``"undefined"`` where the tile shape defines none.
+
+    Examples
+    --------
+    >>> _tile_count_text((2, 5), (1, None))
+    '2'
+    >>> _tile_count_text((2, 5), (0, None))
+    'undefined'
+    """
+    from covjson_msgspec.range import tile_count
+
+    if non_positive_tile_sizes(tile_shape):
+        return "undefined"
+
+    return str(tile_count(shape, tile_shape))
 
 
 def _unit_text(unit: Unit | None) -> str:
