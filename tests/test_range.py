@@ -563,6 +563,38 @@ def test_assemble_rejects_a_tiling_it_cannot_lay_out(
     assert detail in str(excinfo.value)
 
 
+@pytest.mark.parametrize("shape", [(1, 2), (2, 1)])
+def test_assemble_rejects_a_duplicate_subdivided_axis_either_way_round(
+    shape: tuple[int, int],
+) -> None:
+    tiled = TiledNdArray(
+        data_type="float",
+        axis_names=("x", "x"),
+        shape=shape,
+        tile_sets=(TileSet(tile_shape=(1, 1), url_template="{x}.covjson"),),
+    )
+
+    # One structural defect, twice, with the axes swapped: both `x` axes are
+    # subdivided, one into two tiles and one into a single tile. Reading the
+    # resulting URLs cannot catch it evenly, because `_tile_url` substitutes from
+    # a mapping keyed by name, so the last such axis wins: with shape (2, 1) the
+    # two slots collapse onto one URL and the distinct-URL check fires, while
+    # with (1, 2) they expand to two distinct URLs and the tiling laid out, on an
+    # axis-order accident rather than a reading of the document. Reading the
+    # shared rule instead makes both orders raise, before any fetch.
+    detail = "cannot address subdivided axes (0, 1) sharing the name 'x'"
+
+    with pytest.raises(ValueError) as excinfo:
+        tiled.assemble(store_fetcher({}))
+
+    assert detail in str(excinfo.value)
+
+    with pytest.raises(ValueError) as excinfo:
+        asyncio.run(tiled.assemble_async(async_store_fetcher({})))
+
+    assert detail in str(excinfo.value)
+
+
 def test_assemble_rejects_an_uncountable_tile_set_chosen_explicitly() -> None:
     tiled = TiledNdArray(
         data_type="float",
@@ -582,30 +614,26 @@ def test_assemble_rejects_an_uncountable_tile_set_chosen_explicitly() -> None:
         tiled.assemble(store_fetcher({}), 1)
 
 
-@pytest.mark.parametrize(
-    ("axis_names", "url_template"),
-    [
-        # x is subdivided but its ordinal is never interpolated.
-        (("t", "x"), "{t}.covjson"),
-        # Both ordinals are interpolated, but into the same variable, so the
-        # substitution mapping collapses and half the URLs repeat.
-        (("x", "x"), "{x}.covjson"),
-    ],
-    ids=("no-variable-for-axis", "duplicate-axis-name"),
-)
-def test_assemble_rejects_a_template_that_repeats_a_tile(
-    axis_names: tuple[str, ...], url_template: str
-) -> None:
+def test_assemble_rejects_a_template_that_repeats_a_tile() -> None:
     tiled = TiledNdArray(
         data_type="float",
-        axis_names=axis_names,
+        axis_names=("t", "x"),
         shape=(2, 2),
-        tile_sets=(TileSet(tile_shape=(1, 1), url_template=url_template),),
+        tile_sets=(TileSet(tile_shape=(1, 1), url_template="{t}.covjson"),),
     )
 
-    # Four slots but only two URLs, and each fetched tile matches its slot's
-    # expected shape (1, 1), so `_check_tile` would pass all four and the array
-    # would silently read as two documents each standing in for two cells.
+    # `x` is subdivided but its ordinal is never interpolated, so there are four
+    # slots but only two URLs, and each fetched tile matches its slot's expected
+    # shape (1, 1): `_check_tile` would pass all four and the array would
+    # silently read as two documents each standing in for two cells.
+    #
+    # This is the only cause the distinct-URL check still has to catch on its
+    # own. A duplicated axis name reaches the same collapse, but the shared rule
+    # now rejects it earlier (see
+    # test_assemble_rejects_a_duplicate_subdivided_axis_either_way_round), and
+    # this cause cannot join it: `validate` reports the missing variable, but an
+    # axis subdivided into a single tile breaks that MUST while laying out
+    # correctly, so assembly has to judge the layout rather than the rule.
     with pytest.raises(ValueError, match="distinct URL"):
         tiled.assemble(store_fetcher({}))
 

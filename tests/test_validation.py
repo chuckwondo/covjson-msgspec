@@ -69,6 +69,7 @@ from covjson_msgspec.validation import (
     RangeValueTypeMismatch,
     TemporalLexicalForm,
     TemporalMissingCalendar,
+    TiledNdArrayDuplicateSubdividedAxis,
     TiledNdArrayShapeRank,
     TiledNdArrayTileShapeNotPositive,
     TiledNdArrayTileShapeTooLarge,
@@ -1010,6 +1011,25 @@ def test_tiled_ndarray_unknown_variable_suppressed_on_rank_mismatch() -> None:
     assert "tiled-ndarray.shape-rank" in codes
 
 
+def test_tiled_ndarray_duplicate_axis_suppressed_on_rank_mismatch() -> None:
+    # Three `axisNames` entries but two `shape` entries, so no name can be
+    # trusted to belong to any axis. That mismatch is the whole defect, reported
+    # as `tiled-ndarray.shape-rank`, and the duplicate-axis check has to sit it
+    # out: the two leading `x` entries look like a collision, but only because
+    # pairing names with axes stops at the shorter of the two. The same `rank_ok`
+    # gate guards `tiled-ndarray.url-template-unknown-variable`.
+    arr = TiledNdArray(
+        data_type="float",
+        axis_names=("x", "x", "y"),
+        shape=(2, 2),
+        tile_sets=(TileSet(tile_shape=(1, 1), url_template="{x}.covjson"),),
+    )
+    codes = {i.code for i in validate(arr).issues}
+
+    assert "tiled-ndarray.duplicate-subdivided-axis" not in codes
+    assert "tiled-ndarray.shape-rank" in codes
+
+
 def test_tiled_ndarray_well_formed_is_clean() -> None:
     arr = TiledNdArray(
         data_type="float",
@@ -1133,11 +1153,13 @@ def test_validate_reports_a_single_tile_axis_assemble_accepts() -> None:
     assert report.failures == ()
 
 
-def test_validate_is_silent_on_a_duplicated_axis_name() -> None:
-    # The direction that deliberately does not hold. A repeated `axisNames` entry
-    # satisfies every finding (each ordinal *is* interpolated) while collapsing
-    # four slots onto two documents, which only `assemble`'s distinct-URL check
-    # catches. If `validate` ever grows a finding for it, this test is the notice.
+def test_validate_reports_two_subdivided_axes_sharing_a_name() -> None:
+    # Every existing finding passes: `axisNames` rank-matches `shape`, both tile
+    # sizes are positive and within bounds, and the template does carry a variable
+    # for each subdivided axis name. What no template can satisfy is spec 6.3's
+    # `urlTemplate` MUST, since `{x}` would have to carry axis 0's ordinal and
+    # axis 1's at once. So the pointer blames the `tileShape` that subdivides
+    # both, not the template, which has no value it could be corrected to.
     arr = TiledNdArray(
         data_type="float",
         axis_names=("x", "x"),
@@ -1145,10 +1167,96 @@ def test_validate_is_silent_on_a_duplicated_axis_name() -> None:
         tile_sets=(TileSet(tile_shape=(1, 1), url_template="{x}.covjson"),),
     )
 
+    (issue,) = validate(arr).issues
+
+    assert isinstance(issue, TiledNdArrayDuplicateSubdividedAxis)
+    assert (issue.axis, issue.axis_indices) == ("x", (0, 1))
+    assert issue.at == "/tileSets/0/tileShape"
+
+    # `assemble` reads the same rule, so it rejects the tiling before any fetch
+    # rather than discovering the collapse in the URLs it expands to. Its own
+    # distinct-URL check stays, for the cause this finding cannot see: a template
+    # that omits a variable outright.
+    with pytest.raises(ValueError, match="cannot address subdivided"):
+        arr.assemble(store_fetcher({}))
+
+
+def test_validate_reports_each_offending_tile_set_separately() -> None:
+    # The property the `/tileSets/{ts}/tileShape` pointer was chosen for, and what
+    # ruled out `/axisNames`: the rule is per tile set, so two tile sets colliding
+    # on the same repeated name are two findings, not one. An `/axisNames` pointer
+    # would have had to collapse them, losing which tile set to fix.
+    #
+    # Deliberately narrower than "names the right index among several", which is
+    # the generic gap #227 covers for every finding carrying a tile-set index.
+    arr = TiledNdArray(
+        data_type="float",
+        axis_names=("x", "x"),
+        shape=(2, 2),
+        tile_sets=(
+            TileSet(tile_shape=(1, 1), url_template="a{x}.covjson"),
+            TileSet(tile_shape=(1, 1), url_template="b{x}.covjson"),
+        ),
+    )
+
+    assert [issue.at for issue in validate(arr).issues] == [
+        "/tileSets/0/tileShape",
+        "/tileSets/1/tileShape",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("shape", "tile_shape", "tile_values", "expected"),
+    [
+        # Both `x` axes are subdivided, but each into a single tile, so spec
+        # 6.3's per-axis variable value is 0 for both and one `{x}` satisfies it.
+        # This is the case that makes the rule about ordinals rather than about a
+        # repeated name.
+        ((1, 1), (1, 1), ((7.0,),), (7.0,)),
+        # Axis 1 spans whole, so it contributes no variable at all and `{x}`
+        # carries axis 0's ordinal alone: a repeated name is unsatisfiable only
+        # once two or more of its axes are subdivided.
+        ((2, 2), (1, None), ((1.0, 2.0), (3.0, 4.0)), (1.0, 2.0, 3.0, 4.0)),
+    ],
+    ids=("each-axis-one-tile", "only-one-subdivided"),
+)
+def test_validate_is_silent_on_a_conformant_repeated_axis_name(
+    shape: tuple[int, ...],
+    tile_shape: tuple[int | None, ...],
+    tile_values: tuple[tuple[float, ...], ...],
+    expected: tuple[float, ...],
+) -> None:
+    arr = TiledNdArray(
+        data_type="float",
+        axis_names=("x", "x"),
+        shape=shape,
+        tile_sets=(TileSet(tile_shape=tile_shape, url_template="{x}.covjson"),),
+    )
+
+    # Both consumers agree the document is fine, so neither narrowing is a
+    # finding `assemble` then has to disagree with.
     assert validate(arr).issues == ()
 
-    with pytest.raises(ValueError, match="distinct URL"):
-        arr.assemble(store_fetcher({}))
+    store = {
+        f"{ordinal}.covjson": msgspec.json.encode(
+            NdArray(
+                data_type="float",
+                values=values,
+                # A null tileShape entry spans the whole axis (spec 6.3), so the
+                # tile document's shape is not the tile shape verbatim.
+                shape=tuple(
+                    axis if tile is None else tile
+                    for tile, axis in zip(tile_shape, shape, strict=True)
+                ),
+                axis_names=("x", "x"),
+            )
+        )
+        for ordinal, values in enumerate(tile_values)
+    }
+    report = arr.assemble(store_fetcher(store))
+
+    assert report.array.values == expected
+    assert report.failures == ()
 
 
 def test_tiled_ndarray_range_inside_coverage_is_validated() -> None:
@@ -1489,6 +1597,7 @@ _ISSUE_SAMPLES: tuple[Issue, ...] = (
     TiledNdArrayTileShapeNotPositive(at="/", tile_dim=0),
     TiledNdArrayUrlTemplateMissingVariable(at="/", axis="x"),
     TiledNdArrayUrlTemplateUnknownVariable(at="/", variable="q"),
+    TiledNdArrayDuplicateSubdividedAxis(at="/", axis="x", axis_indices=(0, 1)),
     CoverageMissingParameters(at="/"),
     CoverageRangeWithoutParameter(at="/", key="temperature"),
     CoverageRangeAxisNotInDomain(at="/", axis="q"),
@@ -2273,6 +2382,7 @@ def _describe(issue: Issue) -> str:
             | TiledNdArrayTileShapeNotPositive()
             | TiledNdArrayUrlTemplateMissingVariable()
             | TiledNdArrayUrlTemplateUnknownVariable()
+            | TiledNdArrayDuplicateSubdividedAxis()
         ):
             return "tiled-ndarray"
         case (

@@ -74,6 +74,7 @@ from covjson_msgspec._bridging import (
 from covjson_msgspec._reference_invariants import missing_required_member
 from covjson_msgspec._tiling import (
     axes_missing_variables,
+    duplicate_subdivided_axes,
     non_positive_tile_sizes,
     variables_not_subdivided,
 )
@@ -685,6 +686,37 @@ class TiledNdArrayUrlTemplateUnknownVariable(
         )
 
 
+class TiledNdArrayDuplicateSubdividedAxis(
+    _Issue, frozen=True, tag="tiled-ndarray.duplicate-subdivided-axis"
+):
+    """A tile set subdivides same-named axes whose tile ordinals can differ.
+
+    Spec 6.3 states no uniqueness rule for ``axisNames``, so this is entailed
+    rather than stated. It follows from the same section's ``urlTemplate`` MUST,
+    "The URI template MUST contain a variable for each axis name whose
+    corresponding element in ``"tileShape"`` is not null", whose next sentence
+    fixes that variable's value from *one* axis's ``shape`` and ``tileShape``
+    elements. A tile whose two same-named axes sit at different ordinals would
+    need one variable to hold both, so the MUST is unsatisfiable rather than
+    merely unmet, which is what makes this an error: no edit to the
+    ``urlTemplate`` can settle it.
+
+    Reported per tile set, since the ``tileShape`` decides both which axes are
+    subdivided and how many tiles each yields. Same-named axes that each yield a
+    single tile share the ordinal ``0``, so one variable holds them all and the
+    document conforms.
+    """
+
+    axis: str
+    axis_indices: tuple[int, ...]
+
+    def __str__(self) -> str:
+        return (
+            f"subdivided axes {self.axis_indices} share the name {self.axis!r}, so no "
+            f"urlTemplate variable can carry each one's tile ordinal"
+        )
+
+
 class CoverageMissingParameters(_Issue, frozen=True, tag="coverage.missing-parameters"):
     """The coverage carries no ``parameters`` in scope."""
 
@@ -906,6 +938,7 @@ Issue = (
     | TiledNdArrayTileShapeNotPositive
     | TiledNdArrayUrlTemplateMissingVariable
     | TiledNdArrayUrlTemplateUnknownVariable
+    | TiledNdArrayDuplicateSubdividedAxis
     | CoverageMissingParameters
     | CoverageRangeWithoutParameter
     | CoverageRangeAxisNotInDomain
@@ -3367,7 +3400,9 @@ def _tile_set_issues(
     element (``tiled-ndarray.tile-shape-too-large``); the ``urlTemplate`` must carry a
     variable for each subdivided axis (``tiled-ndarray.url-template-missing-variable``)
     and, when ``rank_ok``, must not name a non-subdivided axis
-    (``tiled-ndarray.url-template-unknown-variable``).
+    (``tiled-ndarray.url-template-unknown-variable``); and, also when ``rank_ok``,
+    no two subdivided axes sharing a name may differ in tile ordinal
+    (``tiled-ndarray.duplicate-subdivided-axis``).
 
     Parameters
     ----------
@@ -3380,9 +3415,10 @@ def _tile_set_issues(
     path
         The reference-token path to ``arr``, built via `_ptr` for each issue.
     rank_ok
-        Whether ``axisNames`` rank-matches ``shape``; the unknown-variable check
-        is skipped when it does not (the axis/tile alignment is then unreliable,
-        so the membership test would yield false positives).
+        Whether ``axisNames`` rank-matches ``shape``; the unknown-variable and
+        duplicate-axis checks are skipped when it does not (the axis/tile
+        alignment is then unreliable, so both would report against a
+        subdivided-axis set the truncated pairing invented).
 
     Yields
     ------
@@ -3450,6 +3486,22 @@ def _tile_set_issues(
             )
         )
 
+        # Two subdivided axes sharing a name leave one variable to carry both
+        # ordinals, so no urlTemplate satisfies the MUST. The pointer stops at
+        # the tileShape that subdivides them, since the rule spans two axisNames
+        # entries (no single element offends) and the urlTemplate has no value it
+        # could be corrected to.
+        yield from (
+            TiledNdArrayDuplicateSubdividedAxis(
+                axis=name,
+                axis_indices=indices,
+                at=_ptr(path, "tileSets", ts, "tileShape"),
+            )
+            for name, indices in duplicate_subdivided_axes(
+                arr.axis_names, tile_set.tile_shape, arr.shape
+            )
+        )
+
 
 def _validate_tiled_ndarray(
     arr: TiledNdArray, path: tuple[str | int, ...]
@@ -3476,7 +3528,13 @@ def _validate_tiled_ndarray(
       (`TiledNdArrayUrlTemplateUnknownVariable`): such a variable cannot be
       expanded, so `assemble` would raise on it. This reverse check is skipped
       once ``tiled-ndarray.shape-rank`` has fired, since the axis/tile alignment
-      is then unreliable.
+      is then unreliable; and
+    * no two subdivided axes sharing an ``axisNames`` entry may differ in tile
+      ordinal (`TiledNdArrayDuplicateSubdividedAxis`), which the section entails
+      rather than states: one variable cannot hold both ordinals at once, so its
+      ``urlTemplate`` MUST is unsatisfiable. Axes each yielding a single tile
+      share the ordinal ``0``, so they conform. Skipped on a rank mismatch too,
+      for the same reason.
 
     Parameters
     ----------
@@ -3535,6 +3593,22 @@ def _validate_tiled_ndarray(
     True
     >>> issue.variable
     'z'
+
+    Two subdivided axes sharing a name are flagged against the ``tileShape`` that
+    subdivides them, since no ``urlTemplate`` can carry both their differing
+    ordinals:
+
+    >>> arr = TiledNdArray(
+    ...     data_type="float",
+    ...     axis_names=("x", "x"),
+    ...     shape=(2, 2),
+    ...     tile_sets=(TileSet(tile_shape=(1, 1), url_template="{x}.covjson"),),
+    ... )
+    >>> (issue,) = _validate_tiled_ndarray(arr, ())
+    >>> issue.code == "tiled-ndarray.duplicate-subdivided-axis"
+    True
+    >>> issue.axis, issue.axis_indices
+    ('x', (0, 1))
     """
     rank_ok = len(arr.axis_names) == len(arr.shape)
 

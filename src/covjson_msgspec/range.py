@@ -59,6 +59,7 @@ from covjson_msgspec._fetch import (
 )
 from covjson_msgspec._ndindex import ravel_index, strides
 from covjson_msgspec._tiling import (
+    duplicate_subdivided_axes,
     expand_url_template,
     non_positive_tile_sizes,
     variables_not_subdivided,
@@ -801,12 +802,18 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
             is not positive (``tiled-ndarray.tile-shape-not-positive``), the
             ``urlTemplate`` names a variable that is not a subdivided axis, leaving
             it nothing to expand (``tiled-ndarray.url-template-unknown-variable``),
-            or it does not expand to a distinct URL per tile, so tiles would
-            share a document. Each is raised before any fetch, so no ``strategy``
-            applies. The first three are
-            [`validate`][covjson_msgspec.validate] findings, so a clean report
-            rules them out ahead of time; the fourth is not, because a duplicated
-            ``axisNames`` entry also produces it and no finding reports that.
+            two subdivided axes share a name whose tile ordinals differ, leaving
+            one variable to carry both
+            (``tiled-ndarray.duplicate-subdivided-axis``), or the template does not
+            expand to a distinct URL per tile, so tiles would share a document.
+            Each is raised before any fetch, so no ``strategy`` applies. The first
+            four are [`validate`][covjson_msgspec.validate] findings, so a clean
+            report rules them out ahead of time; the fifth is not, because it is
+            checked against the layout rather than the template. Its remaining
+            cause does have a finding
+            (``tiled-ndarray.url-template-missing-variable``) but does not follow
+            from it: an axis subdivided into a single tile breaks that MUST while
+            laying out correctly.
         FetchError
             When the ``strategy`` halts on a failure (the default
             [`fail_fast`][covjson_msgspec.fail_fast] halts on the first), chained from
@@ -1348,30 +1355,31 @@ def _tile_layout(
     ordinals, and its offsets are the per-axis start indices
     (``ordinal * tile_size``).
 
-    Four properties this needs are not construction invariants, so a decoded
+    These properties are not construction invariants, so a decoded
     `TiledNdArray` may lack any of them and is rejected here, before any fetch:
-    ``axisNames`` rank-matching ``shape``, without which an axis cannot be named
-    for its tile ordinal; a positive tile size (`non_positive_tile_sizes`),
-    without which the tile count is undefined; a template naming only subdivided
-    axes (`variables_not_subdivided`), since a variable with no subdivided axis
-    has no ordinal to expand it with; and a template that expands to a distinct
-    URL per tile, without which tiles share a document.
 
-    The first three are [`validate`][covjson_msgspec.validate] findings too, reported
-    as ``tiled-ndarray.shape-rank``, ``tiled-ndarray.tile-shape-not-positive`` and
-    ``tiled-ndarray.url-template-unknown-variable``, so a clean report rules them
-    out ahead of time. The middle two read their rule from `_tiling`, so
-    the two consumers cannot drift; the rank check is a plain length comparison
-    each side makes for itself.
+    * ``axisNames`` rank-matching ``shape``, without which an axis cannot be
+      named for its tile ordinal;
+    * a positive tile size (`non_positive_tile_sizes`), without which the tile
+      count is undefined;
+    * a template naming only subdivided axes (`variables_not_subdivided`), since
+      a variable with no subdivided axis has no ordinal to expand it with;
+    * no two same-named subdivided axes whose ordinals differ
+      (`duplicate_subdivided_axes`), since one variable cannot carry both; and
+    * a template that expands to a distinct URL per tile, without which tiles
+      share a document.
 
-    The fourth is this function's alone and is deliberately *not* shared: it is
-    checked against the layout rather than the template, so it also catches a
-    duplicated entry in ``axisNames``, whose ordinals collapse into one
-    substitution and which no finding reports. It and
-    ``tiled-ndarray.url-template-missing-variable`` are incomparable rather than
-    ordered, so neither stands in for the other: a duplicated name defeats the
-    finding but not this check, while an axis subdivided into a single tile
-    breaks the finding's MUST without ever colliding on a URL.
+    Which of them ``validate`` reports, and how the distinct-URL check relates to
+    the finding covering its one remaining cause, is stated once on
+    [`assemble`][covjson_msgspec.TiledNdArray.assemble]'s ``Raises``, the public
+    contract for what this function's rejections surface as.
+
+    The tile-size, template-variable and duplicate-name rules read from `_tiling`,
+    so the two consumers cannot drift; the rank check is a plain length comparison
+    each side makes for itself. The distinct-URL check is this function's alone
+    and is deliberately *not* shared: it is checked against the layout rather than
+    the template, so one check covers every way the template can fail to
+    distinguish a slot.
 
     Rejecting up front keeps [`assemble`][covjson_msgspec.TiledNdArray.assemble] from
     raising a bare `ZeroDivisionError`, from silently laying out no tiles at all,
@@ -1395,7 +1403,7 @@ def _tile_layout(
     Raises
     ------
     ValueError
-        If any of the four properties above does not hold.
+        If any of the properties above does not hold.
 
     Examples
     --------
@@ -1434,6 +1442,25 @@ def _tile_layout(
         msg = (
             f"url template {tile_set.url_template!r} references unknown "
             f"variable(s) {', '.join(map(repr, unknown))}; "
+            f"the tiling cannot be laid out"
+        )
+
+        raise ValueError(msg)
+
+    # Checked against the rule rather than the resulting URLs, because
+    # `_tile_url` substitutes from a mapping keyed by axis name: where two
+    # subdivided axes share one, the last wins, so whether the collision shows up
+    # as two slots on one URL depends on which of them comes last. Reading the
+    # rule makes the rejection independent of axis order.
+    if duplicates := duplicate_subdivided_axes(
+        axis_names, tile_set.tile_shape, array_shape
+    ):
+        detail = ", ".join(
+            f"axes {indices} sharing the name {name!r}" for name, indices in duplicates
+        )
+        msg = (
+            f"url template {tile_set.url_template!r} cannot address subdivided "
+            f"{detail}, since one variable cannot carry each axis's tile ordinal; "
             f"the tiling cannot be laid out"
         )
 
