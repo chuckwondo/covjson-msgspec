@@ -95,6 +95,12 @@ issues = [
 ]
 
 [[case]]
+file = "tiled-ndarray-duplicate-subdivided-axis.json"
+issues = [
+  { code = "tiled-ndarray.duplicate-subdivided-axis", severity = "error" },
+]
+
+[[case]]
 file = "i18n-invalid-language-tag.json"
 issues = [{ code = "i18n.invalid-language-tag", severity = "error" }]
 
