@@ -957,6 +957,27 @@ def test_tiled_ndarray_url_template_missing_variable() -> None:
     assert issue.at == "/tileSets/0/urlTemplate"
 
 
+def test_tiled_ndarray_url_template_missing_variable_reports_a_name_once() -> None:
+    # Spec 6.3 quantifies the variable's presence over axis *names*, so two axes
+    # sharing one draw a single finding: adding `{x}` satisfies the MUST for both
+    # at once, and the payload carries no index that could tell two apart anyway.
+    # `shape=(1, 1)` keeps `duplicate-subdivided-axis` silent (each axis yields
+    # one tile, so their ordinals cannot differ), leaving the cardinality of this
+    # finding as the only thing under test: the unpack is the assertion.
+    arr = TiledNdArray(
+        data_type="float",
+        axis_names=("x", "x"),
+        shape=(1, 1),
+        tile_sets=(TileSet(tile_shape=(1, 1), url_template="tile.covjson"),),
+    )
+
+    (issue,) = validate(arr).issues
+
+    assert isinstance(issue, TiledNdArrayUrlTemplateMissingVariable)
+    assert issue.axis == "x"
+    assert issue.at == "/tileSets/0/urlTemplate"
+
+
 def test_tiled_ndarray_shape_rank_mismatch() -> None:
     arr = TiledNdArray(
         data_type="float",

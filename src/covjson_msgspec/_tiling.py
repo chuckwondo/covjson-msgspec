@@ -43,8 +43,8 @@ This module lives under a ``_`` prefix, exporting non-underscore names, so
 decides only over primitives, so it imports no consumer and cannot cycle.
 
 The two template rules read the same subdivided-axis set but report different
-subjects, so `variables_not_subdivided` names each template variable once, while
-`axes_missing_variables` names each offending axis, repeats included.
+subjects: `variables_not_subdivided` names each template variable,
+`axes_missing_variables` each offending axis name.
 `duplicate_subdivided_axes` derives a narrower set of its own, deliberately: an
 axis whose tile size is not positive counts as subdivided for the template rules,
 but nothing divides its extent, so it has no ordinals to collide and is left out
@@ -174,7 +174,7 @@ def axes_missing_variables(
     tile_shape: Sequence[int | None],
     template: str,
 ) -> Sequence[str]:
-    """Return the subdivided axes the template carries no variable for, in axis order.
+    """Return the subdivided axis names the template carries no variable for.
 
     Spec 6.3: "The URI template MUST contain a variable for each axis name whose
     corresponding element in ``"tileShape"`` is not null." Without one, every tile
@@ -182,9 +182,10 @@ def axes_missing_variables(
     [`validate`][covjson_msgspec.validate] reports
     ``tiled-ndarray.url-template-missing-variable``.
 
-    Each offending *axis* is named, so a repeated entry in ``axis_names`` is
-    reported once per axis rather than once per name: the subject here is the axis,
-    not the variable that would address it.
+    The MUST says "each axis *name*", not each axis, so a name is returned once
+    however many of its axes carry it: adding one ``{name}`` to the template
+    satisfies the section for all of them at once. Whether those axes can then
+    agree on that variable's value is a separate rule, `duplicate_subdivided_axes`.
 
     Parameters
     ----------
@@ -198,7 +199,7 @@ def axes_missing_variables(
     Returns
     -------
     sequence of str
-        The offending axis names, in axis order.
+        The offending axis names, in order of first appearance.
 
     Examples
     --------
@@ -207,16 +208,20 @@ def axes_missing_variables(
     >>> axes_missing_variables(("t", "x"), (1, None), "{t}.covjson")
     ()
 
-    A name repeated in ``axis_names`` is two separate axes, so it is reported
-    once for each:
+    A name repeated in ``axis_names`` is reported once. Here ``x`` names three
+    axes, two of them subdivided, and collapses to a single entry; ``y`` survives
+    beside it as a distinct name; and the whole-spanning ``x`` adds nothing, since
+    a name is offending once any of its axes is subdivided:
 
-    >>> axes_missing_variables(("x", "x"), (1, 1), "tile.covjson")
-    ('x', 'x')
+    >>> axes_missing_variables(("x", "x", "y", "x"), (1, 1, 1, None), "tile.covjson")
+    ('x', 'y')
     """
     present = set(_TEMPLATE_VARIABLE_RE.findall(template))
 
     return tuple(
-        name for name in _subdivided_axes(axis_names, tile_shape) if name not in present
+        name
+        for name in dict.fromkeys(_subdivided_axes(axis_names, tile_shape))
+        if name not in present
     )
 
 
@@ -426,7 +431,10 @@ def _subdivided_axes(
     Returns
     -------
     sequence of str
-        The subdivided axes' names, in axis order, duplicates kept.
+        The subdivided axes' names, in axis order, duplicates kept. Two axes named
+        ``x`` are two axes, so both are listed; a caller that reports per name
+        deduplicates the result itself (see `axes_missing_variables`) rather than
+        narrowing this.
 
     Examples
     --------
