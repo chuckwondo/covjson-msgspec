@@ -940,8 +940,16 @@ def test_tiled_ndarray_tile_shape_too_large() -> None:
     )
     (issue,) = validate(arr).issues
 
-    assert issue.code == "tiled-ndarray.tile-shape-too-large"
-    assert issue.at == "/tileSets/0/tileShape/0"
+    # A payload field name *is* its wire name (`_Issue` sets no `rename`), so a
+    # rename breaks a published format. Nothing else pins one:
+    # `test_report_roundtrips_through_json` compares structs, so renaming both
+    # sides passes it.
+    assert msgspec.json.decode(msgspec.json.encode(issue)) == {
+        "code": "tiled-ndarray.tile-shape-too-large",
+        "tile_size": 5,
+        "axis_size": 4,
+        "at": "/tileSets/0/tileShape/0",
+    }
 
 
 def test_tiled_ndarray_url_template_missing_variable() -> None:
@@ -1614,8 +1622,8 @@ _ISSUE_SAMPLES: tuple[Issue, ...] = (
     NdArrayShapeRank(at="/"),
     NdArrayValueCount(at="/", expected=6, shape=(2, 3), got=5),
     TiledNdArrayShapeRank(at="/"),
-    TiledNdArrayTileShapeTooLarge(at="/", tile_dim=8, dim=4),
-    TiledNdArrayTileShapeNotPositive(at="/", tile_dim=0),
+    TiledNdArrayTileShapeTooLarge(at="/", tile_size=8, axis_size=4),
+    TiledNdArrayTileShapeNotPositive(at="/", tile_size=0),
     TiledNdArrayUrlTemplateMissingVariable(at="/", axis="x"),
     TiledNdArrayUrlTemplateUnknownVariable(at="/", variable="q"),
     TiledNdArrayDuplicateSubdividedAxis(at="/", axis="x", axis_indices=(0, 1)),

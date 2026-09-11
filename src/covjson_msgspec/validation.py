@@ -628,11 +628,11 @@ class TiledNdArrayTileShapeTooLarge(
     equal than the corresponding element in ``"shape"``".
     """
 
-    tile_dim: int
-    dim: int
+    tile_size: int
+    axis_size: int
 
     def __str__(self) -> str:
-        return f"tileShape element {self.tile_dim} exceeds shape element {self.dim}"
+        return f"tile size {self.tile_size} exceeds axis size {self.axis_size}"
 
 
 class TiledNdArrayTileShapeNotPositive(
@@ -645,10 +645,10 @@ class TiledNdArrayTileShapeNotPositive(
     axis size by the tile size, which a value of zero or less cannot satisfy.
     """
 
-    tile_dim: int
+    tile_size: int
 
     def __str__(self) -> str:
-        return f"tileShape element {self.tile_dim} must be a positive integer"
+        return f"tile size {self.tile_size} must be a positive integer"
 
 
 class TiledNdArrayUrlTemplateMissingVariable(
@@ -3446,19 +3446,21 @@ def _tile_set_issues(
     # `TiledNdArrayTileShapeNotPositive` carry the wording and the derivation.
     yield from (
         TiledNdArrayTileShapeTooLarge(
-            tile_dim=tile_dim, dim=dim, at=_ptr(path, "tileSets", ts, "tileShape", i)
+            tile_size=tile_size,
+            axis_size=axis_size,
+            at=_ptr(path, "tileSets", ts, "tileShape", i),
         )
-        for i, (tile_dim, dim) in enumerate(
+        for i, (tile_size, axis_size) in enumerate(
             zip(tile_set.tile_shape, arr.shape, strict=True)
         )
-        if tile_dim is not None and tile_dim > dim
+        if tile_size is not None and tile_size > axis_size
     )
 
     yield from (
         TiledNdArrayTileShapeNotPositive(
-            tile_dim=tile_dim, at=_ptr(path, "tileSets", ts, "tileShape", i)
+            tile_size=tile_size, at=_ptr(path, "tileSets", ts, "tileShape", i)
         )
-        for i, tile_dim in non_positive_tile_sizes(tile_set.tile_shape)
+        for i, tile_size in non_positive_tile_sizes(tile_set.tile_shape)
     )
 
     # A subdivided axis (non-null tileShape) MUST have a template variable.
@@ -3551,7 +3553,7 @@ def _validate_tiled_ndarray(
     Examples
     --------
     A tile larger than the array along an axis is flagged, carrying the tile
-    extent and the array extent it exceeds:
+    size and the axis size it exceeds:
 
     >>> from covjson_msgspec.range import TileSet
     >>> arr = TiledNdArray(
@@ -3563,7 +3565,7 @@ def _validate_tiled_ndarray(
     >>> (issue,) = _validate_tiled_ndarray(arr, ())
     >>> issue.code == "tiled-ndarray.tile-shape-too-large"
     True
-    >>> issue.tile_dim, issue.dim
+    >>> issue.tile_size, issue.axis_size
     (5, 4)
 
     A subdivided axis whose ordinal the template omits is flagged:
