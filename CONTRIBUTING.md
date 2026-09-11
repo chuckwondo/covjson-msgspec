@@ -89,6 +89,9 @@ Code:
 - Assign an exception message to a `msg` variable before `raise X(msg)` (ruff EM).
 - Name a bridge for its destination library or format (`to_pandas`, `to_xarray`,
   `to_geojson`); `to_datatree` is the type-named exception.
+- Name a validation finding's payload field for the quantity it holds, and check
+  that name reads right standing alone; `at` carries the location, so a payload
+  never repeats it.
 - snake_case attributes map to lowerCamelCase wire names via `rename="camel"`, so
   ruff N815 is intentionally not applied.
 - Put blank lines around block statements (if / for / while / with / try / def /
