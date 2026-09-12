@@ -163,3 +163,12 @@ issues = [{ code = "axis.coordinates-not-omitted", severity = "error" }]
 [[case]]
 file = "axis-form-conflict.json"
 issues = [{ code = "axis.form-conflict", severity = "error" }]
+
+# Spec 6.1.1's SHALL NOT (#192), in the shape that motivated it: the `composite`
+# axis names `x` among its components, beside a standalone axis keyed `x` that
+# defines it again by default. This is the shape the bridges silently resolve by
+# axis iteration order (#236). The two-primitive-axes and single-axis shapes are
+# covered in tests/test_validation.py.
+[[case]]
+file = "domain-duplicate-coordinate.json"
+issues = [{ code = "domain.duplicate-coordinate", severity = "error" }]

@@ -54,6 +54,7 @@ from covjson_msgspec.validation import (
     DomainAxisNotSingle,
     DomainCompositeCoordinates,
     DomainCompositeDataType,
+    DomainDuplicateCoordinate,
     DomainExtraAxisNotSingle,
     DomainMissingAxis,
     DomainMissingDomainType,
@@ -233,6 +234,83 @@ def test_unknown_domain_type_is_not_checked() -> None:
     )
 
     assert validate(domain).issues == ()
+
+
+@pytest.mark.parametrize("domain_type", [None, "http://example/Custom"])
+def test_duplicate_coordinate_across_two_axes(domain_type: str | None) -> None:
+    # An axis may name an identifier other than its own key, so the axis keyed
+    # "x" defines "y", which the axis keyed "y" defines again by default. The
+    # rule is Spec 6.1.1's, not a domain-type rule, so it does not ride on
+    # `_domain_issues` (which only runs for a recognized `domainType`).
+    domain = Domain(
+        axes={
+            "x": Axis(values=(1.0, 2.0), coordinates=("y",)),
+            "y": Axis.listed((3.0, 4.0)),
+        },
+        domain_type=domain_type,
+        referencing=_REF,
+    )
+    (issue,) = [
+        i for i in validate(domain).issues if isinstance(i, DomainDuplicateCoordinate)
+    ]
+
+    assert issue.coordinate == "y"
+    assert issue.definitions == ("x", "y")
+    assert issue.severity is Severity.ERROR
+    # The rule spans the axis set, so the pointer stops at `axes`.
+    assert issue.at == "/axes"
+
+
+def test_duplicate_coordinate_between_composite_and_standalone_axis() -> None:
+    # The shape that motivated the rule: a composite axis naming "x" among its
+    # components, beside a standalone axis defining "x" by default. `to_pandas`
+    # and `to_xarray` label their output by coordinate identifier, so one
+    # silently shadows the other.
+    composite = Axis.tuple_(
+        [("2020-01-01T00:00:00Z", 1.0, 2.0)], coordinates=("t", "x", "y")
+    )
+    domain = Domain(
+        axes={"composite": composite, "x": Axis.listed((99.0,))},
+        domain_type="Trajectory",
+        referencing=_REF,
+    )
+    (issue,) = [
+        i for i in validate(domain).issues if isinstance(i, DomainDuplicateCoordinate)
+    ]
+
+    assert issue.coordinate == "x"
+    assert issue.definitions == ("composite", "x")
+
+
+def test_duplicate_coordinate_within_one_axis() -> None:
+    # Spec 6.1.1 scopes the rule to "all axis objects", so one axis repeating an
+    # identifier inside its own `coordinates` defines it twice by itself.
+    # `definitions` holds one entry per definition, hence the repeated key.
+    composite = Axis.tuple_([(1.0, 2.0)], coordinates=("x", "x"))
+    domain = Domain(axes={"composite": composite}, referencing=_REF)
+    (issue,) = [
+        i for i in validate(domain).issues if isinstance(i, DomainDuplicateCoordinate)
+    ]
+
+    assert issue.coordinate == "x"
+    assert issue.definitions == ("composite", "composite")
+
+
+def test_distinct_coordinate_identifiers_are_conformant() -> None:
+    # The negative twin: a composite axis whose components are all distinct, and
+    # a standalone axis naming a fourth, collide with nothing.
+    composite = Axis.tuple_(
+        [("2020-01-01T00:00:00Z", 1.0, 2.0)], coordinates=("t", "x", "y")
+    )
+    domain = Domain(
+        axes={"composite": composite, "z": Axis.listed((5.0,))},
+        domain_type="Trajectory",
+        referencing=_REF,
+    )
+
+    assert not [
+        i for i in validate(domain).issues if isinstance(i, DomainDuplicateCoordinate)
+    ]
 
 
 def test_ndarray_value_count_mismatch() -> None:
@@ -1606,6 +1684,7 @@ _ISSUE_SAMPLES: tuple[Issue, ...] = (
         actual=("t", "x"),
     ),
     DomainExtraAxisNotSingle(at="/", domain_type="Grid", axis="z"),
+    DomainDuplicateCoordinate(at="/", coordinate="x", definitions=("a", "x")),
     DomainMissingReferencing(at="/"),
     DomainMissingDomainType(at="/"),
     AxisNotMonotonic(at="/", axis="x"),
@@ -1966,9 +2045,9 @@ def test_composite_issues_are_gated_by_check_values() -> None:
     axis = Axis(values=("abc",), data_type="tuple", coordinates=("t", "x", "y"))
     domain = Domain(axes={"composite": axis}, referencing=_REF)
 
-    assert [
+    assert not [
         i for i in validate(domain).issues if i.code.startswith("axis.composite-")
-    ] == []
+    ]
 
 
 # `_polygon_axis` is called at module-load time by the parametrize decorators
@@ -2387,6 +2466,7 @@ def _describe(issue: Issue) -> str:
             | DomainCompositeDataType()
             | DomainCompositeCoordinates()
             | DomainExtraAxisNotSingle()
+            | DomainDuplicateCoordinate()
             | DomainMissingReferencing()
             | DomainMissingDomainType()
         ):

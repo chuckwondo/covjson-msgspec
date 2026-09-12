@@ -257,6 +257,48 @@ class DomainExtraAxisNotSingle(_Issue, frozen=True, tag="domain.extra-axis-not-s
         )
 
 
+class DomainDuplicateCoordinate(_Issue, frozen=True, tag="domain.duplicate-coordinate"):
+    """One coordinate identifier is defined more than once across a domain's axes.
+
+    Spec 6.1.1 states it with an RFC 2119 keyword: "A coordinate identifier
+    SHALL NOT be defined more than once in all axis objects of a domain
+    object." The rule counts definitions, so one axis can violate it alone.
+    [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119) section 2 defines
+    "MUST NOT" as: "This phrase, or the phrase 'SHALL NOT', mean that the
+    definition is an absolute prohibition of the specification", so this is an
+    error rather than a warning (per ADR-0002).
+
+    Identifiers are resolved through `coordinate_identifiers`, so an axis
+    omitting ``coordinates`` contributes the section's default, its own
+    [`axes`][covjson_msgspec.Domain.axes] key. Two axes cannot collide by
+    default alone (object keys are unique), so at least one collides by writing
+    ``coordinates`` explicitly.
+
+    ``definitions`` holds one axis key per definition, not per distinct axis,
+    because the section scopes the rule to "all axis objects" rather than to
+    pairs of them. A ``"tuple"`` axis keyed ``"composite"`` whose
+    ``coordinates`` reads ``["x", "x"]`` defines ``x`` twice on its own, so it
+    yields ``("composite", "composite")``. Naming the field for the axes would
+    assert two of them where there is one.
+
+    The rule is intrinsic to a domain, so nothing gates it: no ``domainType`` is
+    required (Spec 6.1 only RECOMMENDS one), and no other finding suppresses it.
+    ``axis.coordinates-not-omitted`` is independent, since an axis keyed ``"x"``
+    writing ``coordinates: ["x"]`` restates its default yet still defines ``x``
+    exactly once.
+    """
+
+    coordinate: str
+    definitions: tuple[str, ...]
+
+    def __str__(self) -> str:
+        return (
+            f"coordinate identifier {self.coordinate!r} is defined "
+            f"{len(self.definitions)} times (by {list(self.definitions)}), but "
+            f"must not be defined more than once"
+        )
+
+
 class DomainMissingReferencing(_Issue, frozen=True, tag="domain.missing-referencing"):
     """The domain carries no ``referencing`` in scope."""
 
@@ -918,6 +960,7 @@ Issue = (
     | DomainCompositeDataType
     | DomainCompositeCoordinates
     | DomainExtraAxisNotSingle
+    | DomainDuplicateCoordinate
     | DomainMissingReferencing
     | DomainMissingDomainType
     | AxisNotMonotonic
@@ -2121,25 +2164,37 @@ def _validate_domain(
     check_values: bool = False,
     axis_order_checker: AxisOrderChecker | None = None,
 ) -> Iterator[Issue]:
-    """Yield a domain's domainType, axis-rule, and referencing violations.
+    """Yield a domain's domainType, axis, and referencing violations.
 
-    First, when the effective ``domain_type`` is absent, a
-    `DomainMissingDomainType` warning (Spec 6.1 RECOMMENDS one). Then, resolves
-    ``domain_type`` to a `DomainTypeRule` and, when one applies, yields the
-    violations `_domain_issues` finds. Then, unconditionally (both are O(1) per
-    axis), an ``axis.bounds-length`` error for each axis whose ``bounds`` length
-    is not twice the axis length (`_axis_bounds_issues`), and an
-    ``axis.form-conflict`` error for each axis carrying ``values`` alongside part
-    or all of the regular triple (`_axis_form_issues`). Then, when
-    ``check_values``, the axis value-scans (a time-axis value outside the
-    Gregorian lexical forms via `_temporal_form_issues`, and a non-monotonic
-    ordered axis via `_axis_monotonic_issues`); then a missing-referencing issue
-    when the domain carries no ``referencing`` in scope, and each reference
-    system's language-tag issues (`_reference_system_i18n_issues`). An absent or
-    unrecognized (e.g. custom URI) ``domain_type`` carries no axis rules, but the
-    referencing checks still apply. Issues come in the domain's member order: a
-    ``domainType`` issue first, then the ``axes`` issues (``bounds`` included),
-    then the ``referencing`` issues.
+    The checks run in the domain's wire-member order (``domainType``, then
+    ``axes`` with ``bounds`` included, then ``referencing``), so issues come out
+    in document order:
+
+    1. `DomainMissingDomainType`, when the effective ``domain_type`` is absent
+       (Spec 6.1 RECOMMENDS one).
+    2. The violations `_domain_issues` finds, when ``domain_type`` resolves to a
+       `DomainTypeRule`. An absent or unrecognized (e.g. custom URI)
+       ``domain_type`` carries no axis rules; the referencing checks below still
+       apply.
+    3. Unconditionally, each being O(1) per axis: an ``axis.form-conflict``
+       error per axis carrying ``values`` alongside part or all of the regular
+       triple (`_axis_form_issues`), an ``axis.bounds-length`` error per axis
+       whose ``bounds`` length is not twice the axis length
+       (`_axis_bounds_issues`), and an ``axis.coordinates-not-omitted`` error
+       per axis restating the default ``coordinates``
+       (`_axis_coordinates_issues`).
+    4. A ``domain.duplicate-coordinate`` error per identifier defined by more
+       than one axis object (`_duplicate_coordinate_issues`), the one rule here
+       that spans the axis set rather than a single axis.
+    5. Under ``check_values``, the value-scans: a composite axis value whose
+       shape does not match its coordinates (`_axis_composite_issues`), a
+       time-axis value outside the Gregorian lexical forms
+       (`_temporal_form_issues`), and a non-monotonic ordered axis
+       (`_axis_monotonic_issues`).
+    6. `DomainMissingReferencing`, when the domain carries no ``referencing`` in
+       scope.
+    7. Each reference system's required-member and language-tag violations
+       (`_reference_system_issues`).
 
     Parameters
     ----------
@@ -2151,8 +2206,8 @@ def _validate_domain(
     path
         The reference-token path to ``domain``, built via `_ptr` for each issue.
     check_values
-        Whether to run the O(number of values) axis value-scans (temporal
-        lexical-form and axis monotonicity).
+        Whether to run the O(number of values) axis value-scans (composite
+        value shape, temporal lexical-form, and axis monotonicity).
     axis_order_checker
         The axis-ordering policy forwarded to `_axis_monotonic_issues`; ``None``
         uses `require_monotonic`.
@@ -2160,9 +2215,11 @@ def _validate_domain(
     Yields
     ------
     Issue
-        Axis-rule issues first (``axes`` precedes ``referencing`` on the wire),
-        then the referencing issue if any, then each reference system's
-        language-tag issues.
+        In the domain's wire-member order: the ``domainType`` issue, then the
+        issues under ``axes`` -- the per-axis rules and the domain-wide
+        ``domain.duplicate-coordinate`` (``axes`` precedes ``referencing`` on
+        the wire) -- then the referencing issue if any, then each reference
+        system's required-member and language-tag issues.
 
     Examples
     --------
@@ -2209,6 +2266,12 @@ def _validate_domain(
     yield from _axis_form_issues(domain, path)
     yield from _axis_bounds_issues(domain, path)
     yield from _axis_coordinates_issues(domain, path)
+
+    # Spec 6.1.1's SHALL NOT is a rule about the domain's axis set, not about any
+    # one axis, so it sits here rather than in `_domain_issues`: that one is gated
+    # on a recognized `domainType` above, while this rule holds for every domain
+    # object (Spec 6.1 only RECOMMENDS a `domainType`).
+    yield from _duplicate_coordinate_issues(domain, path)
 
     # Axis values live under `axes`, so these value-scanning checks come before
     # the referencing checks to keep issues in document order. Resolve each
@@ -2855,6 +2918,93 @@ def _axis_coordinates_issues(
         AxisCoordinatesNotOmitted(at=_ptr(path, "axes", name, "coordinates"), axis=name)
         for name, axis in domain.axes.items()
         if axis.data_type not in ("tuple", "polygon") and axis.coordinates == (name,)
+    )
+
+
+def _duplicate_coordinate_issues(
+    domain: Domain, path: tuple[str | int, ...]
+) -> Iterator[DomainDuplicateCoordinate]:
+    """Yield a ``domain.duplicate-coordinate`` error per doubly-defined identifier.
+
+    Spec 6.1.1 forbids defining a coordinate identifier more than once across a
+    domain's axis objects; `DomainDuplicateCoordinate` carries the quote, the
+    severity, and what counts as a definition. The scan is O(number of
+    identifiers), so like `_axis_coordinates_issues` its caller runs it
+    unconditionally rather than under ``check_values``.
+
+    Parameters
+    ----------
+    domain
+        The domain whose axes are checked. Identifiers are counted per domain,
+        matching the section's "of a domain object", so two members of a
+        collection may each define ``"x"``.
+    path
+        The reference-token path to ``domain``, extended per issue via `_ptr`.
+
+    Yields
+    ------
+    DomainDuplicateCoordinate
+        One error per identifier defined more than once, in order of the
+        identifier's first appearance. Each points at ``axes`` rather than at one
+        axis: that is the only location true of both a collision spanning two axis
+        objects and one inside a single axis's ``coordinates``, and ``definitions``
+        already distinguishes them.
+
+    Examples
+    --------
+    An axis may name an identifier other than its own key, which collides when a
+    sibling axis defaults to that same name:
+
+    >>> from covjson_msgspec import Axis, Domain
+    >>> dom = Domain(
+    ...     axes={
+    ...         "x": Axis(values=(1.0,), coordinates=("y",)),
+    ...         "y": Axis.listed((1.0, 2.0)),
+    ...     }
+    ... )
+    >>> [(i.coordinate, i.definitions) for i in _duplicate_coordinate_issues(dom, ())]
+    [('y', ('x', 'y'))]
+
+    One axis can also define an identifier twice by itself, which is why
+    ``definitions`` holds an entry per definition rather than per axis:
+
+    >>> composite = Axis.tuple_([(1.0, 2.0)], coordinates=("x", "x"))
+    >>> dom = Domain(axes={"composite": composite})
+    >>> [(i.coordinate, i.definitions) for i in _duplicate_coordinate_issues(dom, ())]
+    [('x', ('composite', 'composite'))]
+
+    Distinct identifiers never collide, whatever the axis keys:
+
+    >>> dom = Domain(axes={"x": Axis.listed((1.0,)), "y": Axis.listed((2.0,))})
+    >>> list(_duplicate_coordinate_issues(dom, ()))
+    []
+
+    Several identifiers can collide at once. Each error lists every definition,
+    so ``z`` names three, and the errors come in first-appearance order, so
+    ``q`` precedes ``z``:
+
+    >>> dom = Domain(
+    ...     axes={
+    ...         "a": Axis.tuple_([(1.0, 2.0)], coordinates=("q", "z")),
+    ...         "b": Axis.tuple_([(1.0, 2.0)], coordinates=("z", "q")),
+    ...         "c": Axis(values=(1.0,), coordinates=("z",)),
+    ...     }
+    ... )
+    >>> [(i.coordinate, i.definitions) for i in _duplicate_coordinate_issues(dom, ())]
+    [('q', ('a', 'b')), ('z', ('a', 'b', 'c'))]
+    """
+    claims: dict[str, list[str]] = {}
+
+    for name, axis in domain.axes.items():
+        for identifier in coordinate_identifiers(axis, name):
+            claims.setdefault(identifier, []).append(name)
+
+    return (
+        DomainDuplicateCoordinate(
+            at=_ptr(path, "axes"), coordinate=identifier, definitions=tuple(sites)
+        )
+        for identifier, sites in claims.items()
+        if len(sites) > 1
     )
 
 
