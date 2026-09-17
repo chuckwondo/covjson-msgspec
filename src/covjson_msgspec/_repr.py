@@ -348,7 +348,7 @@ def _section(title: str, body: str) -> str:
     Parameters
     ----------
     title
-        The section heading (shown in the ``<summary>``); escaped here.
+        The section heading (shown in the ``<summary>``). Escaped here.
     body
         Pre-rendered HTML for the section's contents.
 
@@ -402,7 +402,7 @@ def _kv_table(rows: Sequence[tuple[str, str]]) -> str:
     Parameters
     ----------
     rows
-        ``(key, value)`` pairs of raw text; both are escaped here (the value via
+        ``(key, value)`` pairs of raw text. Both are escaped here (the value via
         `_cell`, so an empty value shows the "(none)" placeholder).
 
     Returns
@@ -429,9 +429,9 @@ def _grid_table(headers: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
     Parameters
     ----------
     headers
-        Column headings; escaped here.
+        Column headings. Escaped here.
     rows
-        Each row's raw-text cells; escaped here via `_cell`. An empty ``rows``
+        Each row's raw-text cells. Escaped here via `_cell`. An empty ``rows``
         yields a faint "(none)" placeholder instead of a header-only table.
 
     Returns
@@ -617,8 +617,8 @@ def _axis_detail(axis: Axis) -> str:
     Returns
     -------
     str
-        For a composite axis, its ``dataType`` and coordinate names; for a
-        regular axis, ``start`` to ``stop``; otherwise a truncated value preview.
+        For a composite axis, its ``dataType`` and coordinate names. For a
+        regular axis, ``start`` to ``stop``. Otherwise a truncated value preview.
 
     Examples
     --------
@@ -651,7 +651,7 @@ def _value_preview(values: Sequence[object]) -> str:
     Returns
     -------
     str
-        A comma-separated preview; long sequences show the head and the last
+        A comma-separated preview. Long sequences show the head and the last
         value with an ellipsis between.
 
     Examples
@@ -768,7 +768,7 @@ def _unit_text(unit: Unit | None) -> str:
     -------
     str
         The unit's symbol (the bare string, or a `Symbol`'s ``value``), else its
-        label; ``""`` when there is no unit.
+        label. ``""`` when there is no unit.
 
     Examples
     --------

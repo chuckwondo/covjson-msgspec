@@ -4,7 +4,7 @@ categories.
 A CoverageJSON *parameter* describes one variable found in a coverage's ranges.
 It comes in two mutually exclusive shapes:
 
-* **continuous**: may carry a `Unit` (omitted for a dimensionless quantity); or
+* **continuous**: may carry a `Unit` (omitted for a dimensionless quantity). Or
 * **categorical**: its `ObservedProperty` lists `Category` values and a
   ``category_encoding`` maps each category id to the integer code(s) used in the
   range. A categorical parameter MUST NOT carry a unit.
@@ -33,7 +33,7 @@ class Symbol(CovJSONStruct, frozen=True):
     """A unit symbol together with the URI of its coding scheme.
 
     This is the object form of `Unit.symbol` (the other form is a bare string).
-    The coding-scheme URI is the CoverageJSON ``type`` member; the attribute is
+    The coding-scheme URI is the CoverageJSON ``type`` member. The attribute is
     ``type_`` (PEP 8 trailing underscore) to avoid shadowing the builtin, and is
     mapped back to ``type`` on the wire.
 
@@ -46,7 +46,7 @@ class Symbol(CovJSONStruct, frozen=True):
     """
 
     value: str
-    # Wire name is ``type``; the ``type_`` attribute avoids shadowing the
+    # Wire name is ``type``. The ``type_`` attribute avoids shadowing the
     # builtin. An explicit ``name=`` overrides the base's "camel" rule.
     type_: str = msgspec.field(name="type")
 
@@ -106,7 +106,7 @@ class Category(CovJSONStruct, frozen=True):
 class ObservedProperty(CovJSONStruct, frozen=True):
     """The property that a parameter observes.
 
-    ``categories`` is present only for categorical parameters; its presence is
+    ``categories`` is present only for categorical parameters. Its presence is
     what marks a `Parameter` as categorical.
 
     Examples
@@ -126,7 +126,7 @@ class ObservedProperty(CovJSONStruct, frozen=True):
     label: I18n
     id: str | None = None
     description: I18n | None = None
-    # tuple (not list) so the struct stays immutable; see CovJSONStruct.
+    # tuple (not list) so the struct stays immutable. See CovJSONStruct.
     categories: tuple[Category, ...] | None = None
 
     def __post_init__(self) -> None:
@@ -203,7 +203,7 @@ class Parameter(CovJSONStruct, frozen=True, tag="Parameter"):
     category_encoding: CategoryEncoding | None = None
 
     def __post_init__(self) -> None:
-        # Continuous vs categorical are mutually exclusive; presence of
+        # Continuous vs categorical are mutually exclusive. Presence of
         # observed_property.categories is the discriminator. Both checks are
         # O(1), so they run on every path (construction and decode).
         categorical = self.observed_property.categories is not None
@@ -231,7 +231,7 @@ class Parameter(CovJSONStruct, frozen=True, tag="Parameter"):
         Parameters
         ----------
         observed_property
-            The observed property; must not declare ``categories``.
+            The observed property. Must not declare ``categories``.
         unit
             The unit of measurement for the parameter's values.
         id
@@ -280,12 +280,12 @@ class Parameter(CovJSONStruct, frozen=True, tag="Parameter"):
         label: I18n | None = None,
         description: I18n | None = None,
     ) -> Self:
-        """Build a categorical parameter (no unit; categories are encoded).
+        """Build a categorical parameter (no unit: categories are encoded).
 
         Parameters
         ----------
         observed_property
-            The observed property; must declare ``categories``.
+            The observed property. Must declare ``categories``.
         category_encoding
             Maps each category id to the integer code(s) used in the range.
         id
@@ -341,7 +341,7 @@ class Parameter(CovJSONStruct, frozen=True, tag="Parameter"):
 class ParameterGroup(CovJSONStruct, frozen=True, tag="ParameterGroup"):
     """A logical grouping of parameters (e.g. the components of a vector).
 
-    ``members`` references parameter keys; at least one of ``label`` or
+    ``members`` references parameter keys. At least one of ``label`` or
     ``observed_property`` must be present.
 
     Examples

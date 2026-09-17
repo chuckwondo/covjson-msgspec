@@ -2,9 +2,9 @@
 
 CoverageJSON is validated in tiers:
 
-1. structural and field-level checks, performed by msgspec on decode;
+1. structural and field-level checks, performed by msgspec on decode.
 2. cheap per-object invariants, performed in each struct's ``__post_init__``
-   (e.g. a `Unit` needs a label or symbol); and
+   (e.g. a `Unit` needs a label or symbol). And
 3. cross-cutting, document-level rules, performed here by `validate`.
 
 Tiers 1 and 2 stay deliberately local: they reject only what a single struct
@@ -121,7 +121,7 @@ class Severity(enum.StrEnum):
 class _Issue(
     msgspec.Struct, frozen=True, kw_only=True, omit_defaults=True, tag_field="code"
 ):
-    """Shared base for every validation finding (private; not a union member).
+    """Shared base for every validation finding (private, not a union member).
 
     Each concrete finding is a frozen struct subclassing this base and pinning a
     msgspec ``tag``: its stable, machine-readable ``code``
@@ -229,7 +229,7 @@ class DomainCompositeCoordinates(
     The Common Domain Types spec fixes each composite type's coordinate
     identifiers (Section is ``["t","x","y"]``), offering alternatives for some
     (Trajectory is ``["t","x","y","z"]`` or ``["t","x","y"]``). ``expected``
-    carries every allowed ordering; ``actual`` echoes what was found.
+    carries every allowed ordering. ``actual`` echoes what was found.
     """
 
     domain_type: str
@@ -312,7 +312,7 @@ class DomainMissingDomainType(_Issue, frozen=True, tag="domain.missing-domain-ty
     Spec 6.1 RECOMMENDS a domain object carry ``domainType`` for
     interoperability, so this is a warning, not an error (per ADR-0002). The
     effective type may be supplied by the domain itself, a coverage's own
-    ``domainType``, or a collection's; this fires only when none is in scope.
+    ``domainType``, or a collection's. This fires only when none is in scope.
     """
 
     severity: Severity = Severity.WARNING
@@ -342,7 +342,7 @@ class AxisCompositeValueShape(_Issue, frozen=True, tag="axis.composite-value-sha
     """A composite axis's value is not the array its ``dataType`` demands.
 
     Spec 6.1.1 (Axis Objects): for ``"tuple"``, each axis value MUST be "an array
-    of fixed size of primitive values in a defined order"; for ``"polygon"``, "a
+    of fixed size of primitive values in a defined order". For ``"polygon"``, "a
     GeoJSON Polygon coordinate array". A value that is not an array at all
     violates either MUST, so this is an error (per ADR-0002).
 
@@ -481,7 +481,7 @@ class AxisBoundsLength(_Issue, frozen=True, tag="axis.bounds-length"):
     Spec 6.1.1 (Axis Objects): "An axis object MAY have axis value bounds defined
     in the member ``"bounds"`` where the value is an array of values of length
     ``len*2`` with ``len`` being the length of the ``"values"`` array." The MAY
-    governs whether ``bounds`` is *present*; once present, the spec *defines* its
+    governs whether ``bounds`` is *present*. Once present, the spec *defines* its
     length (two per axis value, a lower and an upper), so a wrong-length array
     fails to be a bounds array at all. There is nothing to interpret and the one
     repair is to drop it, which makes it an error (per ADR-0002), exactly as
@@ -515,10 +515,10 @@ class AxisFormConflict(_Issue, frozen=True, tag="axis.form-conflict"):
     never says which form wins when both are present, so exclusivity is entailed
     rather than stated. Three things the section does say entail it: the triple
     is introduced "as a compact notation for a regularly spaced numeric axis",
-    i.e. an alternative encoding of the same content; the elements of
+    i.e. an alternative encoding of the same content. The elements of
     ``"values"`` "MAY be reconstructed with the formula ..." and, for ``num`` of
     1, ``"values"`` "is ``[start]``", both of which presuppose ``values`` is
-    absent and derivable; and it supplies no tiebreak for a document carrying
+    absent and derivable, and it supplies no tiebreak for a document carrying
     both inconsistently, which a specification permitting both would have to.
 
     An axis carrying both stays readable, since
@@ -552,7 +552,7 @@ class AxisFormConflict(_Issue, frozen=True, tag="axis.form-conflict"):
 class AxisCoordinatesNotOmitted(
     _Issue, frozen=True, tag="axis.coordinates-not-omitted"
 ):
-    """An axis includes default ``coordinates`` explicitly; the default MUST be
+    """An axis includes default ``coordinates`` explicitly. The default MUST be
     omitted (left implicit).
 
     An axis's ``coordinates`` member names the coordinate identifiers for its
@@ -569,7 +569,7 @@ class AxisCoordinatesNotOmitted(
     ``coordinates`` structurally cannot be the one-element default: a
     single-identifier polygon cannot be constructed at all (ADR-0019). A
     ``"tuple"`` is subtler, since a one-wide tuple could carry a one-element
-    ``coordinates``; §6.1.1 leaves it ambiguous whether a composite axis's
+    ``coordinates``. §6.1.1 leaves it ambiguous whether a composite axis's
     ``coordinates`` is required (its size defines the tuple width) or defaultable
     like a primitive's. ADR-0019 settles it as required at construction, so a
     composite axis has no default case to restate and is excluded. A
@@ -579,7 +579,7 @@ class AxisCoordinatesNotOmitted(
     Neither decode nor [`Axis`][covjson_msgspec.Axis] construction can catch it: the
     identifier is the ``axes`` key, not a field on the axis, so an axis alone does
     not know its own name. The builders do not see the key either, so ``encode`` can
-    emit the violation; consistent with the permissive core, the library reports it
+    emit the violation. Consistent with the permissive core, the library reports it
     rather than rewriting the axis at construction time.
     """
 
@@ -814,7 +814,7 @@ class CoverageDomainTypeNotOmitted(
 
     Spec 6.4 says that when a coverage is part of a collection carrying
     ``domainType``, that member SHOULD be omitted in the coverage, so this is a
-    warning (per ADR-0002). The member's value equals the collection's here; a
+    warning (per ADR-0002). The member's value equals the collection's here. A
     *differing* value falsifies the collection's type claim and is the error
     `CoverageDomainTypeConflict` instead.
     """
@@ -835,7 +835,7 @@ class CoverageDomainTypeConflict(
     """A collection member's declared ``domainType`` contradicts its collection's.
 
     A collection's ``domainType`` indicates it contains only coverages of that
-    type (Spec 6.5); a member whose declared type (at the coverage level or on its
+    type (Spec 6.5). A member whose declared type (at the coverage level or on its
     inline domain) differs falsifies that claim, so this is an error, not a mere
     SHOULD-omit warning. An equal, redundant coverage-level value is the warning
     `CoverageDomainTypeNotOmitted` instead.
@@ -920,7 +920,7 @@ class ParameterCategoryEncodingUnknownId(
 class I18nInvalidLanguageTag(_Issue, frozen=True, tag="i18n.invalid-language-tag"):
     """An i18n object key is not a valid BCP 47 language tag.
 
-    Spec 2 states no RFC 2119 keyword; it *defines* an i18n object as "a string
+    Spec 2 states no RFC 2119 keyword. It *defines* an i18n object as "a string
     in multiple languages where each key is a language tag as defined in BCP 47"
     (RFC 5646). This rule is entailed by that definition rather than stated by
     it: a key that is not a language tag tags no language, so the object is not
@@ -948,7 +948,7 @@ class I18nEmpty(_Issue, frozen=True, tag="i18n.empty"):
 
 
 # The closed set of validation findings. `validate` returns a `ValidationReport`
-# whose ``issues`` are these; a consumer matches on the concrete variant (`match`
+# whose ``issues`` are these. A consumer matches on the concrete variant (`match`
 # / `assert_never` for exhaustiveness, or `isinstance` to read a variant's typed
 # payload) and uses `code` only for stringly work (aggregation, logging, the wire
 # tag).
@@ -1003,7 +1003,7 @@ class ValidationReport(msgspec.Struct, frozen=True):
 
     Returned by `validate` in the default ``mode="collect"``. A frozen value
     carrier, like [`ResolveReport`][covjson_msgspec.ResolveReport] and
-    [`AssembleReport`][covjson_msgspec.AssembleReport]; unlike those it has no
+    [`AssembleReport`][covjson_msgspec.AssembleReport]. Unlike those it has no
     recovered value to carry, so the findings are the whole payload and the
     verdict is computed over them.
 
@@ -1019,7 +1019,7 @@ class ValidationReport(msgspec.Struct, frozen=True):
     order), `errors`, and `warnings`. The report is deliberately neither iterable
     nor sized, because it bundles three views (all findings, the errors, the
     warnings) and an implicit ``for x in report`` or ``len(report)`` would
-    silently pick one; instead each raises a `TypeError`, so the caller reaches
+    silently pick one. Instead each raises a `TypeError`, so the caller reaches
     for the accessor it meant. It also has **no** truth value: ``bool(report)`` raises,
     because ``if report`` is ambiguous between "has findings" and "is valid". Ask
     `ok`.
@@ -1048,7 +1048,7 @@ class ValidationReport(msgspec.Struct, frozen=True):
     >>> report.issues
     ()
 
-    A document missing a required axis is invalid; `errors` carries why:
+    A document missing a required axis is invalid. `errors` carries why:
 
     >>> incomplete = Domain(
     ...     axes={"x": Axis.listed((1.0,))}, domain_type="Grid", referencing=[ref]
@@ -1118,7 +1118,7 @@ class ValidationReport(msgspec.Struct, frozen=True):
 # An axis-ordering policy: given a primitive axis's ``values`` and the reference
 # system governing them (or ``None``), return the index of the first value that
 # breaks the required ordering, or ``None`` for no violation to report. `validate`
-# applies `require_monotonic` by default; pass an ``axis_order_checker`` to
+# applies `require_monotonic` by default. Pass an ``axis_order_checker`` to
 # override it (strict monotonicity, a non-standard calendar, or ordering the
 # values the default leaves alone). See `require_monotonic` for the default policy.
 AxisOrderChecker = Callable[
@@ -1172,7 +1172,7 @@ class DomainTypeRule(msgspec.Struct, frozen=True):
     required_axes
         Axis names that MUST be present.
     optional_axes
-        Axis names that MAY be present; any other axis draws a warning.
+        Axis names that MAY be present. Any other axis draws a warning.
     single_valued_axes
         Axis names that, when present, MUST carry exactly one coordinate value.
     composite_data_type
@@ -1341,7 +1341,7 @@ def validate(
     than an inline `Domain`: the domain itself and the range-vs-domain checks
     (axis names, shapes) cannot run on data that has not been fetched, so they are
     skipped silently. Such a document can return no issues while a chunk of
-    validation never ran; resolve the reference to an inline `Domain` first for
+    validation never ran. Resolve the reference to an inline `Domain` first for
     full coverage. (URL references are spec-valid and common in large collections,
     so this is not reported as an issue.)
 
@@ -1440,7 +1440,7 @@ def _issues(
     check_values
         Whether to run the O(number of values) value-scanning checks.
     axis_order_checker
-        The axis-ordering policy forwarded to the monotonic-axis check; ``None``
+        The axis-ordering policy forwarded to the monotonic-axis check. ``None``
         uses `require_monotonic`.
 
     Yields
@@ -1486,7 +1486,7 @@ def _ptr(path: tuple[str | int, ...], *parts: str | int) -> str:
     A JSON Pointer (RFC 6901) is a run of ``/``-prefixed reference tokens, so the
     empty tuple is the whole-document pointer ``""`` and every token contributes
     its own leading ``/``. ``path`` carries the raw tokens threaded down the
-    validation walk; ``parts`` are any extra tokens appended at the emitting
+    validation walk. ``parts`` are any extra tokens appended at the emitting
     site. Each token is escaped once here (`_escape`), so the pointer format
     lives in a single place and callers thread raw tokens only, materializing a
     string exactly when an issue is emitted.
@@ -1495,7 +1495,7 @@ def _ptr(path: tuple[str | int, ...], *parts: str | int) -> str:
     ----------
     path
         The reference tokens built so far (object keys as ``str``, array indices
-        as ``int``); ``()`` is the document root.
+        as ``int``). ``()`` is the document root.
     *parts
         Extra reference tokens to append at the point of emission.
 
@@ -1524,7 +1524,7 @@ def _escape(token: str | int) -> str:
     """Escape one JSON Pointer reference token (RFC 6901).
 
     A literal ``~`` and ``/`` inside a string token are escaped to ``~0`` and
-    ``~1`` so they are not mistaken for the path separator; an integer token (an
+    ``~1`` so they are not mistaken for the path separator. An integer token (an
     array index) is stringified as-is. The two replacements are skipped when
     neither special character is present, which is the common case (axis names,
     field names), so a conformant document that emits few issues pays almost
@@ -1775,7 +1775,7 @@ def _unexpected_axis_issues(
     """Yield a ``domain.extra-axis-not-single`` issue per surplus multi axis.
 
     An axis outside the required-or-optional set is permitted only if it is
-    single-valued; a surplus multi-valued axis is a MUST violation.
+    single-valued. A surplus multi-valued axis is a MUST violation.
 
     Parameters
     ----------
@@ -1813,14 +1813,14 @@ def _unexpected_axis_issues(
     # The spec permits surplus axes, but only single-valued ones: "A domain that
     # states conformance to one of the domain types in this specification MAY
     # have any number of additional one-coordinate axes not defined here." The
-    # spec states this rule without a rationale; the reason is structural. An
+    # spec states this rule without a rationale. The reason is structural. An
     # axis's length is a factor in the range-array shape (see
     # `_check_range_against_domain`), so a length-1 axis adds no dimension: it is
     # pure positioning (a scalar coordinate, e.g. the fixed time or elevation of
     # a 2-D snapshot) and is transparent to the contract the domainType promises.
     # A multi-valued surplus axis adds a real dimension, silently redefining that
-    # structure; the spec steers such data to a different domain type (or none).
-    # So a surplus single-valued axis is conformant (no issue); a surplus
+    # structure. The spec steers such data to a different domain type (or none).
+    # So a surplus single-valued axis is conformant (no issue). A surplus
     # multi-valued one is a MUST violation (error).
     return (
         DomainExtraAxisNotSingle(
@@ -1936,15 +1936,15 @@ def _language_tag_issues(
     """Yield an i18n object's ``i18n.empty`` or ``i18n.invalid-language-tag`` issues.
 
     Both rules are entailed by section 2's keyword-free definition rather than
-    stated by it; `I18nEmpty` and `I18nInvalidLanguageTag` carry the derivation.
-    A present-but-empty map (``{}``) is reported once as ``i18n.empty``;
-    otherwise each malformed key is reported via `_is_valid_language_tag`.
+    stated by it. `I18nEmpty` and `I18nInvalidLanguageTag` carry the derivation.
+    A present-but-empty map (``{}``) is reported once as ``i18n.empty``.
+    Otherwise each malformed key is reported via `_is_valid_language_tag`.
 
     Parameters
     ----------
     tags
         An i18n language map, or ``None`` when the member is absent (yields
-        nothing); each key is checked. Accepting ``None`` here, rather than at
+        nothing). Each key is checked. Accepting ``None`` here, rather than at
         every call site, is what lets a caller pass an optional ``label`` /
         ``description`` straight through without a guarding ternary.
     path
@@ -1958,7 +1958,7 @@ def _language_tag_issues(
 
     Examples
     --------
-    ``"und"`` and well-formed, registered tags pass; ``None`` yields nothing:
+    ``"und"`` and well-formed, registered tags pass. ``None`` yields nothing:
 
     >>> list(_language_tag_issues({"und": "x", "en-US": "y"}, ()))
     []
@@ -2017,7 +2017,7 @@ def _label_description_i18n_issues(
 
     Examples
     --------
-    The pointer shows which member each issue came down, so it stays here;
+    The pointer shows which member each issue came down, so it stays here.
     ``path`` only prefixes it, and is empty:
 
     >>> issues = _label_description_i18n_issues({"en_US": "x"}, {"jp": "y"}, ())
@@ -2174,7 +2174,7 @@ def _validate_domain(
        (Spec 6.1 RECOMMENDS one).
     2. The violations `_domain_issues` finds, when ``domain_type`` resolves to a
        `DomainTypeRule`. An absent or unrecognized (e.g. custom URI)
-       ``domain_type`` carries no axis rules; the referencing checks below still
+       ``domain_type`` carries no axis rules. The referencing checks below still
        apply.
     3. Unconditionally, each being O(1) per axis: an ``axis.form-conflict``
        error per axis carrying ``values`` alongside part or all of the regular
@@ -2202,14 +2202,14 @@ def _validate_domain(
         The domain to validate.
     domain_type
         The effective domain type (from the domain itself, or a coverage's own
-        ``domainType``); ``None`` or unrecognized means no axis rules to apply.
+        ``domainType``). ``None`` or unrecognized means no axis rules to apply.
     path
         The reference-token path to ``domain``, built via `_ptr` for each issue.
     check_values
         Whether to run the O(number of values) axis value-scans (composite
         value shape, temporal lexical-form, and axis monotonicity).
     axis_order_checker
-        The axis-ordering policy forwarded to `_axis_monotonic_issues`; ``None``
+        The axis-ordering policy forwarded to `_axis_monotonic_issues`. ``None``
         uses `require_monotonic`.
 
     Yields
@@ -2252,7 +2252,7 @@ def _validate_domain(
     # Axis-rule issues come before the referencing check so issues stay in
     # document order (`axes` precedes `referencing` on the wire). The effective
     # domain type may come from the Domain itself or, inside a coverage, from the
-    # coverage's own domainType (passed in by the caller); an absent or
+    # coverage's own domainType (passed in by the caller). An absent or
     # unrecognized one carries no axis rules.
     if (
         domain_type is not None
@@ -2369,7 +2369,7 @@ def _temporal_form_issues(
     non-string value. Each value that resolved to
     [`Malformed`][covjson_msgspec.temporal.Malformed] should have used one of the
     recommended Gregorian lexical forms, so it is reported (a warning, per ADR-0002,
-    since Spec 5.2 makes this a SHOULD); a valid but unrepresentable value (an expanded
+    since Spec 5.2 makes this a SHOULD). A valid but unrepresentable value (an expanded
     year, a leap second) is a legal form and is left alone. This is a
     value-scanning check, gated behind ``validate(check_values=True)``.
 
@@ -2538,7 +2538,7 @@ def _polygon_axis_issues(
     Yields
     ------
     Issue
-        An `AxisCompositeValueShape` per value that is not a Polygon array; else,
+        An `AxisCompositeValueShape` per value that is not a Polygon array. Else,
         for a well-shaped value, the `_polygon_ring_issues` of each of its rings.
 
     Examples
@@ -2548,7 +2548,7 @@ def _polygon_axis_issues(
     >>> [issue.code for issue in _polygon_axis_issues("composite", axis, ())]
     ['axis.composite-value-shape']
 
-    A well-shaped value is scanned deeper; here its one ring is a position short:
+    A well-shaped value is scanned deeper. Here its one ring is a position short:
 
     >>> ring = [[0.0, 0.0], [1.0, 0.0], [0.0, 0.0]]
     >>> axis = Axis(values=((ring,),), data_type="polygon", coordinates=("x", "y"))
@@ -2601,7 +2601,7 @@ def _polygon_ring_issues(
         One linear ring: a non-empty sequence of position sequences. Typed
         ``object`` because the polygon interior is [`Any`][typing.Any].
     ring_path
-        The reference tokens to this ring; the ring issues point here and each
+        The reference tokens to this ring. The ring issues point here and each
         position issue appends its index, both via `_ptr`.
 
     Yields
@@ -2827,7 +2827,7 @@ def _axis_form_issues(
 ) -> Iterator[AxisFormConflict]:
     """Yield an ``axis.form-conflict`` error per axis carrying both numeric forms.
 
-    Spec 6.1.1 offers ``values`` or the ``start`` / ``stop`` / ``num`` triple; we
+    Spec 6.1.1 offers ``values`` or the ``start`` / ``stop`` / ``num`` triple. We
     read them as exclusive, which the section entails rather than states
     (`AxisFormConflict` carries the derivation). An axis carrying ``values``
     alongside *any* triple member is reported, complete triple or not: the rule
@@ -2885,7 +2885,7 @@ def _axis_coordinates_issues(
     skipped.
 
     Composite ``"tuple"`` and ``"polygon"`` axes are excluded (the same filter
-    `_axis_monotonic_issues` uses); `AxisCoordinatesNotOmitted` explains why a
+    `_axis_monotonic_issues` uses). `AxisCoordinatesNotOmitted` explains why a
     composite axis has no default ``coordinates`` to restate. Every other axis is
     in scope, ``primitive`` and custom ``dataType`` alike.
 
@@ -2927,7 +2927,7 @@ def _duplicate_coordinate_issues(
     """Yield a ``domain.duplicate-coordinate`` error per doubly-defined identifier.
 
     Spec 6.1.1 forbids defining a coordinate identifier more than once across a
-    domain's axis objects; `DomainDuplicateCoordinate` carries the quote, the
+    domain's axis objects. `DomainDuplicateCoordinate` carries the quote, the
     severity, and what counts as a definition. The scan is O(number of
     identifiers), so like `_axis_coordinates_issues` its caller runs it
     unconditionally rather than under ``check_values``.
@@ -3020,12 +3020,12 @@ def _axis_monotonic_issues(
     For every primitive (non-composite) value-listing axis, the axis-ordering
     policy is asked where the axis's ``values`` first break their required
     ordering, given the reference system governing the axis (``systems``). A
-    returned index becomes an `AxisNotMonotonic` error pointing at that value;
+    returned index becomes an `AxisNotMonotonic` error pointing at that value.
     ``None`` means nothing to report. Regular (``start``/``stop``/``num``) axes are
     monotonic by construction and skipped without materializing. This is a
     value-scanning check, gated behind ``validate(check_values=True)``.
 
-    A custom ``axis_order_checker`` is called as ``(values, system)``; ``None``
+    A custom ``axis_order_checker`` is called as ``(values, system)``. ``None``
     uses the default policy (`_default_break`, equivalent to `require_monotonic`),
     which reads each temporal axis's already-resolved values from ``resolved``
     rather than re-parsing them.
@@ -3037,7 +3037,7 @@ def _axis_monotonic_issues(
     path
         The reference-token path to ``domain``, built via `_ptr` for each issue.
     axis_order_checker
-        The axis-ordering policy; ``None`` uses the default (`require_monotonic`).
+        The axis-ordering policy. ``None`` uses the default (`require_monotonic`).
     systems
         The coordinate-to-system index, from
         `coordinate_systems`.
@@ -3104,7 +3104,7 @@ def _axis_break(
     """The first index where an axis's values break their ordering, or ``None``.
 
     Applies the active ordering policy to one axis: a custom ``axis_order_checker``
-    is asked directly (``(values, system)``); ``None`` uses the default policy
+    is asked directly (``(values, system)``). ``None`` uses the default policy
     (`_default_break`), which reuses the axis's pre-resolved temporal ``results``
     instead of re-parsing them.
 
@@ -3210,7 +3210,7 @@ def _default_break(
     values so a temporal string is parsed once per domain). `_ordering_kind`
     classifies the system: a numeric axis is keyed by value (`_numeric_keys`), a
     temporal axis by resolved instant (`_temporal_keys_from_resolved`, resolving
-    the values inline when ``results`` is ``None``); an unordered system yields
+    the values inline when ``results`` is ``None``). An unordered system yields
     ``None``.
 
     Parameters
@@ -3255,7 +3255,7 @@ def _default_break(
             )
         )
 
-        if temporal is None:  # resolved instants mix tz-awareness; skip
+        if temporal is None:  # resolved instants mix tz-awareness. Skip
             return None
 
         keyed = temporal
@@ -3309,9 +3309,9 @@ def _ordering_kind(
     "defines a natural ordering". This is the single, total classifier of which
     systems the default check treats as ordered, and of what kind:
 
-    * a geographic, projected, or vertical CRS orders its values numerically;
+    * a geographic, projected, or vertical CRS orders its values numerically.
     * a standard-calendar [`TemporalRS`][covjson_msgspec.TemporalRS] orders its
-      values as instants in time (`is_standard_calendar`);
+      values as instants in time (`is_standard_calendar`).
     * an identifier system (categorical / coded), a non-standard-calendar temporal
       system, and an axis with no system in scope (``None``) define no ordering.
 
@@ -3367,7 +3367,7 @@ def _temporal_keys_from_resolved(
     hinging on such a value between two moments is not caught here.
 
     [`when`][covjson_msgspec.temporal.Moment.when] is timezone-aware only at second
-    precision, so a naive and an aware instant are not comparable; when the
+    precision, so a naive and an aware instant are not comparable. When the
     resolved moments mix awareness, ``None`` is returned so the caller declines to
     order the axis rather than fabricate a zone.
 
@@ -3424,7 +3424,7 @@ def _first_monotonic_break(
     ``keyed`` pairs each comparison key with its original position in the axis,
     already filtered to mutually comparable keys (so a time axis passes only its
     resolvable, same-awareness instants). The ordering direction is set by the
-    first strictly-unequal adjacent pair; a later pair that contradicts it breaks
+    first strictly-unequal adjacent pair. A later pair that contradicts it breaks
     the order, and the *later* key's original index is returned (the coordinate to
     look at). Equal-adjacent keys are permitted unless ``strict``. Fewer than two
     keys is trivially ordered.
@@ -3481,7 +3481,7 @@ def _validate_ndarray(arr: NdArray, path: tuple[str | int, ...]) -> Iterator[Iss
     quoted on their finding types: ``shape`` and ``axisNames`` must have the same
     rank (`NdArrayShapeRank`, which the section states), and the number of
     ``values`` must equal the product of ``shape`` (`NdArrayValueCount`, which it
-    entails; ``math.prod(()) == 1``, so a 0-dimensional array must hold exactly
+    entails: ``math.prod(()) == 1``, so a 0-dimensional array must hold exactly
     one value). Decoding is permissive about these: a rank or value-count mismatch
     is an *internally inconsistent* but still interpretable array, so per ADR-0002
     it is reported here rather than rejected at construction, keeping a repairable
@@ -3547,10 +3547,10 @@ def _tile_set_issues(
     `_validate_tiled_ndarray` for the full set, and each finding type for the
     section's wording): each non-null ``tileShape`` element must be a positive
     integer (``tiled-ndarray.tile-shape-not-positive``) not exceeding its ``shape``
-    element (``tiled-ndarray.tile-shape-too-large``); the ``urlTemplate`` must carry a
+    element (``tiled-ndarray.tile-shape-too-large``). The ``urlTemplate`` must carry a
     variable for each subdivided axis (``tiled-ndarray.url-template-missing-variable``)
     and, when ``rank_ok``, must not name a non-subdivided axis
-    (``tiled-ndarray.url-template-unknown-variable``); and, also when ``rank_ok``,
+    (``tiled-ndarray.url-template-unknown-variable``). And, also when ``rank_ok``,
     no two subdivided axes sharing a name may differ in tile ordinal
     (``tiled-ndarray.duplicate-subdivided-axis``).
 
@@ -3565,7 +3565,7 @@ def _tile_set_issues(
     path
         The reference-token path to ``arr``, built via `_ptr` for each issue.
     rank_ok
-        Whether ``axisNames`` rank-matches ``shape``; the unknown-variable and
+        Whether ``axisNames`` rank-matches ``shape``. The unknown-variable and
         duplicate-axis checks are skipped when it does not (the axis/tile
         alignment is then unreliable, so both would report against a
         subdivided-axis set the truncated pairing invented).
@@ -3592,7 +3592,7 @@ def _tile_set_issues(
     """
     # __post_init__ guarantees tileShape rank-matches shape, so this zip is exact.
     # Spec 6.3 bounds a non-null tile size by its `shape` element and, by
-    # entailment, above zero; `TiledNdArrayTileShapeTooLarge` and
+    # entailment, above zero. `TiledNdArrayTileShapeTooLarge` and
     # `TiledNdArrayTileShapeNotPositive` carry the wording and the derivation.
     yield from (
         TiledNdArrayTileShapeTooLarge(
@@ -3666,21 +3666,21 @@ def _validate_tiled_ndarray(
     ``shape``):
 
     * ``shape`` and ``axisNames`` must have the same length, as for `NdArray`
-      (`TiledNdArrayShapeRank`);
+      (`TiledNdArrayShapeRank`).
     * each non-null ``tileShape`` element must not exceed the corresponding
       ``shape`` element (`TiledNdArrayTileShapeTooLarge`, which the section
       states) and must be positive (`TiledNdArrayTileShapeNotPositive`, which it
-      entails);
+      entails).
     * the ``urlTemplate`` must contain a variable for each axis whose
       ``tileShape`` element is non-null: the subdivided axes whose per-tile
       ordinals the template interpolates
-      (`TiledNdArrayUrlTemplateMissingVariable`); and
+      (`TiledNdArrayUrlTemplateMissingVariable`). And
     * conversely (a rule section 6.3 does not state), the ``urlTemplate`` must
       not reference a variable that names no subdivided axis
       (`TiledNdArrayUrlTemplateUnknownVariable`): such a variable cannot be
       expanded, so `assemble` would raise on it. This reverse check is skipped
       once ``tiled-ndarray.shape-rank`` has fired, since the axis/tile alignment
-      is then unreliable; and
+      is then unreliable. And
     * no two subdivided axes sharing an ``axisNames`` entry may differ in tile
       ordinal (`TiledNdArrayDuplicateSubdividedAxis`), which the section entails
       rather than states: one variable cannot hold both ordinals at once, so its
@@ -3786,7 +3786,7 @@ def _range_axis_issue(
     """Return the at-most-one issue for one of a range's axes, else ``None``.
 
     The range axis ``name`` (at position ``index``) must be a real domain axis
-    (else ``coverage.range-axis-not-in-domain``); when it is, the range's size
+    (else ``coverage.range-axis-not-in-domain``). When it is, the range's size
     along it must equal the domain axis's ``len()`` (else
     ``coverage.range-shape-mismatch``).
 
@@ -3848,7 +3848,7 @@ def _check_range_against_domain(
     """Yield where a range's axes fail to line up with the domain's.
 
     Maps `_range_axis_issue` over each of the range's ``axisNames`` and keeps the
-    non-``None`` results. Only meaningful with an inline `Domain`; a URL-reference
+    non-``None`` results. Only meaningful with an inline `Domain`. A URL-reference
     domain skips this (its axes are unfetched).
 
     Parameters
@@ -3919,7 +3919,7 @@ def _check_categorical_codes(
     """Yield a categorical range's values that are not defined codes.
 
     Only applies when the parameter is categorical (its observed property has
-    ``categories``) and carries a ``category_encoding``; otherwise it yields
+    ``categories``) and carries a ``category_encoding``. Otherwise it yields
     nothing. The values of encoding entries whose key is a defined category id
     (each a single code or a tuple of codes) are flattened into the set of valid
     codes, and every non-null range value must be an integer in that set (else
@@ -3967,7 +3967,7 @@ def _check_categorical_codes(
     # Only entries whose key is a real category id contribute valid codes: a
     # phantom key (reported separately as parameter.category-encoding-unknown-id)
     # must not legitimize its code here. Each entry is a single code or a tuple of
-    # codes; normalize a bare code to a 1-tuple so one comprehension flattens them.
+    # codes. Normalize a bare code to a 1-tuple so one comprehension flattens them.
     ids = _category_ids(param)
     valid = {
         code
@@ -3988,7 +3988,7 @@ def _matches_data_type(value: float | int | str, data_type: str) -> bool:
 
     * ``"float"``: a real number, so a Python ``int`` or ``float`` (a JSON
       integer like ``5`` is a valid float value and decodes to a Python ``int``,
-      so requiring ``float`` would reject spec-valid data); ``bool`` excluded.
+      so requiring ``float`` would reject spec-valid data). ``bool`` excluded.
     * ``"integer"``: a Python ``int``, with ``bool`` excluded. A whole-valued
       float like ``1.0`` is rejected: its type is ``float``.
     * ``"string"``: a Python ``str``.
@@ -4025,7 +4025,7 @@ def _matches_data_type(value: float | int | str, data_type: str) -> bool:
 
 # The narrow element type per ``dataType``, for the fast screen in
 # `_check_value_data_types`. ``"float"`` keeps ``int`` (a JSON integer like ``5``
-# is a spec-valid float value) and excludes ``str``; the three mirror
+# is a spec-valid float value) and excludes ``str``. The three mirror
 # `_matches_data_type` exactly (``bool`` is excluded by msgspec's strict
 # ``convert``, ``None`` is always allowed as missing data).
 _NARROW_VALUE_TYPE: dict[str, Any] = {
@@ -4047,11 +4047,11 @@ def _check_value_data_types(
     So the check is done here, deterministically, via `_matches_data_type`
     (``None`` is always allowed: missing data).
 
-    This is one of the value-scanning checks gated behind ``check_values=True``;
-    it is O(number of values). An offending value yields one
+    This is one of the value-scanning checks gated behind ``check_values=True``.
+    It is O(number of values). An offending value yields one
     ``range.value-type-mismatch`` issue (ERROR). A fast path first screens the
     whole tuple with a single strict `msgspec.convert` (native, much cheaper than
-    the per-element scan on large arrays); the per-element scan runs only when
+    the per-element scan on large arrays). The per-element scan runs only when
     that screen finds a nonconforming value, enumerating every mismatch with its
     pointer, so the reported issues are identical either way.
 
@@ -4084,7 +4084,7 @@ def _check_value_data_types(
     """
     data_type = arr.data_type
 
-    # Screen the whole tuple in one native pass; on success (the common case)
+    # Screen the whole tuple in one native pass. On success (the common case)
     # there are no issues and the Python loop never runs. Only a nonconforming
     # array pays the per-element scan, which then reports every mismatch (convert
     # stops at the first) so the issue stream is identical to the scan alone.
@@ -4187,7 +4187,7 @@ def _observed_property_i18n_issues(
     ...     categories=(Category(id="1", label={"en_US": "Water"}),),
     ... )
 
-    The valid ``label`` passes; the pointer shows the descent into the
+    The valid ``label`` passes. The pointer shows the descent into the
     offending category, the index being this helper's own contribution:
 
     >>> [i.at for i in _observed_property_i18n_issues(land_cover, ())]
@@ -4273,7 +4273,7 @@ def _parameter_category_encoding_issues(
     Examples
     --------
     A key that is not one of the category ids is flagged (shown by its ``key``
-    payload); ``path`` only prefixes the JSON pointer, so it is empty here:
+    payload). ``path`` only prefixes the JSON pointer, so it is empty here:
 
     >>> from covjson_msgspec import Category, ObservedProperty, Parameter
     >>> prop = ObservedProperty(
@@ -4340,7 +4340,7 @@ def _validate_parameter_groups(
 ) -> Iterator[Issue]:
     """Yield each parameter group's references to unknown members.
 
-    A parameter group bundles the keys of parameters it groups together; any
+    A parameter group bundles the keys of parameters it groups together. Any
     member not present in the coverage's ``parameters`` is reported
     (``parameter-group.unknown-member``).
 
@@ -4379,13 +4379,13 @@ def _validate_ranges(
     """Yield each of a coverage's range issues.
 
     For each range: flag an error when it has no matching parameter in scope
-    (``coverage.range-without-parameter``); for an inline `NdArray`, check its
+    (``coverage.range-without-parameter``). For an inline `NdArray`, check its
     shape is self-consistent (`_validate_ndarray`), it aligns with an inline
     domain (`_check_range_against_domain`), and, when ``check_values``, its values
     match its ``dataType`` (`_check_value_data_types`) and its categorical codes
-    are defined (`_check_categorical_codes`); for an inline `TiledNdArray`, check
+    are defined (`_check_categorical_codes`). For an inline `TiledNdArray`, check
     its tile sets (`_validate_tiled_ndarray`). The ``dataType`` check needs no
-    parameter, so it runs for every range; the categorical check runs only when
+    parameter, so it runs for every range. The categorical check runs only when
     ``parameters`` is set.
 
     Parameters
@@ -4393,7 +4393,7 @@ def _validate_ranges(
     coverage
         The coverage whose [`ranges`][covjson_msgspec.Coverage.ranges] are checked.
     domain
-        The coverage's domain; the range-vs-domain check runs only when it is an
+        The coverage's domain. The range-vs-domain check runs only when it is an
         inline `Domain` (a URL reference is unfetched yet spec-valid).
     parameters
         The coverage's parameters, or ``None`` when undescribed.
@@ -4447,7 +4447,7 @@ def _validate_coverage(
     run unconditionally: a group's own label is checkable even when
     ``coverage.missing-parameters`` also fires), and every range
     (`_validate_ranges`). A URL-reference domain contributes no domain or
-    range-vs-domain issues silently (it is unfetched yet spec-valid; see
+    range-vs-domain issues silently (it is unfetched yet spec-valid: see
     `validate`'s Notes).
 
     Parameters
@@ -4459,7 +4459,7 @@ def _validate_coverage(
     check_values
         Whether to run the value-scanning checks (categorical codes).
     axis_order_checker
-        The axis-ordering policy forwarded to the domain's monotonic-axis check;
+        The axis-ordering policy forwarded to the domain's monotonic-axis check.
         ``None`` uses `require_monotonic`.
 
     Yields
@@ -4509,7 +4509,7 @@ def _validate_coverage(
     )
 
     # `_validate_ranges` wants `dict | None`. Only genuine absence (`UNSET`)
-    # maps to None; a present empty `{}` must stay `{}` so that a range without a
+    # maps to None. A present empty `{}` must stay `{}` so that a range without a
     # matching parameter is still flagged (`range-without-parameter`).
     param_map = None if parameters is UNSET else parameters
 
@@ -4534,7 +4534,7 @@ def _validate_collection(
     Two views of each member are needed. The domainType placement check
     (`_member_domain_type_issues`) reads the *raw* member, whose own
     ``domain_type`` still distinguishes an omitted-and-inherited type from an
-    explicitly-restated one; the rest run on the *resolved* member, which has the
+    explicitly-restated one. The rest run on the *resolved* member, which has the
     collection's parameters / ``domainType`` inherited. `zip` keeps the two
     aligned. Per member the placement issue precedes the member's other issues,
     holding document order (``domainType`` is an early Coverage member).
@@ -4548,7 +4548,7 @@ def _validate_collection(
     check_values
         Whether to run the value-scanning checks (passed through to each member).
     axis_order_checker
-        The axis-ordering policy passed through to each member; ``None`` uses
+        The axis-ordering policy passed through to each member. ``None`` uses
         `require_monotonic`.
 
     Yields
@@ -4579,7 +4579,7 @@ def _member_domain_type_issues(
     When a collection sets ``domainType`` it indicates it contains only coverages
     of that type (Spec 6.5), and a member SHOULD omit its own (Spec 6.4). A member
     whose declared type differs from the collection's falsifies that claim and
-    draws an error (`CoverageDomainTypeConflict`); one carrying a coverage-level
+    draws an error (`CoverageDomainTypeConflict`). One carrying a coverage-level
     ``domainType`` equal to the collection's SHOULD have omitted it and draws a
     warning (`CoverageDomainTypeNotOmitted`). A member that declares no type of its
     own, or a collection that sets none, yields nothing.

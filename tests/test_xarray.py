@@ -136,7 +136,7 @@ def test_temporal_non_standard_calendar_uses_cftime() -> None:
     ds = to_xarray(cov)
 
     # cftime ships no type stubs, so its datetime member types as Unknown (the
-    # ignore is scoped to that one access); the value itself is Any from xarray.
+    # ignore is scoped to that one access). The value itself is Any from xarray.
     t0 = ds["t"].values[0]
     assert isinstance(t0, cftime.datetime)  # pyright: ignore[reportUnknownMemberType]
     assert t0.calendar == "360_day"
@@ -220,7 +220,7 @@ def test_temporal_out_of_ns_range_round_trips_faithfully() -> None:
 def test_temporal_offset_flattens_to_naive_utc_without_warning() -> None:
     # A ±hh:mm offset (a Spec 5.2 form) is applied and flattened to naive-UTC,
     # the same result the Z / naive path produces (ADR-0015). numpy has no
-    # timezone type, so it announces the flatten with a UserWarning; the bridge
+    # timezone type, so it announces the flatten with a UserWarning. The bridge
     # suppresses it, so none leaks. The axis also mixes a Z and an offset value
     # to show a single column carries both.
     t_values = ("2020-01-15T00:00:00Z", "2020-01-15T00:00:00+05:00")
@@ -250,7 +250,7 @@ def test_temporal_offset_flattens_to_naive_utc_without_warning() -> None:
         warnings.simplefilter("error", UserWarning)
         ds = to_xarray(cov)
 
-    # +05:00 at 00:00 is 19:00 the previous day in UTC; the Z value is unchanged.
+    # +05:00 at 00:00 is 19:00 the previous day in UTC. The Z value is unchanged.
     assert [str(v) for v in ds["t"].values] == [
         "2020-01-15T00:00:00.000000000",
         "2020-01-14T19:00:00.000000000",
@@ -626,7 +626,7 @@ def test_roundtrip_recovers_geographic_referencing() -> None:
 
 
 def test_roundtrip_recovers_projected_referencing() -> None:
-    # A projected system has no CF projection params here; the bridge records its
+    # A projected system has no CF projection params here. The bridge records its
     # id (and that it is projected) on the crs variable so it round-trips as a
     # ProjectedCRS rather than collapsing to a GeographicCRS.
     crs_id = "http://www.opengis.net/def/crs/EPSG/0/27700"
@@ -908,7 +908,7 @@ def test_from_external_pointseries_infers_domain_type() -> None:
 
 
 def test_from_external_vertical_profile_infers_type_and_recovers_z() -> None:
-    # Scalar lon/lat with a depth dimension and no time infers VerticalProfile; the
+    # Scalar lon/lat with a depth dimension and no time infers VerticalProfile. The
     # depth coordinate is recognized as the z role and recovered as the z axis.
     ds = xr.Dataset(
         {"v": ("depth", [1.0, 2.0])},
@@ -1070,7 +1070,7 @@ def test_from_external_bounds_declared_by_attribute_is_dropped() -> None:
 
 
 def test_from_external_curvilinear_grid_raises() -> None:
-    # 2-D latitude/longitude is a curvilinear (non-separable) grid; CoverageJSON axes
+    # 2-D latitude/longitude is a curvilinear (non-separable) grid. CoverageJSON axes
     # are 1-D, so there is no axis form for it. from_xarray rejects rather than
     # silently emitting a wrong Point coverage that drops the geographic data.
     lon2d = [[10.0, 11.0], [10.5, 11.5], [11.0, 12.0]]
@@ -1111,7 +1111,7 @@ def test_from_external_dimension_named_like_a_role_axis_raises() -> None:
 
 
 def test_non_standard_calendar_survives_from_xarray_roundtrip() -> None:
-    # to_xarray renders a 360_day axis as cftime datetimes; from_xarray reads them
+    # to_xarray renders a 360_day axis as cftime datetimes. from_xarray reads them
     # back via cftime's isoformat and recovers the calendar from the values.
     cov = Coverage(
         domain=Domain.point_series(

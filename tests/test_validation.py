@@ -127,7 +127,7 @@ def test_axis_not_single_valued() -> None:
 
 
 def test_composite_data_type_mismatch() -> None:
-    # Trajectory needs a "tuple" composite axis; a polygon one is wrong.
+    # Trajectory needs a "tuple" composite axis. A polygon one is wrong.
     composite = Axis(
         values=((0.0, 1.0, 2.0),), data_type="polygon", coordinates=("t", "x", "y")
     )
@@ -139,7 +139,7 @@ def test_composite_data_type_mismatch() -> None:
 
 def test_composite_coordinates_mismatch() -> None:
     # A Trajectory's composite identifiers must be ("t","x","y","z") or
-    # ("t","x","y"); ("x","y") is a well-formed tuple axis that is still wrong.
+    # ("t","x","y"). ("x","y") is a well-formed tuple axis that is still wrong.
     composite = Axis(values=((0.0, 1.0),), data_type="tuple", coordinates=("x", "y"))
     domain = Domain(
         axes={"composite": composite}, domain_type="Trajectory", referencing=_REF
@@ -330,7 +330,7 @@ def test_ndarray_shape_rank_mismatch() -> None:
 
 def test_range_shape_mismatch_against_domain() -> None:
     domain = Domain.grid(x=Axis.regular(0, 10, 3), y=Axis.regular(0, 10, 2))
-    # Domain x has 3 values, y has 2 -> 6 cells; range claims 3x3.
+    # Domain x has 3 values, y has 2 -> 6 cells. Range claims 3x3.
     cov = Coverage(
         domain=domain,
         ranges={
@@ -399,7 +399,7 @@ def test_pointer_escapes_special_characters_in_a_key() -> None:
     # A range key containing "/" or "~" must be escaped in the issue's JSON
     # Pointer (RFC 6901: "~" -> "~0", "/" -> "~1"), so it is not misread as extra
     # path segments. Exercises the escaping end to end, which no corpus document
-    # does; the unit behavior is pinned by the `_escape` / `_ptr` doctests.
+    # does. The unit behavior is pinned by the `_escape` / `_ptr` doctests.
     cov = Coverage(
         domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
         ranges={"a/b~c": NdArray(data_type="float", values=(1.0,))},
@@ -521,7 +521,7 @@ def test_code_shared_by_real_and_phantom_key_stays_valid() -> None:
 
 def test_category_encoding_array_values_are_handled() -> None:
     # An encoding entry may be an array of codes. A real key's array contributes
-    # every code (6 is valid); a phantom key's array legitimizes none (7 is not).
+    # every code (6 is valid). A phantom key's array legitimizes none (7 is not).
     land_cover = ObservedProperty(
         label=i18n("Land cover"),
         categories=(Category(id="1", label=i18n("Water")),),
@@ -647,7 +647,7 @@ def test_none_is_always_allowed() -> None:
 def test_standalone_ndarray_value_types_checked() -> None:
     arr = NdArray(data_type="integer", values=(1, 1.5))
 
-    # Off by default, on with check_values; path is relative to the array root.
+    # Off by default, on with check_values. Path is relative to the array root.
     assert _value_type_paths(validate(arr).issues) == []
     assert _value_type_paths(validate(arr, check_values=True).issues) == ["/values/1"]
 
@@ -751,7 +751,7 @@ def test_coverage_domain_type_suppresses_the_inline_domain_warning() -> None:
 
 
 def test_collection_member_repeating_domain_type_warns() -> None:
-    # The collection provides domainType="Point"; a member restating it at the
+    # The collection provides domainType="Point". A member restating it at the
     # coverage level SHOULD have omitted it (Spec 6.4): a warning.
     member = Coverage(
         domain=Domain(
@@ -776,7 +776,7 @@ def test_collection_member_repeating_domain_type_warns() -> None:
 
 
 def test_collection_member_conflicting_domain_type_is_an_error() -> None:
-    # The collection indicates it holds only "Point" coverages; a member declaring
+    # The collection indicates it holds only "Point" coverages. A member declaring
     # "Grid" falsifies that claim (Spec 6.5): an error, not a SHOULD-omit warning.
     member = Coverage(
         domain=Domain(
@@ -852,7 +852,7 @@ def test_collection_member_matching_inline_domain_type_is_not_flagged() -> None:
 
 
 def test_collection_member_omitting_domain_type_is_not_flagged() -> None:
-    # A member that omits domainType inherits the collection's; the raw-vs-resolved
+    # A member that omits domainType inherits the collection's. The raw-vs-resolved
     # split means it draws neither the not-omitted warning nor a missing-domainType
     # warning.
     member = Coverage(
@@ -924,7 +924,7 @@ def test_temporal_check_flags_malformed_year_zero_date() -> None:
 
 
 def test_temporal_check_skips_non_gregorian_calendar() -> None:
-    # "2020-02-30" is malformed under Gregorian but valid in a 360_day calendar;
+    # "2020-02-30" is malformed under Gregorian but valid in a 360_day calendar.
     # temporal_coordinates excludes non-standard calendars, so it is never scanned.
     domain = Domain(
         axes={"t": Axis.listed(("2020-02-30",))},
@@ -941,7 +941,7 @@ def test_temporal_check_skips_non_gregorian_calendar() -> None:
 
 
 def test_collection_referencing_is_inherited_into_member_domain() -> None:
-    # The collection supplies referencing; the member's inline domain has none,
+    # The collection supplies referencing. The member's inline domain has none,
     # so resolution injects it and no missing-referencing issue is raised.
     member = Coverage(
         domain=Domain(
@@ -1000,8 +1000,8 @@ def test_collection_parameters_are_inherited_by_member() -> None:
 
 
 def test_url_reference_domain_skips_referencing_but_not_parameters() -> None:
-    # A URL-reference domain is unfetched, so its referencing cannot be checked;
-    # the coverage's own parameters MUST is independent of the domain form.
+    # A URL-reference domain is unfetched, so its referencing cannot be checked.
+    # The coverage's own parameters MUST is independent of the domain form.
     cov = Coverage(domain="https://example.org/domain.json", ranges={})
     codes = {i.code for i in validate(cov).issues}
 
@@ -1448,7 +1448,7 @@ def test_i18n_invalid_tag_in_category_label() -> None:
 
 
 def test_i18n_invalid_tag_in_identifier_rs_description() -> None:
-    # Only an identifier RS carries a ``description`` (Spec 5.3); the CRS types do
+    # Only an identifier RS carries a ``description`` (Spec 5.3). The CRS types do
     # not (Spec 5.1), so this is the reference-system ``description`` i18n path.
     ref = (
         ReferenceSystemConnection(
@@ -1631,14 +1631,14 @@ def test_report_not_ok_when_an_error_is_present() -> None:
     report = validate(domain)
 
     assert report.ok is False
-    # The one missing-axis error is the whole report; no warnings.
+    # The one missing-axis error is the whole report. No warnings.
     assert report.errors == report.issues
     assert report.warnings == ()
 
 
 def test_report_ok_when_only_warnings_are_present() -> None:
     # A domain with referencing but no domainType draws only the
-    # `domain.missing-domain-type` warning; a warnings-only document is valid.
+    # `domain.missing-domain-type` warning. A warnings-only document is valid.
     domain = Domain(axes={"x": Axis.listed((1.0,))}, referencing=_REF)
     report = validate(domain)
 
@@ -1671,7 +1671,7 @@ def test_every_finding_kind_is_exhaustively_matchable() -> None:
 
 
 # One instance of every `Issue` variant, for the `__str__` render tests below.
-# Payloads are distinctive but arbitrary; the `at` pointer is the whole-document
+# Payloads are distinctive but arbitrary. The `at` pointer is the whole-document
 # root throughout. Kept complete by `test_issue_samples_cover_every_variant`.
 _ISSUE_SAMPLES: tuple[Issue, ...] = (
     DomainMissingAxis(at="/", domain_type="Grid", axis="y"),
@@ -1865,7 +1865,7 @@ def test_non_standard_calendar_time_axis_is_skipped() -> None:
 def test_mixed_awareness_time_axis_is_skipped() -> None:
     # An aware second-precision moment and naive day-precision moments are not
     # comparable, so the axis is skipped rather than raising or fabricating a
-    # zone; comparing a naive and an aware datetime would raise TypeError.
+    # zone. Comparing a naive and an aware datetime would raise TypeError.
     domain = _axis_domain(
         Axis.listed(("2020-01-01", "2020-01-03T00:00:00Z", "2020-01-02")),
         ReferenceSystem.temporal(calendar="Gregorian"),
@@ -1876,7 +1876,7 @@ def test_mixed_awareness_time_axis_is_skipped() -> None:
 
 
 def test_malformed_temporal_value_is_not_double_reported() -> None:
-    # A malformed value is the temporal.lexical-form check's finding; the
+    # A malformed value is the temporal.lexical-form check's finding. The
     # monotonic check compares only resolvable moments, so it is not re-reported.
     domain = _axis_domain(
         Axis.listed(("2020-01-01T00:00:00Z", "nope", "2020-01-02T00:00:00Z")),
@@ -2251,8 +2251,8 @@ def test_stated_default_coordinates_is_reported(name: str, axis: Axis) -> None:
         # `coordinates` omitted (the conformant form).
         ("x", Axis.listed((0.0, 1.0, 2.0))),
         # A tuple axis's one-element `coordinates` equal to the axis name is
-        # load-bearing (it fixes arity), not a restated default #137 flags;
-        # composites are excluded. A polygon's >= 2 identifiers can never equal
+        # load-bearing (it fixes arity), not a restated default #137 flags.
+        # Composites are excluded. A polygon's >= 2 identifiers can never equal
         # the one-element default, so only tuple can exercise the exclusion.
         ("x", Axis(values=((0.0,), (1.0,)), data_type="tuple", coordinates=("x",))),
     ],
@@ -2382,7 +2382,7 @@ def _coordinates_issues(
     name: str, axis: Axis, *, check_values: bool = True
 ) -> list[AxisCoordinatesNotOmitted]:
     """The ``axis.coordinates-not-omitted`` issues a domain's ``axis`` draws when
-    filed under ``name``; ``name`` is the identifier the check compares
+    filed under ``name``. ``name`` is the identifier the check compares
     ``coordinates`` against."""
     domain = Domain(axes={name: axis}, referencing=_REF)
 
@@ -2418,7 +2418,7 @@ def _expected_value_type_paths(
     matcher, so the differential test is a genuine check of the fast screen and
     not a tautology: a real number for ``"float"`` (``bool`` excluded), a Python
     ``int`` for ``"integer"`` (``bool`` and any ``float`` excluded), a ``str``
-    for ``"string"``; ``None`` is always allowed.
+    for ``"string"``. ``None`` is always allowed.
 
     Examples
     --------

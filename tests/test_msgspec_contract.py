@@ -49,7 +49,7 @@ def test_str_mixed_into_tagged_union() -> None:
 def test_rename_camel_roundtrips_with_tag() -> None:
     nd = NdArray(data_type="float", values=(1.0,), axis_names=("x",), shape=(1,))
     out = msgspec.json.encode(nd)
-    # wire names are lowerCamelCase; the tag field is untouched
+    # wire names are lowerCamelCase. The tag field is untouched
     assert b'"dataType"' in out
     assert b'"axisNames"' in out
     assert b'"type":"NdArray"' in out

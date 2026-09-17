@@ -115,7 +115,7 @@ _SEMANTICS: dict[str, str] = {
 # spec-valid (or spec-faithful) and decodes on covjson-msgspec, but trips a
 # covjson-pydantic limitation, so the table can show a real decode time on the
 # side that can and an explicit "cannot" (with the actual failure) on the side
-# that cannot. Probed both directions; the reverse direction (a document
+# that cannot. Probed both directions. The reverse direction (a document
 # covjson-pydantic accepts but covjson-msgspec rejects) is currently empty,
 # which the rendered section states rather than leaves implicit.
 _XY_REF = (
@@ -188,8 +188,8 @@ _PROBES: list[tuple[str, bytes, str]] = [
 
 
 # Visual marks. A green check / red cross for the conformance scorecard and the
-# spec-compliance column; a warning on covjson-pydantic's own time where it skips
-# a MUST check (so the number is not like-for-like); and a direction arrow after
+# spec-compliance column. A warning on covjson-pydantic's own time where it skips
+# a MUST check (so the number is not like-for-like), and a direction arrow after
 # each speedup. GitHub markdown offers no portable text color or cell shading, so
 # the arrow's shape (faster / slower / within a rounded 1.0x), not a color, is the
 # signal, which also keeps it legible for colorblind readers.
@@ -206,10 +206,10 @@ _EVEN = "🟰"
 # by requirement level: a MUST violation should error, a SHOULD violation should
 # warn (the document stays loadable), and a conformant input should be accepted.
 # Each library column is marked for whether its behavior is proportional.
-# covjson-msgspec matches on every row; covjson-pydantic misses two MUST checks
-# (monotonic, categorical), over-enforces a SHOULD (it raises on a malformed
-# temporal value the spec permits you to load), and rejects one conformant input
-# (reduced-precision).
+# covjson-msgspec matches on every row. By contrast, covjson-pydantic misses two
+# MUST checks (monotonic, categorical), over-enforces a SHOULD (it raises on a
+# malformed temporal value the spec permits you to load), and rejects one
+# conformant input (reduced-precision).
 _VALIDATION: list[tuple[str, str, str, bool, str, bool]] = [
     # (check, expected, msgspec behavior, msgspec ok, pydantic behavior, pydantic ok)
     ("structure and field types", "error (MUST)", "error", True, "error", True),
@@ -263,7 +263,7 @@ class Cell:
     """One benchmark document, verified to parse on both libraries.
 
     ``t_values`` holds every temporal coordinate string in the document (empty
-    when the document has no ``t``-axis); the datetime rung converts exactly
+    when the document has no ``t``-axis). The datetime rung converts exactly
     these, mirroring the work pydantic does during decode.
     """
 
@@ -348,7 +348,7 @@ def build_cells(*, quick: bool) -> list[Cell]:
     covjson-pydantic has no root union, so the concrete decode class is chosen
     here from each document's top-level ``type`` (done once, at setup, never in a
     timed loop). The corpus fixtures are covjson-pydantic's own test data, hence
-    timezone-aware and guaranteed pydantic-parseable; the playground documents
+    timezone-aware and guaranteed pydantic-parseable. The playground documents
     use naive datetimes that pydantic's ``AwareDatetime`` rejects, so they are
     deliberately not used here.
 
@@ -411,7 +411,7 @@ def measure_cell(cell: Cell, *, quick: bool) -> Iterator[Row]:
 def measure_probes(*, quick: bool) -> list[Row]:
     """Decode each capability probe on both libraries.
 
-    The side that accepts the document yields a `measured` decode time; the side
+    The side that accepts the document yields a `measured` decode time. The side
     that rejects it yields a `skipped` row carrying the library's own failure
     reason, so the gap shows up in the table as a concrete "cannot" rather than a
     blank. This is where "we can, they cannot" (and, symmetrically, its absence)
@@ -474,7 +474,7 @@ _PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
 def render(payload: dict[str, Any]) -> str:
     """Fill the ``results.template.md`` placeholders from a result ``payload``.
 
-    The template holds all prose; every ``{{name}}`` token becomes a generated
+    The template holds all prose. Every ``{{name}}`` token becomes a generated
     block built from the measured data. No interpretation is baked into the
     generator, so prose can be re-rendered from a committed ``results.json``
     without re-measuring (``run.py --render-only``).
@@ -599,8 +599,8 @@ def _make_cell(name: str, raw: bytes, dispatch: dict[str, type[BaseModel]]) -> C
 def _t_values(model: object) -> tuple[str, ...]:
     """Collect every temporal coordinate string in a decoded msgspec document.
 
-    Walks the ``t``-axis of a coverage, or of each member of a collection;
-    returns an empty tuple for documents without a temporal coordinate (a bare
+    Walks the ``t``-axis of a coverage, or of each member of a collection.
+    Returns an empty tuple for documents without a temporal coordinate (a bare
     range, or a non-temporal domain).
 
     Examples
@@ -909,7 +909,7 @@ def _msgspec_ops(
 
     def matched_full() -> None:
         # Full validation including the monotonic + categorical checks pydantic
-        # lacks; the "add our extra to pydantic" baseline for the matched table.
+        # lacks. The "add our extra to pydantic" baseline for the matched table.
         decoded = cm.decode(raw)
         cm.validate(decoded, check_values=True)
 
@@ -997,7 +997,7 @@ def _reason(exc: Exception) -> str:
 
     The exception type is prefixed so the string is unmistakably the library's
     own raised error, not a paraphrase. For a pydantic ``ValidationError`` the
-    message is the first sub-error's ``msg`` (the informative part); otherwise it
+    message is the first sub-error's ``msg`` (the informative part). Otherwise it
     is the first line of the exception text.
 
     Examples
@@ -1037,7 +1037,7 @@ def _spectrum_table(
         values = by_key[(cell, "msgspec", "decode+validate(values)")]
         datetime_row = by_key[(cell, "msgspec", "decode+validate(values)+datetime")]
 
-        # A cell with no temporal axis has no datetime rung; its full-fidelity
+        # A cell with no temporal axis has no datetime rung. Its full-fidelity
         # endpoint is the validate(values) rung, so report the final speedup
         # against that rung rather than leaving the last column without one.
         final = (
@@ -1156,7 +1156,7 @@ def _pair_table(
 def _probe_section(probe_rows: list[Row]) -> list[str]:
     """Render the capability-probe table plus the reverse-direction verdict.
 
-    Each probe document is spec-valid or spec-faithful for covjson-msgspec; the
+    Each probe document is spec-valid or spec-faithful for covjson-msgspec. The
     ``pydantic`` column shows a decode time where pydantic also accepts it, or
     the concrete rejection reason where it does not. The closing line reports the
     reverse direction from the data: whether any probe was decoded by pydantic
@@ -1201,7 +1201,7 @@ def _probe_section(probe_rows: list[Row]) -> list[str]:
 def _probe_cell(row: Row | None) -> str:
     """Format a capability-probe cell: a decode time, or the raised exception.
 
-    A measured probe shows its decode time (via `_cell`); a rejected probe shows
+    A measured probe shows its decode time (via `_cell`). A rejected probe shows
     ``raises <Type>: <message>`` so the reader sees the library's own verbatim
     error, not a paraphrase.
     """
@@ -1230,7 +1230,7 @@ def _ratio(numerator: Row, denominator: Row) -> str:
     """Speedup ``numerator / denominator`` (pydantic over msgspec).
 
     Where covjson-msgspec is faster (above a rounded 1.0x) the ratio is italic, its
-    slant reading as forward motion; slower or within a rounded 1.0x it stays plain.
+    slant reading as forward motion. Slower or within a rounded 1.0x it stays plain.
     A direction arrow follows it. Both cues are portable markdown, since GitHub
     offers no reliable text color or cell shading.
     """

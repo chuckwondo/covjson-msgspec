@@ -40,7 +40,7 @@ validate(cov, mode="raise")               # raises if any error is found
 
 The two tiers exist because they cost differently: the default pass is cheap and
 structural, while `check_values=True` scans every element (the values against the
-declared `dataType`, the `shape` against `axisNames`). Run the cheap pass freely;
-reach for the value pass when you need it. See
+declared `dataType`, the `shape` against `axisNames`). Run the cheap pass freely.
+Reach for the value pass when you need it. See
 [ADR-0002](../adr/0002-opt-in-tiered-validation.md) for why these checks live in
 `validate` rather than at decode.

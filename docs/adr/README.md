@@ -3,7 +3,7 @@
 This directory holds Architecture Decision Records (ADRs): the detailed,
 append-only historical record of cross-cutting decisions whose rationale a
 reader could not recover from the code alone. CLAUDE.md (Working agreements) is
-the source of truth for when an ADR is warranted; this README covers only the
+the source of truth for when an ADR is warranted. This README covers only the
 mechanics of the directory.
 
 ## Numbering
@@ -34,8 +34,8 @@ invariants belong at construction), or to record a rejected alternative
 surfaced afterwards.
 
 The test: does the edit change what the ADR decided, or why? If not, it is
-maintenance; make it. If so, supersede instead. Renaming a code an ADR cites
-leaves its decision untouched, so sweep it; a stale identifier only makes the
+maintenance. Make it. If so, supersede instead. Renaming a code an ADR cites
+leaves its decision untouched, so sweep it. A stale identifier only makes the
 record a dead reference.
 
 ## Format
@@ -44,7 +44,7 @@ Each ADR follows the lightweight template in [template.md](template.md):
 
 - **Title**: `# ADR-NNNN: <decision>`.
 - **Status**: `Accepted` or `Superseded by ADR-NNNN`.
-- **Context**: the forces at play; what made this a decision worth recording.
+- **Context**: the forces at play. What made this a decision worth recording.
 - **Decision**: what we chose, stated plainly.
 - **Alternatives considered**: the real rejected options and why they lost.
 - **Consequences**: what follows, including the costs we accept.
@@ -58,47 +58,47 @@ CLAUDE.md.
 - [ADR-0002](0002-opt-in-tiered-validation.md): Cross-cutting checks live in
   opt-in `validate()`, not `__post_init__`
 - [ADR-0003](0003-issue-code-enum.md): `IssueCode` enum, closed because the
-  library owns the codes; category matching deferred (superseded by ADR-0006)
+  library owns the codes. Category matching deferred (superseded by ADR-0006)
 - [ADR-0004](0004-ndarray-single-non-generic-class.md): `NdArray` as a
-  single, non-generic class; element typing via `validate(check_values=True)`
+  single, non-generic class. Element typing via `validate(check_values=True)`
 - [ADR-0005](0005-langcodes-core-dependency.md): `langcodes` cleared the bar
   for a core dependency, backing the BCP 47 language-tag check
 - [ADR-0006](0006-validation-findings-sum-type.md): validation findings as a
-  closed sum type (typed variants + tagged union); replaces the `IssueCode` enum
+  closed sum type (typed variants + tagged union). Replaces the `IssueCode` enum
 - [ADR-0007](0007-functional-core-errors-as-values.md): best-effort fetching as
-  a functional core; failures are `FetchFailure` values, a pure strategy reducer,
+  a functional core. Failures are `FetchFailure` values, a pure strategy reducer,
   a `FetchError` raise bridge
 - [ADR-0008](0008-temporal-conversion-result-projection.md): temporal string
   conversion as a faithful `TemporalResult` sum type + opt-in lexical `validate()`
-  check; `to_datetime` the stdlib convenience
+  check. `to_datetime` the stdlib convenience
 - [ADR-0009](0009-openapi-schema-bridge.md): OpenAPI schema bridging from the
-  msgspec types; a pure `schema.py` generator plus a thin FastAPI adapter,
+  msgspec types. A pure `schema.py` generator plus a thin FastAPI adapter,
   components namespaced under `CoverageJSON.` to avoid host collisions
 - [ADR-0010](0010-dependency-floor-policy.md): dependency floor policy: floors
   are the lowest wheeled version providing the APIs used, tested at both
   `lowest-direct` and `highest`, raised only deliberately (never by Dependabot)
 - [ADR-0011](0011-axis-ordering-checker-seam.md): the monotonic-axis MUST behind
   an injected `AxisOrderChecker` seam with a conservative `require_monotonic`
-  default; a single total classifier decides which reference systems order
+  default. A single total classifier decides which reference systems order
 - [ADR-0012](0012-custom-members-dropped-on-decode.md): custom members
-  (spec extensions) are dropped on decode and not captured; the typed model is a
+  (spec extensions) are dropped on decode and not captured. The typed model is a
   lossy projection, and lossless relay forwards raw bytes rather than
   round-tripping
 - [ADR-0013](0013-unset-for-omittable-inheritance-members.md): the five
   collection-inheritance members use `X | UnsetType = UNSET`, rejecting a
-  spec-forbidden `null` at decode and separating "omitted" from "null"; narrow by
+  spec-forbidden `null` at decode and separating "omitted" from "null". Narrow by
   design, reconciled with the ADR-0002 permissive-decode stance
 - [ADR-0014](0014-documentation-toolchain.md): documentation via ProperDocs +
   mkdocstrings, chosen for static (griffe) API extraction that renders the
-  `TYPE_CHECKING`-only bridge signatures faithfully; the engine is a reversible
+  `TYPE_CHECKING`-only bridge signatures faithfully. The engine is a reversible
   swap over a portable Markdown + `objects.inv` substrate
 - [ADR-0015](0015-bridge-temporal-classification.md): the export bridges
-  classify temporal values by calendar + container range, not via `resolve`;
-  the three paths have different codomains, so there is no single classifier to
+  classify temporal values by calendar + container range, not via `resolve`.
+  The three paths have different codomains, so there is no single classifier to
   unify (resolves the ADR-0008 follow-up as "will not route")
 - [ADR-0016](0016-readonly-mapping-members.md): frozen structs' mapping members
   are typed read-only `Mapping` (runtime stays `dict`), so a checker rejects
-  in-place mutation at zero runtime cost; a `frozendict` runtime is deferred to
+  in-place mutation at zero runtime cost. A `frozendict` runtime is deferred to
   #117, and return types are deliberately not swept
 - [ADR-0017](0017-reference-systems-permissive-core-projection.md): a custom
   reference system decodes into a permissive core, with the precise type offered
@@ -106,35 +106,35 @@ CLAUDE.md.
   system round-trips instead of failing to decode
 - [ADR-0018](0018-typed-projection-scope.md): a typed projection earns its keep
   only where it recovers a guarantee nothing else enforces, so neither `Axis` nor
-  `NdArray` gains a `refine()`; the three ADR-0004 instances differ by rule, and
+  `NdArray` gains a `refine()`. The three ADR-0004 instances differ by rule, and
   the "name the repair" test places a check at construction or in `validate()`
 - [ADR-0019](0019-composite-coordinates-required.md): a `tuple`/`polygon` axis
   must supply `coordinates` at construction (tuple ≥1, polygon ≥2) because the
-  default (the axis's kind-name `"composite"`) names no real coordinate; it fits
+  default (the axis's kind-name `"composite"`) names no real coordinate. It fits
   only primitive/custom axes
 - [ADR-0020](0020-validate-outcome-model.md): `validate()` returns a frozen
   `ValidationReport` value (the issues plus `.ok` / `.errors` / `.warnings`),
-  giving the "is it valid?" verdict one public home that `mode="raise"` reuses;
-  the report exposes named accessors only (no `__iter__` / `__len__`, so each call
-  site names its view) and `__bool__` raises via `NoReturn`; the JSON form becomes
+  giving the "is it valid?" verdict one public home that `mode="raise"` reuses.
+  The report exposes named accessors only (no `__iter__` / `__len__`, so each call
+  site names its view) and `__bool__` raises via `NoReturn`. The JSON form becomes
   `{"issues": [...]}`
 - [ADR-0021](0021-durations-as-iso-8601-strings.md): a duration crosses the wire
   as an ISO 8601 duration string formatted from the unit the source array
   declares (`"P1Y"`, `"PT15M"`), converted in one shared home so the NumPy and
-  xarray bridges agree; CoverageJSON has no duration `dataType`, msgspec's own
+  xarray bridges agree. CoverageJSON has no duration `dataType`, msgspec's own
   `timedelta` encoding cannot express `P1Y`/`P1M`, and the mapping is
   deliberately one-way
 - [ADR-0022](0022-pinned-specification-revision.md): conformance is pinned to
-  `covjson/specification@2061005` (`spec.md` + `domain-types.md`); the upstream
+  `covjson/specification@2061005` (`spec.md` + `domain-types.md`). The upstream
   `0.1.0` tag predates the normative rewrite and states no RFC 2119
   requirements, and citing `master` live retargets every section number
   silently, as a dead `#92-ranges-object` anchor proved
 - [ADR-0023](0023-axis-form-conflict-tier.md): an axis carrying both numeric
-  forms decodes and `validate()` reports it as `axis.form-conflict` (error);
-  construction keeps only Section 6.1.1's stated rule, that one complete form is
+  forms decodes and `validate()` reports it as `axis.form-conflict` (error).
+  Construction keeps only Section 6.1.1's stated rule, that one complete form is
   present. Measured across three implementations, only a *contradicting*
   complete triple is ambiguous, and that is the one case an O(1) construction
   check cannot detect, so it supersedes ADR-0018's placement of this invariant
 
 Some decisions are recorded in ADRs that land with their implementation rather
-than here; see the issue tracker for the in-flight set.
+than here. See the issue tracker for the in-flight set.

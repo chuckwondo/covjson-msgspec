@@ -22,7 +22,7 @@ stays permissive). That fidelity left two gaps:
 The cautionary counter-example is covjson-pydantic, which types `t` values as
 `datetime` at the model boundary. [KNMI/covjson-pydantic#34] documents the cost:
 reduced-precision values are corrupted or rejected, and out-of-range years
-cannot round-trip. Storing the string is the right foundation; the open
+cannot round-trip. Storing the string is the right foundation. The open
 questions were how to *project* it on demand.
 
 Three questions had to be settled:
@@ -40,7 +40,7 @@ Three questions had to be settled:
 
 ## Decision
 
-**Conversion returns a closed sum type; it never raises.** A new stdlib-only
+**Conversion returns a closed sum type. It never raises.** A new stdlib-only
 leaf module `temporal.py` defines the result union (matched by concrete type,
 the same idiom as the `Issue` union in [ADR-0006]):
 
@@ -51,12 +51,12 @@ TemporalResult = Moment | Unrepresentable | Malformed
 - `Moment(when, precision)`: a valid form representable as a `datetime`,
   filled to the start of the period for the reduced forms, with the detected
   `Precision` recorded. It is timezone-aware exactly when it carries a `Z` /
-  offset (second precision); the date and reduced forms are naive.
+  offset (second precision). The date and reduced forms are naive.
 - `Unrepresentable(value)`: a valid form a stdlib `datetime` cannot hold (a
   year outside `1..9999`, or a leap second), keeping the raw string.
 - `Malformed(value)`: a string matching none of the five forms.
 
-`resolve(value)` produces the union; `to_datetime(value) -> datetime | None` is
+`resolve(value)` produces the union. `to_datetime(value) -> datetime | None` is
 the thin convenience for the common case (`Moment.when`, else `None`). The
 `T`-time form is **strict**: it requires a `Z` or `±hh:mm` offset, so a naive
 time is `Malformed`.
@@ -65,12 +65,12 @@ time is `Malformed`.
 finding (*warning* severity: Spec 5.2 makes the lexical forms a SHOULD, and
 ADR-0002 maps a SHOULD violation to a warning) is added to `validate()`, gated
 behind `check_values=True`. It flags only `Malformed` values on
-standard-calendar temporal axes; `Unrepresentable` and `Moment` are legal
+standard-calendar temporal axes. `Unrepresentable` and `Moment` are legal
 forms and pass. `resolve` is the single source of truth shared by `to_datetime`
 and the validator.
 
 **Public surface stays minimal.** The top-level package exports only
-`to_datetime`; `resolve`, the three arms, and `Precision` are imported from
+`to_datetime`. `resolve`, the three arms, and `Precision` are imported from
 `covjson_msgspec.temporal`, mirroring how the `Issue` variants are reached from
 `covjson_msgspec.validation`.
 
@@ -109,13 +109,13 @@ that default without an interface change.
 
 - `to_datetime` needs no optional extra. Full-precision in-range values yield a
   timezone-aware `datetime` (matching covjson-pydantic's one useful
-  capability); reduced-precision and out-of-range values degrade gracefully
+  capability). Reduced-precision and out-of-range values degrade gracefully
   rather than corrupting or rejecting, exceeding it.
-- `Moment.when` is timezone-aware iff it is second precision; a naive
+- `Moment.when` is timezone-aware iff it is second precision. A naive
   (date/reduced) `Moment` and an aware (second) one are not directly
   comparable, which is honest to the data (forcing naive forms to UTC would
   fabricate zone information).
-- Decode stays permissive and byte-faithful; the lexical-form check is opt-in
+- Decode stays permissive and byte-faithful. The lexical-form check is opt-in
   (`check_values=True`) and adds the `temporal.lexical-form` issue code.
 - The export bridges keep their own parsing for now, so `to_datetime` /
   `resolve` and the bridges' `maybe_datetime` / `_parse_times` / `_to_cftime`
@@ -124,7 +124,7 @@ that default without an interface change.
   `Malformed`, where a bridge may parse it leniently), so two supported paths
   can give a caller different answers for the same string. Folding `resolve`
   in as the bridges' classify-then-route decider (tracked as a follow-up) buys
-  *semantic consistency*, one classifier of record, not merely dedup; that is
+  *semantic consistency*, one classifier of record, not merely dedup. That is
   the reason to close it, over and above the near-term win that `validate()`
   already surfaces malformed times the bridges otherwise swallow silently.
 - That follow-up is resolved in [ADR-0015]: the bridges deliberately do *not*

@@ -11,7 +11,7 @@ two HTTP boundaries, while staying free of any web-framework dependency:
 `encode_response` produces the body and content type to send, `decode_response`
 checks an incoming content type before decoding, and `is_coverage_json_media_type`
 is the predicate both inbound checks share. The ``[fastapi]`` ``Response`` adapter
-([`CovJSONResponse`][covjson_msgspec.fastapi.CovJSONResponse]) builds on these; a
+([`CovJSONResponse`][covjson_msgspec.fastapi.CovJSONResponse]) builds on these. A
 ``[litestar]`` adapter remains deferred.
 
 Spec: [Media Type and File Extension][spec-media-type]. The optional ``profile``
@@ -33,7 +33,7 @@ from typing import Final
 from covjson_msgspec.coverage import CoverageJSON, decode, encode
 
 #: The CoverageJSON media (content) type, per spec section 10. A document served
-#: over HTTP SHALL carry this as its ``Content-Type``; an optional ``profile``
+#: over HTTP SHALL carry this as its ``Content-Type``. An optional ``profile``
 #: parameter may follow (RFC 6906), which `is_coverage_json_media_type` tolerates.
 #: `media_type` builds the profiled form.
 MEDIA_TYPE: Final = "application/prs.coverage+json"
@@ -94,7 +94,7 @@ def is_coverage_json_media_type(value: str) -> bool:
 
     Notes
     -----
-    Only the type/subtype is compared; everything from the first ``;`` onward is
+    Only the type/subtype is compared. Everything from the first ``;`` onward is
     discarded before matching. This is deliberately lenient: although JSON media
     types define no ``charset`` parameter (RFC 8259) and CoverageJSON defines only
     ``profile`` (spec section 10), real-world senders still attach
@@ -176,8 +176,8 @@ def decode_response(data: bytes | str, content_type: str | None = None) -> Cover
     """Decode an HTTP request body as CoverageJSON, optionally checking its type.
 
     When ``content_type`` is given, it must denote CoverageJSON (per
-    `is_coverage_json_media_type`) or a `ValueError` is raised before decoding;
-    pass ``None`` to skip the check. On success this delegates to `decode`, so the
+    `is_coverage_json_media_type`) or a `ValueError` is raised before decoding.
+    Pass ``None`` to skip the check. On success this delegates to `decode`, so the
     return type is dispatched on the document's ``type`` member.
 
     Parameters

@@ -63,7 +63,7 @@ from covjson_msgspec.range import NdArray, TiledNdArray
 _CovT = TypeVar("_CovT", bound=Coverage | CoverageCollection)
 
 # A range URL points to a standalone range document (an inline NdArray or a
-# TiledNdArray); a domain URL points to a standalone Domain. Both decoders are
+# TiledNdArray). A domain URL points to a standalone Domain. Both decoders are
 # built once and reused. The union-argument constructor returns Any, so the
 # explicit Final[Decoder[...]] annotation restores the precise type.
 _DOMAIN_DECODER: Final[msgspec.json.Decoder[Domain]] = msgspec.json.Decoder(Domain)
@@ -80,10 +80,10 @@ class ReferenceFailure(FetchFailure, frozen=True, kw_only=True):
     a coverage's domain or the range key for a range, and ``coverage_index`` is the
     member's position in a `CoverageCollection` (``0`` for a lone `Coverage`).
     Collected by `resolve_references` when a best-effort strategy tolerates the
-    failure; see `ResolveReport`.
+    failure. See `ResolveReport`.
 
     Because ``slot`` is just the range key for a range, a range whose key is
-    literally ``"domain"`` reports the same ``slot`` as a coverage's domain; the
+    literally ``"domain"`` reports the same ``slot`` as a coverage's domain. The
     two are still fetched and placed correctly (they never share a decoder or a
     slot internally), only the report cannot tell them apart.
 
@@ -120,7 +120,7 @@ class ResolveReport(msgspec.Struct, Generic[_CovT], frozen=True):
     Returned by `resolve_references` and
     [`resolve_references_async`][covjson_msgspec.resolve_references_async]. ``value`` is
     a new `Coverage` or `CoverageCollection` of the same type as the input, with
-    every successfully fetched URL reference inlined; a reference that failed
+    every successfully fetched URL reference inlined. A reference that failed
     under a collecting strategy keeps its original URL string (still a legal
     document), and ``failures`` reports it. Under the default
     [`fail_fast`][covjson_msgspec.fail_fast] strategy ``failures`` is empty: the first
@@ -133,8 +133,8 @@ class ResolveReport(msgspec.Struct, Generic[_CovT], frozen=True):
     Attributes
     ----------
     value
-        The resolved coverage or collection, of the same type as the input;
-        unresolved references remain URL strings.
+        The resolved coverage or collection, of the same type as the input.
+        Unresolved references remain URL strings.
     failures
         The references that failed, one `ReferenceFailure` each (empty under
         [`fail_fast`][covjson_msgspec.fail_fast]).
@@ -154,9 +154,9 @@ def resolve_references(
 
     Returns a `ResolveReport` whose ``value`` is a new value of the same type as
     ``obj`` with every URL-string ``domain`` and every URL-string entry in
-    ``ranges`` replaced by the document fetched from it and decoded; inline
+    ``ranges`` replaced by the document fetched from it and decoded. Inline
     domains and ranges are left untouched. For a `CoverageCollection`, every
-    member is resolved (collection-level inheritance is not applied; call
+    member is resolved (collection-level inheritance is not applied: call
     `CoverageCollection.resolved_coverages` first if you need that).
 
     This follows URL strings only. A range URL that points to a `TiledNdArray` is
@@ -164,7 +164,7 @@ def resolve_references(
 
     How a failed reference is handled is the ``strategy``. The default
     [`fail_fast`][covjson_msgspec.fail_fast] aborts on the first failure, raising a
-    [`FetchError`][covjson_msgspec.FetchError] chained from the underlying exception; a
+    [`FetchError`][covjson_msgspec.FetchError] chained from the underlying exception. A
     collecting strategy ([`collect_all`][covjson_msgspec.collect_all], ...) instead
     leaves each failed reference as its URL string in ``report.value`` and reports it in
     ``report.failures``.
@@ -190,7 +190,7 @@ def resolve_references(
         (and any caching, auth, or retries) lives in this callable.
     strategy
         How to respond to a reference that fails to fetch or decode. The default
-        [`fail_fast`][covjson_msgspec.fail_fast] aborts on the first failure; a
+        [`fail_fast`][covjson_msgspec.fail_fast] aborts on the first failure. A
         collecting strategy ([`collect_all`][covjson_msgspec.collect_all],
         [`halt_on_unrecoverable`][covjson_msgspec.halt_on_unrecoverable],
         [`stop_after`][covjson_msgspec.stop_after], or any
@@ -215,7 +215,7 @@ def resolve_references(
 
     Examples
     --------
-    Supply the referenced documents through a fetcher; a ``dict`` of canned bytes
+    Supply the referenced documents through a fetcher. A ``dict`` of canned bytes
     keyed by URL is the simplest one. Here both the domain and the range are URL
     references that get inlined:
 
@@ -277,7 +277,7 @@ async def resolve_references_async(
     """Inline URL-string references, fetching them concurrently.
 
     The awaitable counterpart of `resolve_references` with identical semantics and
-    return type (including the ``strategy`` best-effort options); only the
+    return type (including the ``strategy`` best-effort options). Only the
     fetching differs. The reference sites (a domain and every range of every
     member) are fetched concurrently via `asyncio.gather`, so this scales over a
     large `CoverageCollection` far better than awaiting each in turn. Like the
@@ -292,7 +292,7 @@ async def resolve_references_async(
         An `AsyncFetch` awaitably mapping a referenced document's URL to its raw
         bytes. All I/O (and any caching, auth, or retries) lives in this callable.
     strategy
-        How to respond to a reference that fails to fetch or decode; see
+        How to respond to a reference that fails to fetch or decode. See
         `resolve_references`.
 
     Returns
@@ -367,8 +367,8 @@ async def resolve_references_async(
 class _RefSite(NamedTuple):
     """One place a URL reference occurs: which coverage, which slot, and the URL.
 
-    ``key`` is ``None`` for a coverage's ``domain`` and the range key for a range;
-    since a range key is always a string, ``None`` unambiguously marks the domain,
+    ``key`` is ``None`` for a coverage's ``domain`` and the range key for a range.
+    Since a range key is always a string, ``None`` unambiguously marks the domain,
     so the domain and a range keyed ``"domain"`` never collide. ``coverage_index``
     is the member's position (``0`` for a lone `Coverage`).
 
@@ -413,7 +413,7 @@ def _url_slots(coverage: Coverage) -> Iterator[tuple[str | None, str]]:
     """The URL-reference slots of one coverage: the domain, then each range.
 
     Yields ``(None, url)`` when the ``domain`` is a URL string, then ``(key, url)``
-    for each range whose value is a URL string; inline domains and ranges are
+    for each range whose value is a URL string. Inline domains and ranges are
     skipped. ``None`` marks the domain slot (a range key is always a string).
 
     Parameters
@@ -479,7 +479,7 @@ def _rebuild(obj: _CovT, resolved: _Resolved) -> _CovT:
     """Rebuild the value with its resolved references inlined.
 
     Replaces each URL-string ``domain`` and range with the matching document from
-    ``resolved`` (keyed by ``(coverage_index, key)``; ``key`` is ``None`` for the
+    ``resolved`` (keyed by ``(coverage_index, key)``: ``key`` is ``None`` for the
     domain). A slot absent from ``resolved`` (one whose fetch failed under a
     collecting strategy) keeps its URL string. Shared by the sync and async
     drivers. A range URL pointing to a `TiledNdArray` is inlined as that tiled
@@ -528,7 +528,7 @@ def _rebuild_coverage(index: int, coverage: Coverage, resolved: _Resolved) -> Co
     """Rebuild one coverage, inlining its resolved domain and ranges.
 
     Looks each URL slot up in ``resolved`` by ``(index, key)`` (a ``None`` key for
-    the domain); an inline slot, or one whose fetch failed (absent from
+    the domain). An inline slot, or one whose fetch failed (absent from
     ``resolved``), is left as is, so a failed reference stays its URL string.
     The coverage is returned unchanged (same instance) when nothing is inlined,
     mirroring `CoverageCollection.resolved_coverages`.

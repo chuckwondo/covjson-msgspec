@@ -102,8 +102,8 @@ def test_standard_calendar_time_axis_parsed_to_datetime() -> None:
 def test_naive_time_divergence_bridge_parses_but_resolve_rejects() -> None:
     # ADR-0015: the pandas bridge and temporal.resolve() / to_datetime are
     # different functions with different codomains, so they deliberately
-    # disagree on a naive, no-designator time (not a spec form; Spec 5.2
-    # requires a "Z" or "+hh:mm" designator). The bridge parses it leniently;
+    # disagree on a naive, no-designator time (not a spec form: Spec 5.2
+    # requires a "Z" or "+hh:mm" designator). The bridge parses it leniently.
     # to_datetime rejects it as None. A change that makes the bridge reject
     # naive input must trip this test (and revisit ADR-0015).
     naive = "2020-01-01T00:00:00"
@@ -144,7 +144,7 @@ def test_naive_time_divergence_bridge_parses_but_resolve_rejects() -> None:
             ("2020-01-15T00:00:00+05:00", "2020-01-15T00:00:00-08:00"),
             ("2020-01-14T19:00:00", "2020-01-15T08:00:00"),
         ),
-        # A single axis may mix a naive and an offset value; format="ISO8601"
+        # A single axis may mix a naive and an offset value. format="ISO8601"
         # parses both rather than raising on the inferred format and falling back
         # to raw strings.
         (
@@ -207,7 +207,7 @@ def test_non_standard_calendar_time_stays_strings() -> None:
 
 def test_malformed_time_falls_back_to_raw_strings() -> None:
     # The bridge is permissive (it does not validate), so a malformed value on a
-    # standard-calendar temporal axis makes pandas raise; maybe_datetime catches
+    # standard-calendar temporal axis makes pandas raise. maybe_datetime catches
     # that and returns the raw strings rather than propagating, leaving a plain
     # (non-datetime) index.
     cov = Coverage(

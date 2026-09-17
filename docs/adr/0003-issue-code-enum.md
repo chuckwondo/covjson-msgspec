@@ -38,13 +38,13 @@ string and the enum is merely a convenience for the known ones.
 
 Validation codes have no such external producer. The library is the sole author
 of every code. The one extension seam, `DOMAIN_TYPE_RULES`, supplies only
-axis-constraint *data* (`DomainTypeRule`: required/optional/single-valued axes);
-the built-in check functions interpret that data and emit the library's own
+axis-constraint *data* (`DomainTypeRule`: required/optional/single-valued axes).
+The built-in check functions interpret that data and emit the library's own
 codes. Registering a custom domain-type rule reuses those functions and so
 yields existing codes (`domain.missing-axis`, ...): it cannot introduce a new
 one. The set of codes is therefore closed in fact, not merely by convention.
 
-(`Issue` is not a CoverageJSON wire type; it is an in-process validation report.
+(`Issue` is not a CoverageJSON wire type: it is an in-process validation report.
 How it might serialize is out of scope for this decision.)
 
 ## Decision
@@ -82,7 +82,7 @@ range-related findings live under *both* `range.*`
 the prefix tracks the check's *locus* (the coverage-level cross-check vs. the
 range-value scan) rather than its *subject*. A stored field would reify that
 fuzziness into a stable API. Reconciling the overlap is left as a separate
-question; a category view is only worth adding once the categories mean
+question. A category view is only worth adding once the categories mean
 something, and no consumer needs broad matching yet (YAGNI). This is consistent
 with the "opt-in typed projection over a faithful core" tenet: expose grouping
 as a derived view if and when it earns its place, not as stored state.
@@ -96,7 +96,7 @@ nothing is blocked by waiting.
 
 - The code contract is now a single discoverable, typo-safe, autocompletable,
   closed artifact. Built-in checks reference members, so a misspelled code fails
-  fast at import; consumers get the full set at the type level and can match
+  fast at import. Consumers get the full set at the type level and can match
   exhaustively.
 - Matching is unaffected by the close: a `StrEnum` member is a `str`, so
   `issue.code == "domain.missing-axis"`, `== IssueCode.DOMAIN_MISSING_AXIS`, and

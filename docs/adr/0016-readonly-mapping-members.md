@@ -28,7 +28,7 @@ mutation of a frozen struct's mapping member.
 
 The internationalized-string maps (`label` / `description`) flip at the single
 `I18n` alias definition (`I18n = Mapping[str, str]`), converting every
-`label` / `description` field at once; the five non-i18n members
+`label` / `description` field at once. The five non-i18n members
 (`Coverage.ranges` / `.parameters`, `CoverageCollection.parameters`,
 `Domain.axes`, `IdentifierRS.identifiers`) change individually. Internal helpers
 that *receive* one of these members widen their parameter type to `Mapping` to
@@ -40,7 +40,7 @@ match, aligning with the existing "parameters prefer read-only types" preference
 mapping contents are freely mutable, with the type system silent.
 
 **Adopt a `frozendict` runtime now** ([PEP 814][pep-814], a genuinely immutable,
-hashable mapping). Deferred, not refuted (#117). It is a Python 3.15 builtin; our
+hashable mapping). Deferred, not refuted (#117). It is a Python 3.15 builtin. Our
 floor is 3.11 (titiler-gated, [ADR-0001](0001-python-3-11-floor.md)), and msgspec
 has no native `frozendict` decode target. Because the members are annotated to the
 abstract `Mapping`, adopting `frozendict` later is a drop-in runtime change under
@@ -61,14 +61,14 @@ a `list` and converting it, so a `Sequence[T]` member (which decodes to a plain
 annotation-versus-runtime split this ADR draws for mappings, applied the other
 way. The payoff does not justify it. Measured on the real `NdArray.values` member
 at the largest size benchmarked (40,000 floats, A/B in one session on one
-machine): about 1495us to 1412us, or 1.07x, roughly 2ns per value; at a realistic
+machine): about 1495us to 1412us, or 1.07x, roughly 2ns per value. At a realistic
 axis length (200) the saving is under a microsecond. Against that it would give up
 two things permanently. It inverts the reasoning above: sequences are `tuple`
 because they *can* be immutable at runtime, whereas mappings are `Mapping` only
 because no decodable frozen mapping exists, so this trades a settled guarantee for
 the compromise mappings are stuck with. And it forecloses half of #117.
 `NdArray`, `Axis`, and `ReferenceSystemConnection` are hashable today precisely
-because every member is a `tuple`; a `list` member makes them permanently
+because every member is a `tuple`. A `list` member makes them permanently
 unhashable, so a `frozendict` runtime could no longer restore hashability across
 the model. The mutability is real rather than theoretical: `frozen=True` blocks
 rebinding but not `array.values[0] = 99.0`, which would falsify the design tenet's
@@ -80,10 +80,10 @@ promise that a value read from the model cannot be corrupted by a caller.
   (`Unsupported target for indexed assignment`). Runtime behavior is byte-for-byte
   unchanged: decode, encode, equality, and construction (which still accepts a
   plain `dict`, since `dict` is a `Mapping`) are identical.
-- Members stay unhashable, because the runtime `dict` is still mutable; this ADR
+- Members stay unhashable, because the runtime `dict` is still mutable. This ADR
   does not change hashability. A `frozendict` runtime (#117) would.
 - The change is annotation-only, so it carries no wire, data, or performance
-  effect; it is a two-way door, reversible by relaxing the annotation.
+  effect. It is a two-way door, reversible by relaxing the annotation.
 - **Return types are not blanket-swept** (sharpened by the #119 amendment below,
   which does sweep returns to their read-only interface). A return is narrowed to
   read-only only when nothing that consumes it requires a concrete type. Returns
@@ -145,7 +145,7 @@ Concrete types survive only for their true cause:
   mutate in place (`setdefault` / `update` on FastAPI's own schema object). It is
   not on the public surface. Every other former dict return (`to_geojson`,
   `component_schemas`, `schema_ref`) returns a read-only `Mapping`: nothing
-  consuming them needs a concrete `dict` (`dict.update` accepts any `Mapping`;
+  consuming them needs a concrete `dict` (`dict.update` accepts any `Mapping`,
   `json.dumps` inspects the runtime object, still a `dict`), and the library's
   stance is to present read-only interfaces rather than invite mutation. A caller
   who wants a mutable structure builds one from the returned values.
@@ -155,7 +155,7 @@ Concrete types survive only for their true cause:
   `validation.py` is left as it stands here.
 
 The three-way rule, then: **parameters and returns take the read-only interface for
-variable-length data (concrete `tuple` for fixed-arity products); struct members
+variable-length data (concrete `tuple` for fixed-arity products). Struct members
 stay concrete immutable.** This supersedes the "return types are not blanket-swept"
 note above, which predated the shape framing.
 

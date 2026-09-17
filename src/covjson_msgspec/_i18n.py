@@ -3,7 +3,7 @@
 The counterpart to the public [`i18n`][covjson_msgspec.i18n.i18n] builder: where that
 assembles a language map, `display` collapses one back to a single string for
 presentation. Kept private (a leaf module, imported by `xarray` and `_repr`)
-because its only callers are internal display paths; promote it to public API
+because its only callers are internal display paths. Promote it to public API
 only if a user asks. It picks a fixed English-first order rather than taking a
 preferred-language argument for the same reason: no caller varies it yet.
 """
@@ -32,7 +32,7 @@ def display(i18n: I18n | None) -> str:
     Returns
     -------
     str
-        The chosen string; ``""`` for ``None`` or an empty map.
+        The chosen string. ``""`` for ``None`` or an empty map.
 
     Examples
     --------

@@ -8,7 +8,7 @@ them back into a single inline `NdArray`.
 
 ``NdArray.values`` is a flat tuple of ``float | int | str | None`` (``None``
 marks missing data). The exact element type within that union depends on the
-``dataType`` field; use [`validate`][covjson_msgspec.validate] with
+``dataType`` field. Use [`validate`][covjson_msgspec.validate] with
 ``check_values=True`` to *report* element-vs-``dataType`` inconsistencies after
 decoding, or `NdArray.values_as` to *project* the values to a precise element
 type fail-fast (the consumer counterpart).
@@ -74,7 +74,7 @@ _NUMPY_HINT = "NumPy is required for this conversion; install covjson-msgspec[nu
 # Element type for NdArray values (matches the three ``dataType``s).
 _Scalar = float | int | str
 
-# The element type a caller projects to via ``NdArray.values_as``; bounded to
+# The element type a caller projects to via ``NdArray.values_as``. Bounded to
 # ``_Scalar`` so only ``float`` / ``int`` / ``str`` are admissible targets.
 _ScalarT = TypeVar("_ScalarT", bound=_Scalar)
 
@@ -86,7 +86,7 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
     (``None`` marks missing data) whose length is the product of ``shape``.
     ``shape`` and ``axis_names`` may be omitted for a single (0-dimensional)
     value. msgspec enforces the ``float | int | str`` union on decode, so nested
-    arrays and booleans are rejected; element-vs-``dataType`` consistency is a
+    arrays and booleans are rejected. Element-vs-``dataType`` consistency is a
     cross-cutting check handled by opt-in
     [`validate`][covjson_msgspec.validate] (``check_values=True``). Shape
     consistency (the ``values`` count vs. ``shape``, and ``shape`` vs.
@@ -148,13 +148,13 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
     values: tuple[_Scalar | None, ...]
     shape: tuple[int, ...] = ()
     axis_names: tuple[str, ...] = ()
-    # JSON-LD @context (spec section 8); see `JsonLdContext`.
+    # JSON-LD @context (spec section 8). See `JsonLdContext`.
     context: JsonLdContext | UnsetType = msgspec.field(name="@context", default=UNSET)
 
     def values_as(self, dtype: type[_ScalarT]) -> tuple[_ScalarT | None, ...]:
         """Project ``values`` to a precise element type, raising on a mismatch.
 
-        The faithful ``values`` union is ``float | int | str | None``; a caller
+        The faithful ``values`` union is ``float | int | str | None``. A caller
         who knows the ``dataType`` gets the precisely-typed tuple by passing the
         Python type: ``values_as(float)`` returns ``tuple[float | None, ...]``,
         ``values_as(int)`` returns ``tuple[int | None, ...]``, and so on. This is
@@ -163,7 +163,7 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
 
         Matching the spec's ``dataType`` semantics, a stored ``int`` promotes to
         ``float`` (``5`` becomes ``5.0``) but a ``float`` is *not* an ``int``
-        (``5.0`` is rejected); ``None`` (missing data) always passes through.
+        (``5.0`` is rejected). ``None`` (missing data) always passes through.
 
         A nonconforming value raises `msgspec.ValidationError` (the same error a
         bare decode raises for a bad value, so catch that rather than
@@ -171,7 +171,7 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
         fail-fast edge effect, distinct from
         [`validate`][covjson_msgspec.validate] (``check_values=True``), which
         instead *reports* every mismatch as a ``range.value-type-mismatch``
-        issue; the two compose (inspect with ``validate``, consume with
+        issue. The two compose (inspect with ``validate``, consume with
         ``values_as``). To project without knowing the ``dataType`` ahead of
         time, ``match`` on `data_type` and call this per arm.
 
@@ -219,7 +219,7 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
         msgspec.ValidationError: ...
         """
         # `element: Any` launders `dtype` past mypy, which otherwise rejects a
-        # TypeVar-typed variable in a `tuple[...]` subscript (valid-type); the
+        # TypeVar-typed variable in a `tuple[...]` subscript (valid-type). The
         # convert is native and its result is cast back to the precise return.
         element: Any = dtype
 
@@ -234,7 +234,7 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
             # ValidationError contract. msgspec's C ``convert`` surfaces the overflow
             # inconsistently (an ``OverflowError``, or a ``SystemError`` from a
             # leaked C exception: https://github.com/msgspec/msgspec/issues/1122),
-            # so both are normalized here; a fixed msgspec that raises
+            # so both are normalized here. A fixed msgspec that raises
             # ``ValidationError`` directly would pass straight through untouched.
             msg = f"value out of range for {dtype.__name__}"
             raise msgspec.ValidationError(msg) from exc
@@ -263,7 +263,7 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
         A clean [`validate`][covjson_msgspec.validate] does not guarantee a
         successful conversion. ``validate(check_values=True)`` asks a *membership*
         question and keeps a stored ``int`` an ``int``, so an integer too large
-        for any ``float`` is a conformant value it correctly passes; this method
+        for any ``float`` is a conformant value it correctly passes. This method
         asks a *projection* question, and that same value has no ``float`` to
         project to.
 
@@ -286,7 +286,7 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
         Raises
         ------
         ModuleNotFoundError
-            If NumPy is not installed; install ``covjson-msgspec[numpy]``.
+            If NumPy is not installed. Install ``covjson-msgspec[numpy]``.
         msgspec.ValidationError
             If any value cannot be projected to the Python type its ``data_type``
             names, the contract of
@@ -299,9 +299,9 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
             If a conforming value does not fit the target NumPy dtype: an
             ``"integer"`` range holding a value beyond ``int64`` (or beyond
             ``float64`` under ``as_float``). Unlike the above, such a value is
-            valid CoverageJSON; NumPy simply cannot hold it.
+            valid CoverageJSON. NumPy simply cannot hold it.
         ValueError
-            If the number of values is inconsistent with ``shape``; run
+            If the number of values is inconsistent with ``shape``. Run
             [`validate`][covjson_msgspec.validate] to locate the mismatch.
 
         Examples
@@ -375,7 +375,7 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
             case _:  # pragma: no cover - unreachable exhaustiveness guard
                 # Exhaustiveness: a fourth ``dataType`` would fail type checking
                 # here until it is handled above. mypy needs this arm to see the
-                # gap at all; basedpyright rejects the ``as`` capture form of it.
+                # gap at all. Basedpyright rejects the ``as`` capture form of it.
                 assert_never(self.data_type)
 
         # Fail with a clear message rather than numpy's cryptic "cannot reshape
@@ -416,13 +416,13 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
         match the array's rank. Decoding stays permissive so a slightly
         nonconformant document still loads and
         [`validate`][covjson_msgspec.validate] can report it (as
-        ``ndarray.shape-rank``); building from a NumPy array is not a decode, so
+        ``ndarray.shape-rank``). Building from a NumPy array is not a decode, so
         it can refuse rather than manufacture a range that validate would reject.
 
         Parameters
         ----------
         array
-            The source array; its ``shape`` becomes the range's ``shape``.
+            The source array. Its ``shape`` becomes the range's ``shape``.
         axis_names
             One name per dimension of ``array``.
         data_type
@@ -438,12 +438,12 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
         Raises
         ------
         ModuleNotFoundError
-            If NumPy is not installed; install ``covjson-msgspec[numpy]``.
+            If NumPy is not installed. Install ``covjson-msgspec[numpy]``.
         ValueError
-            If ``axis_names`` does not give one name per dimension of ``array``;
-            if an explicit ``data_type`` cannot represent the array's values
+            If ``axis_names`` does not give one name per dimension of ``array``.
+            If an explicit ``data_type`` cannot represent the array's values
             (``"float"`` or ``"integer"`` over a string array, or either of
-            those over a ``timedelta64`` array); or if a ``timedelta64`` array
+            those over a ``timedelta64`` array), or if a ``timedelta64`` array
             carries no unit, leaving its counts with nothing to be counts of.
 
         Examples
@@ -481,7 +481,7 @@ class NdArray(CovJSONStruct, frozen=True, tag="NdArray"):
         # A duration is settled once, here, because two things follow from it:
         # NumPy makes timedelta64 a subtype of np.integer, so the ladder below
         # would otherwise call it "integer" and int() would then raise on the
-        # datetime.timedelta its elements yield; and CoverageJSON has no
+        # datetime.timedelta its elements yield, and CoverageJSON has no
         # duration type, so "string" is the only dataType that can carry one.
         duration = np.issubdtype(array.dtype, np.timedelta64)
 
@@ -611,7 +611,7 @@ class TileFailure(FetchFailure, frozen=True, kw_only=True):
     message) with ``offsets``, the tile's start index along *each* axis of the full
     array (one entry per axis, ``0`` on axes the tile set does not subdivide). Collected
     by [`assemble`][covjson_msgspec.TiledNdArray.assemble] when a best-effort strategy
-    tolerates the failure; see `AssembleReport`.
+    tolerates the failure. See `AssembleReport`.
 
     Examples
     --------
@@ -640,7 +640,7 @@ class AssembleReport(msgspec.Struct, frozen=True):
     Returned by [`assemble`][covjson_msgspec.TiledNdArray.assemble] and
     [`assemble_async`][covjson_msgspec.TiledNdArray.assemble_async].  ``array`` holds
     every tile that loaded, with ``None`` at positions whose tile failed under a
-    collecting strategy (a still-valid `NdArray`); ``failures`` reports those failed
+    collecting strategy (a still-valid `NdArray`). ``failures`` reports those failed
     tiles. Under the default [`fail_fast`][covjson_msgspec.fail_fast] strategy
     ``failures`` is empty: the first failed tile raises a
     [`FetchError`][covjson_msgspec.FetchError] instead of being collected.
@@ -709,7 +709,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
     axis_names: tuple[str, ...]
     shape: tuple[int, ...]
     tile_sets: tuple[TileSet, ...]
-    # JSON-LD @context (spec section 8); see `JsonLdContext`.
+    # JSON-LD @context (spec section 8). See `JsonLdContext`.
     context: JsonLdContext | UnsetType = msgspec.field(name="@context", default=UNSET)
 
     def __post_init__(self) -> None:
@@ -753,7 +753,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         How a failed tile is handled is the ``strategy``. The default
         [`fail_fast`][covjson_msgspec.fail_fast] aborts on the first failure, raising a
         [`FetchError`][covjson_msgspec.FetchError] chained from the underlying
-        exception; a collecting strategy ([`collect_all`][covjson_msgspec.collect_all],
+        exception. A collecting strategy ([`collect_all`][covjson_msgspec.collect_all],
         ...) instead returns the tiles that loaded, with ``None`` holes and the failures
         reported.
 
@@ -765,7 +765,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         tileset
             The index of the tile set to use, negative counting from the end.
             Every tile set tiles the same ``shape`` (spec 6.3), so this normally
-            changes only how many tiles are fetched, not the result; by default
+            changes only how many tiles are fetched, not the result. By default
             the one with the fewest tiles (fewest fetches) is chosen, and the
             first listed wins a tie. Spec 6.3 constrains the tiling, not the tile
             values: it never states that two tile sets carry the same value for a
@@ -773,7 +773,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
             every set. Where they differ, this choice changes the result.
         strategy
             How to respond to a tile that fails to fetch or decode. The default
-            [`fail_fast`][covjson_msgspec.fail_fast] aborts on the first failure; a
+            [`fail_fast`][covjson_msgspec.fail_fast] aborts on the first failure. A
             collecting strategy ([`collect_all`][covjson_msgspec.collect_all],
             [`halt_on_unrecoverable`][covjson_msgspec.halt_on_unrecoverable],
             [`stop_after`][covjson_msgspec.stop_after], or any
@@ -785,7 +785,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         AssembleReport
             ``report.array`` is an inline `NdArray` of this array's full ``shape``
             and ``axis_names`` with each loaded tile's values placed at its
-            position; positions not covered by any tile (or whose tile failed
+            position. Positions not covered by any tile (or whose tile failed
             under a collecting strategy) are ``None``. ``report.failures`` lists
             the tiles that failed (empty unless a collecting strategy tolerated
             some).
@@ -808,7 +808,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
             expand to a distinct URL per tile, so tiles would share a document.
             Each is raised before any fetch, so no ``strategy`` applies. The first
             four are [`validate`][covjson_msgspec.validate] findings, so a clean
-            report rules them out ahead of time; the fifth is not, because it is
+            report rules them out ahead of time. The fifth is not, because it is
             checked against the layout rather than the template. Its remaining
             cause does have a finding
             (``tiled-ndarray.url-template-missing-variable``) but does not follow
@@ -886,7 +886,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         """Concurrently fetch this array's tiles and stitch them into an `NdArray`.
 
         The awaitable counterpart of `assemble` with identical semantics
-        (including the ``strategy`` best-effort options); only the fetching
+        (including the ``strategy`` best-effort options). Only the fetching
         differs. A tile set is typically dozens or hundreds of independent tiles,
         so fetching them concurrently via `asyncio.gather` is the main win. Every
         tile is fetched before the strategy is applied (concurrency comes before
@@ -898,13 +898,13 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
         fetch
             An `AsyncFetch` awaitably mapping a tile's URL to its raw bytes. All
             I/O (and any caching, auth, or retries) lives in this callable. There
-            is no built-in concurrency cap; wrap ``fetch`` in an `asyncio.Semaphore`
+            is no built-in concurrency cap. Wrap ``fetch`` in an `asyncio.Semaphore`
             to bound the fan-out (see `resolve_references_async`).
         tileset
-            The index of the tile set to use, negative counting from the end;
-            see `assemble`.
+            The index of the tile set to use, negative counting from the end.
+            See `assemble`.
         strategy
-            How to respond to a tile that fails to fetch or decode; see `assemble`.
+            How to respond to a tile that fails to fetch or decode. See `assemble`.
 
         Returns
         -------
@@ -981,7 +981,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
 
         Shared by `assemble` and `assemble_async`. With ``tileset=None`` the tile
         set partitioning the array into the fewest tiles is chosen (the fewest
-        fetches), the first one winning a tie; otherwise the tile set at that
+        fetches), the first one winning a tie. Otherwise the tile set at that
         index is returned, indexing as a Python sequence does (a negative index
         counts from the end).
 
@@ -1042,7 +1042,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
 
         try:
             # The tuple stays the single source of truth for the valid range
-            # (negatives included); the re-raise only improves the message.
+            # (negatives included). The re-raise only improves the message.
             return self.tile_sets[tileset]
         except IndexError:
             msg = (
@@ -1062,7 +1062,7 @@ class TiledNdArray(CovJSONStruct, frozen=True, tag="TiledNdArray"):
 
 
 # A fetched tile is a standalone NdArray document (the CoverageJSON root union
-# decodes one on its own); the decoder is built once and reused.
+# decodes one on its own). The decoder is built once and reused.
 _TILE_DECODER: Final[msgspec.json.Decoder[NdArray]] = msgspec.json.Decoder(NdArray)
 
 
@@ -1070,7 +1070,7 @@ def tile_count(array_shape: Sequence[int], tile_shape: Sequence[int | None]) -> 
     """Return how many tiles a tile set partitions an array into.
 
     The product over the subdivided axes of how many tiles each is divided into
-    (integer ``ceil(size / tile_size)``); an axis with a ``None`` tile size is
+    (integer ``ceil(size / tile_size)``). An axis with a ``None`` tile size is
     whole and contributes a single tile. This is the number of fetches
     [`assemble`][covjson_msgspec.TiledNdArray.assemble] performs for a tile set, so
     `TiledNdArray` selects the tile set with the fewest by default.
@@ -1125,7 +1125,7 @@ def _is_nonfinite(value: Any) -> bool:
     Parameters
     ----------
     value
-        Any value at all; nothing is assumed about it.
+        Any value at all. Nothing is assumed about it.
 
     Returns
     -------
@@ -1261,7 +1261,7 @@ def _offsets_by_axis(
 
     Examples
     --------
-    Five cells in tiles of two start at 0, 2 and 4 (the last holds one cell); a
+    Five cells in tiles of two start at 0, 2 and 4 (the last holds one cell). A
     null tile size leaves the axis whole:
 
     >>> _offsets_by_axis((5, 4), (2, None))
@@ -1295,8 +1295,8 @@ def _tile_url(
 
     Callers establish that ``axis_names``, ``offsets`` and the tile shape are
     rank-matched, that each offset is a multiple of its tile size, and that the
-    template names only subdivided axes. `_tile_layout` establishes all three;
-    an offset that is not a multiple floors to the wrong ordinal rather than
+    template names only subdivided axes. `_tile_layout` establishes all three.
+    An offset that is not a multiple floors to the wrong ordinal rather than
     failing, so this is a precondition and not a check.
 
     Parameters
@@ -1316,7 +1316,7 @@ def _tile_url(
 
     Examples
     --------
-    ``t`` starts at 30 with a tile size of 10, so it is tile 3; ``x`` is whole,
+    ``t`` starts at 30 with a tile size of 10, so it is tile 3. ``x`` is whole,
     so the template carries no variable for it:
 
     >>> tile_set = TileSet(tile_shape=(10, None), url_template="{t}.cov")
@@ -1349,9 +1349,9 @@ def _tile_layout(
     """Lay out every tile of a tile set as a ``(url, offsets)`` pair.
 
     Each partitioned axis is divided into ``ceil(size / tile_size)`` tiles indexed
-    by ordinal ``0, 1, ...``; an unpartitioned axis (``None`` tile size) spans the
-    whole axis at offset 0. The cartesian product over axes enumerates the tiles;
-    each tile's URL comes from expanding the template with the partitioned axes'
+    by ordinal ``0, 1, ...``. An unpartitioned axis (``None`` tile size) spans the
+    whole axis at offset 0. The cartesian product over axes enumerates the tiles.
+    Each tile's URL comes from expanding the template with the partitioned axes'
     ordinals, and its offsets are the per-axis start indices
     (``ordinal * tile_size``).
 
@@ -1359,13 +1359,13 @@ def _tile_layout(
     `TiledNdArray` may lack any of them and is rejected here, before any fetch:
 
     * ``axisNames`` rank-matching ``shape``, without which an axis cannot be
-      named for its tile ordinal;
+      named for its tile ordinal.
     * a positive tile size (`non_positive_tile_sizes`), without which the tile
-      count is undefined;
+      count is undefined.
     * a template naming only subdivided axes (`variables_not_subdivided`), since
-      a variable with no subdivided axis has no ordinal to expand it with;
+      a variable with no subdivided axis has no ordinal to expand it with.
     * no two same-named subdivided axes whose ordinals differ
-      (`duplicate_subdivided_axes`), since one variable cannot carry both; and
+      (`duplicate_subdivided_axes`), since one variable cannot carry both. And
     * a template that expands to a distinct URL per tile, without which tiles
       share a document.
 
@@ -1375,7 +1375,7 @@ def _tile_layout(
     contract for what this function's rejections surface as.
 
     The tile-size, template-variable and duplicate-name rules read from `_tiling`,
-    so the two consumers cannot drift; the rank check is a plain length comparison
+    so the two consumers cannot drift. The rank check is a plain length comparison
     each side makes for itself. The distinct-URL check is this function's alone
     and is deliberately *not* shared: it is checked against the layout rather than
     the template, so one check covers every way the template can fail to
@@ -1584,7 +1584,7 @@ def _tile_mismatches(
     Yields
     ------
     str
-        One phrase per violated clause, in check order; nothing at all for a
+        One phrase per violated clause, in check order. Nothing at all for a
         conformant tile.
 
     Examples

@@ -29,7 +29,7 @@ def test_reference_system_refines_to_its_variant() -> None:
 
 
 def test_custom_type_loads_and_refines_opaque() -> None:
-    # Spec 7.2: a custom (URI) type MUST still load; refine renders it opaque.
+    # Spec 7.2: a custom (URI) type MUST still load. Refine renders it opaque.
     rs = msgspec.json.decode(b'{"type": "uor:HEALPixRS"}', type=ReferenceSystem)
     assert rs.type_ == "uor:HEALPixRS"
     refined = rs.refine()
@@ -53,7 +53,7 @@ def test_connection_roundtrips() -> None:
 
 def test_temporal_rs_missing_calendar_loads_and_refines_opaque() -> None:
     # Permissive decode (ADR-0002): a calendar-less temporal RS loads rather than
-    # failing at the door; refine renders it opaque (a malformed known type, not a
+    # failing at the door. Refine renders it opaque (a malformed known type, not a
     # custom one), and validate() reports temporal.missing-calendar.
     rs = msgspec.json.decode(b'{"type": "TemporalRS"}', type=ReferenceSystem)
     refined = rs.refine()
@@ -79,7 +79,7 @@ def test_identifier_rs_target_concept_roundtrips() -> None:
 
 
 def test_concept_id_round_trips() -> None:
-    # The Spec 5.3 example gives each concept an id (a concept URI); it must survive
+    # The Spec 5.3 example gives each concept an id (a concept URI). It must survive
     # a decode -> encode round trip (a fidelity gap #113 closes).
     rs = IdentifierRS(
         target_concept=Concept(

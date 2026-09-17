@@ -23,7 +23,7 @@ _PLAYGROUND = sorted((_CORPUS / "playground").rglob("*.covjson"))
 _PYDANTIC = _CORPUS / "covjson-pydantic"
 _PYDANTIC_FILES = sorted(_PYDANTIC.glob("*.json"))
 _MANIFEST = tomllib.loads((_PYDANTIC / "manifest.toml").read_text())
-# Negatives are enumerated in the manifest; every other fixture is positive.
+# Negatives are enumerated in the manifest. Every other fixture is positive.
 _STRUCTURAL_REJECT = {entry["file"] for entry in _MANIFEST["structural_reject"]}
 _VALIDATE_REJECT = {
     entry["file"]: set(entry["codes"]) for entry in _MANIFEST["validate_reject"]
@@ -62,7 +62,7 @@ def test_playground_document_validates_clean(path: pathlib.Path) -> None:
 
 
 def test_covjson_pydantic_corpus_is_present() -> None:
-    # The pinned covjson-pydantic snapshot vendors exactly 50 fixtures; the
+    # The pinned covjson-pydantic snapshot vendors exactly 50 fixtures. The
     # manifest must reference only files that exist, with no double classification.
     assert len(_PYDANTIC_FILES) == 50
 
@@ -105,7 +105,7 @@ def test_negative_corpus_is_present() -> None:
 def test_negative_document_flags_expected_issues(path: pathlib.Path) -> None:
     obj = decode(path.read_bytes())
 
-    # The docs are valid CoverageJSON (they decode and round-trip); what makes
+    # The docs are valid CoverageJSON (they decode and round-trip). What makes
     # them negative is the validate() issues they carry.
     assert decode(encode(obj)) == obj
     assert _issues(obj) == _NEGATIVE_ISSUES[path.name]

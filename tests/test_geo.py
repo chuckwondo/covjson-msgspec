@@ -125,7 +125,7 @@ def test_point_series_is_one_feature_per_time() -> None:
 
     assert len(gdf) == 2
     # "crs" is not a resolvable id, so the geographic system falls back to the
-    # WGS84 lon/lat default (OGC:CRS84); the temporal one parses t.
+    # WGS84 lon/lat default (OGC:CRS84). The temporal one parses t.
     assert gdf.crs == "OGC:CRS84"
     assert gdf["t"].tolist() == [
         pd.Timestamp("2020-01-01"),
@@ -153,7 +153,7 @@ def test_geographic_referencing_without_id_defaults_to_crs84() -> None:
 
 
 def test_geographic_referencing_with_unresolvable_id_falls_back() -> None:
-    # A nominal / relative id that pyproj cannot resolve must not crash; it falls
+    # A nominal / relative id that pyproj cannot resolve must not crash. It falls
     # back to the lon/lat default rather than being passed through.
     assert to_geopandas(_geographic_point("crs")).crs == "OGC:CRS84"
 
@@ -170,7 +170,7 @@ def test_geographic_referencing_passes_a_resolvable_id_through() -> None:
 
 
 def test_projected_referencing_passes_its_id_through() -> None:
-    # A projected system is identified by its id (here an OGC CRS URI); the
+    # A projected system is identified by its id (here an OGC CRS URI). The
     # bridge passes it through and pyproj resolves it to the EPSG code.
     cov = Coverage(
         domain=Domain.point(
@@ -238,7 +238,7 @@ def test_trajectory_is_one_point_per_vertex() -> None:
 
 
 def test_multipoint_is_one_point_per_member() -> None:
-    # MultiPoint carries its positions in a composite (x, y) tuple axis; each
+    # MultiPoint carries its positions in a composite (x, y) tuple axis. Each
     # tuple becomes one point feature with its measurement.
     composite = Axis(
         data_type="tuple",
@@ -265,7 +265,7 @@ def test_multipoint_is_one_point_per_member() -> None:
         (3.0, 30.0),
     ]
     assert gdf["v"].tolist() == [5.0, 6.0, 7.0]
-    # The composite axis is the geometry's source; its bare positional index
+    # The composite axis is the geometry's source. Its bare positional index
     # (0, 1, 2) must not leak into the feature columns / GeoJSON properties.
     assert "composite" not in gdf.columns
     assert "composite" not in to_geojson(cov)["features"][0]["properties"]
@@ -328,7 +328,7 @@ def test_polygon_is_single_polygon_feature() -> None:
 
 
 def test_polygon_carries_z_into_a_column() -> None:
-    # A Polygon domain may carry a single-valued z axis; the polygon frame builder
+    # A Polygon domain may carry a single-valued z axis. The polygon frame builder
     # broadcasts it into a z column alongside the geometry.
     cov = Coverage(
         domain=Domain.polygon(
@@ -509,7 +509,7 @@ def test_collection_keys_unidentified_members_by_position() -> None:
 
 
 def test_collection_inherits_referencing_for_crs() -> None:
-    # The CRS lives on the collection's referencing; members declare none.
+    # The CRS lives on the collection's referencing. Members declare none.
     collection = CoverageCollection(
         coverages=(_point_member("a", 1.0, 2.0, 10.0),),
         referencing=(
@@ -540,7 +540,7 @@ def test_empty_collection_is_empty_frame() -> None:
 
 
 def test_empty_collection_to_geojson_is_empty_feature_collection() -> None:
-    # The empty frame has no geometry column, so to_json would raise; the bridge
+    # The empty frame has no geometry column, so to_json would raise. The bridge
     # emits an empty FeatureCollection instead.
     gj = to_geojson(CoverageCollection(coverages=()))
 
@@ -713,7 +713,7 @@ def test_primitive_composite_axis_is_rejected(domain_type: str, expected: str) -
 
 @pytest.mark.parametrize("domain_type", ["Trajectory", "Polygon"])
 def test_geometry_domain_without_a_composite_axis_is_rejected(domain_type: str) -> None:
-    # The geometry builders read `domain.axes["composite"]`; a domain typed for
+    # The geometry builders read `domain.axes["composite"]`. A domain typed for
     # geometry but missing that axis must raise a clear bridge error rather than
     # a bare KeyError from inside the builder. validate() reports the same as
     # `domain.missing-axis`, but the bridge does not require a validated document.
@@ -731,7 +731,7 @@ def test_composite_axis_without_horizontal_coordinates_is_rejected(
     domain_type: str,
 ) -> None:
     # The geometry builders understand only x / y among `composite`'s
-    # coordinates; coordinates naming neither must be rejected by name rather
+    # coordinates. Coordinates naming neither must be rejected by name rather
     # than fail from inside shapely. validate() reports the same, but the bridge
     # does not require a validated document.
     data_type = "tuple" if domain_type == "Trajectory" else "polygon"
@@ -936,7 +936,7 @@ def test_geo_bridges_propagate_a_range_value_error(
 
 
 def _point(geom: Any) -> Point:
-    # geopandas types a geometry as the abstract BaseGeometry; assert the concrete
+    # geopandas types a geometry as the abstract BaseGeometry. Assert the concrete
     # type so the Point coordinate accessors (x / y / z) type-check (and to guard
     # the test's assumption at runtime).
     assert isinstance(geom, Point)

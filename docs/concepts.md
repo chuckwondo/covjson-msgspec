@@ -3,13 +3,13 @@
 covjson-msgspec maps the CoverageJSON model onto a set of precise, immutable
 Python types. This page explains that type design: which spec object becomes which
 type, and how each maps the JSON to a spec-compliant msgspec struct. It stays
-scoped to the type design; the [specification][spec], linked throughout, is the
+scoped to the type design. The [specification][spec], linked throughout, is the
 authority on the format itself, and the [API reference](reference/coverage.md) has
 the exhaustive members.
 
 snake_case attribute names map to CoverageJSON's lowerCamelCase wire names
 automatically (`data_type` is `dataType`, `domain_type` is `domainType`). You
-write Python; the codec speaks CoverageJSON.
+write Python. The codec speaks CoverageJSON.
 
 ## The mapping
 
@@ -30,7 +30,7 @@ Each CoverageJSON object maps to a single library type:
 
 The five types at the document root (`Coverage`, `CoverageCollection`, and the
 sub-documents `Domain`, `NdArray`, and `TiledNdArray`) are what a CoverageJSON
-document can *be*; everything else is a value composed inside them (an axis, a
+document can *be*. Everything else is a value composed inside them (an axis, a
 parameter, a reference system).
 
 Most types transcribe their spec object field-for-field, with no notable modeling
@@ -38,12 +38,12 @@ decision, so the mapping table and the [API reference](reference/coverage.md) co
 them:
 
 - **[`Domain`](reference/domain.md)** ([Section 6.1][spec-domain]): a container
-  of a `domain_type`, a map of `axes`, and `referencing`; its interesting parts
+  of a `domain_type`, a map of `axes`, and `referencing`. Its interesting parts
   (the axes and reference systems it holds) are covered elsewhere, and its
   per-domain-type builders follow the same narrow-builder pattern as `Axis`.
 - **[`TiledNdArray`](reference/range.md)** ([Section 6.3][spec-tiled]): the same
   range family as `NdArray`, but with `values` split across tile documents. The
-  struct is straightforward; the interest is behavioral (assembling the tiles),
+  struct is straightforward. The interest is behavioral (assembling the tiles),
   covered in the assembly guide.
 - **[Reference systems](reference/referencing.md)**
   ([Section 5][spec-refsystems]): a permissive `ReferenceSystem` core that
@@ -53,12 +53,12 @@ them:
   categorical `Concept`.
 - **[`Parameter`](reference/parameter.md)** ([Section 3][spec-parameter]) and
   its parts (`ObservedProperty`, `Category`, `CategoryEncoding`, `Unit`,
-  `Symbol`): direct transcriptions; the one local invariant is that a
+  `Symbol`): direct transcriptions. The one local invariant is that a
   categorical `ObservedProperty` must list its `categories`.
 - **[`ParameterGroup`](reference/parameter.md)** ([Section 4][spec-paramgroup]):
   a direct transcription of the group's members.
 - **[`I18n`](reference/parameter.md)** ([Section 2][spec-i18n]): a language-tag
-  to string map; its one choice, langcode validation, is noted under Faithful by
+  to string map. Its one choice, langcode validation, is noted under Faithful by
   default.
 
 The sections below walk the remaining types, where mapping the JSON to a struct
@@ -95,7 +95,7 @@ with its `ranges`:
 ```
 
 The spec requires `domain` and `ranges`, plus `parameters` unless the coverage
-inherits it from an enclosing collection; the `domain` MAY be an inline object *or*
+inherits it from an enclosing collection. The `domain` MAY be an inline object *or*
 a URL string that references one, and `id`, the coverage-level `domainType`, and
 `parameterGroups` are optional (the JSON above sets the common members). The struct
 maps that shape directly:
@@ -112,7 +112,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
 
 - `tag="Coverage"` supplies the `"type"` discriminator, so the root tagged union
   (`Coverage | CoverageCollection | Domain | NdArray | TiledNdArray`) decodes on
-  it. `decode` returns the matching type; `decode_coverage` is the typed entry
+  it. `decode` returns the matching type. `decode_coverage` is the typed entry
   point when you know which you hold.
 - `domain: Domain | str` mirrors the spec's "inline or referenced" allowance
   exactly: a decoded domain stays a URL string until you resolve it.
@@ -126,7 +126,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
     `UNSET` is [msgspec](https://msgspec.dev/)'s sentinel for a member
     that was *absent* from the JSON. A field typed `X | UnsetType` decodes to
     `UNSET` when the key is missing, to the value when the key is present, and
-    *rejects* an explicit `null`; on encode, an `UNSET` field is omitted again.
+    *rejects* an explicit `null`. On encode, an `UNSET` field is omitted again.
     That gives three distinguishable states (present, `null`, absent) where
     `X | None` gives only two (a bare `None` cannot tell "absent" from an explicit
     "null"). The library reserves `UNSET` for the few members where that
@@ -209,8 +209,8 @@ and a *composite* axis carries tuples with named `coordinates`:
 ```
 
 The spec requires **either** `values` (a non-empty array) **or** the `start` /
-`stop` / `num` triple; `num` is an integer greater than zero, and if it is 1
-then `start` and `stop` MUST be equal; and an optional `bounds` array may
+`stop` / `num` triple. `num` is an integer greater than zero, and if it is 1
+then `start` and `stop` MUST be equal, and an optional `bounds` array may
 accompany any form.
 
 Three rules we enforce are not stated that plainly, and it is worth being
@@ -218,10 +218,10 @@ precise about where each comes from. The two forms are *exclusive*: section
 6.1.1 says "either ... or", never "exactly one" and never that carrying both is
 forbidden, so flagging an axis with both is our reading. Three things settle
 it: the triple is introduced "as a compact notation for a regularly spaced
-numeric axis", which makes it an alternative encoding of the same content; "the
+numeric axis", which makes it an alternative encoding of the same content. "the
 array elements of `"values"` MAY be reconstructed with the formula ..." and "If
 `num = 1` then `"values"` is `[start]`" both presuppose `values` is absent and
-derivable; and the spec supplies no tiebreak for a document carrying both
+derivable, and the spec supplies no tiebreak for a document carrying both
 inconsistently, which a spec permitting both would have to. Such an axis still
 reads (`values` wins), so it is `validate()`'s `axis.form-conflict` rather than
 a decode rejection ([ADR-0023](adr/0023-axis-form-conflict-tier.md)). A
@@ -263,7 +263,7 @@ class Axis(CovJSONStruct, frozen=True):
 - Every field is optional, and `__post_init__` enforces at construction that one
   complete form is present (the MUST section 6.1.1 states). On an axis whose
   form *is* regular it also enforces `num >= 1` and the `num == 1 implies
-  start == stop` MUST; beside `values` those members are strays whose only
+  start == stop` MUST. Beside `values` those members are strays whose only
   repair is deletion, so `validate()` reports the conflict instead
   ([ADR-0023](adr/0023-axis-form-conflict-tier.md)). These are local,
   O(1) invariants that leave the axis uninterpretable if violated, so they belong
@@ -304,9 +304,9 @@ flattened:
 }
 ```
 
-The spec requires a `dataType` of `float`, `integer`, or `string`; `values` is a
+The spec requires a `dataType` of `float`, `integer`, or `string`. `values` is a
 flat, row-major array whose length MUST equal the product of `shape`, with `null`
-for a missing datum; `shape` and `axisNames` MAY be omitted for a single 0-d value.
+for a missing datum. `shape` and `axisNames` MAY be omitted for a single 0-d value.
 The struct carries the element type as a *field*, not a subclass:
 
 ```python
@@ -356,7 +356,7 @@ The deliberate, permanent exception is
 [custom members](adr/0012-custom-members-dropped-on-decode.md)
 ([Section 7.1][spec-custom]): extension keys the spec permits but does not
 define, which decode drops rather than captures. A modeled spec member survives
-a decode / encode round trip; a custom member does not. To relay a document with
+a decode / encode round trip. A custom member does not. To relay a document with
 its extensions intact, forward its raw bytes instead of decoding and
 re-encoding.
 
@@ -365,7 +365,7 @@ round-trips faithfully (an IRI string, an inline context object, an array of
 those, or `null`) rather than being dropped. Custom (URI) reference-system types
 ([Section 7.2][spec-72]) also load: a reference system decodes into a permissive
 `ReferenceSystem`, which `refine()` projects to a precise per-kind variant (an
-opaque one for an unrecognized `type`). Its `type` round-trips; any custom
+opaque one for an unrecognized `type`). Its `type` round-trips. Any custom
 members on it drop, as above.
 
 The [design decisions](adr/README.md) hold the full rationale behind these choices.

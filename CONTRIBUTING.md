@@ -3,7 +3,7 @@
 This is the contributor guide: how to set up, the conventions the code follows,
 and how changes get proposed and reviewed. It is the single source of truth for
 those. For the library itself, the [documentation](docs/index.md) is the
-user-facing introduction; the [design decisions](docs/design/index.md) and
+user-facing introduction. The [design decisions](docs/design/index.md) and
 [design tenets](docs/design/tenets.md) explain why the code is shaped the way it
 is.
 
@@ -34,10 +34,10 @@ uv run --group docs properdocs build   # build the docs site (serve: ... serve)
 ```
 
 Type checking runs four checkers: mypy (strict) and basedpyright (strict) are
-blocking; ty and pyrefly are informational. basedpyright bundles a Node runtime
-and may not build on every local machine; rely on CI when it cannot run locally.
+blocking. Ty and pyrefly are informational. basedpyright bundles a Node runtime
+and may not build on every local machine. Rely on CI when it cannot run locally.
 
-The Python floor is `>=3.11`, set to match titiler's floor; raising it is gated on
+The Python floor is `>=3.11`, set to match titiler's floor. Raising it is gated on
 titiler moving first (see [ADR-0001](docs/adr/0001-python-3-11-floor.md)).
 
 ## Project layout
@@ -53,7 +53,7 @@ Core model (`src/covjson_msgspec/`):
 - Spec structs: `axis.py`, `domain.py`, `range.py`, `coverage.py` (with the codec
   helpers), `referencing.py`, `parameter.py`, `i18n.py`.
 - `validation.py`: the opt-in, tiered `validate()`.
-- `_fetch.py`: the injected-fetcher seam (`Fetch` / `AsyncFetch`); the core never
+- `_fetch.py`: the injected-fetcher seam (`Fetch` / `AsyncFetch`). The core never
   performs I/O.
 - `media_type.py` (HTTP helpers), `subset.py` (`isel` / `sel`), `_bridging.py`
   and `_repr.py` (shared helpers).
@@ -70,16 +70,16 @@ The crisp rules. Where a rule carries deeper reasoning, it links to
 Code:
 
 - `from __future__ import annotations` at the top of every module (after the
-  docstring). Write bare annotations; quote only the strings inside `cast()`.
+  docstring). Write bare annotations. Quote only the strings inside `cast()`.
 - Absolute imports only (relative imports are banned by ruff).
 - Do not import another module's `_private` member. To share an internal helper,
   give it a home in a `_`-prefixed module and import its non-underscore name
   ([why](docs/design/index.md#conventions-explained)).
-- Place `_private` module functions after the public API; give them full
+- Place `_private` module functions after the public API. Give them full
   numpy-style docstrings with cheap, runnable examples.
 - Prefer implicit iteration (comprehensions, generator expressions,
   `itertools.chain`) over explicit `for` / `while` where it stays readable.
-- Build behavior from small, single-purpose, composable functions; compose with
+- Build behavior from small, single-purpose, composable functions. Compose with
   the standard library rather than point-free combinators that fight the type
   checkers.
 - A checker/transform helper returns an iterable rather than mutating a shared
@@ -88,21 +88,21 @@ Code:
   parameter's annotation already excludes.
 - Assign an exception message to a `msg` variable before `raise X(msg)` (ruff EM).
 - Name a bridge for its destination library or format (`to_pandas`, `to_xarray`,
-  `to_geojson`); `to_datatree` is the type-named exception.
+  `to_geojson`). `to_datatree` is the type-named exception.
 - Name a validation finding's payload field for the quantity it holds, and check
-  that name reads right standing alone; `at` carries the location, so a payload
+  that name reads right standing alone. `at` carries the location, so a payload
   never repeats it.
 - snake_case attributes map to lowerCamelCase wire names via `rename="camel"`, so
   ruff N815 is intentionally not applied.
 - Put blank lines around block statements (if / for / while / with / try / def /
   class).
-- Prefer colons, parentheses, or a shorter sentence to em-dashes; write a needed
+- Prefer colons, parentheses, or a shorter sentence to em-dashes. Write a needed
   one as a double hyphen (`--`), never the Unicode character. A definition list
   uses a colon.
 
 Docstrings and doctests:
 
-- Keep doctest lines within 88 characters (ruff E501 checks docstrings); wrap long
+- Keep doctest lines within 88 characters (ruff E501 checks docstrings). Wrap long
   byte blobs via implicit string concatenation.
 - Multi-line JSON in docstrings uses `indent=2` with short arrays kept inline. Do
   not reformat verbatim `msgspec.json.format(indent=2)` output.
@@ -122,15 +122,15 @@ docstrings and the hand-written pages share one set of conventions.
 - Cross-reference an API symbol as `` [`name`][covjson_msgspec.public.path] ``:
   the display is the short `name`, and the target is its canonical public
   `__all__` path (`covjson_msgspec.validate`, not the internal
-  `covjson_msgspec.validation.validate`). Do not use reStructuredText idiom;
+  `covjson_msgspec.validation.validate`). Do not use reStructuredText idiom.
   `` `~mod.name` `` renders as dead literal text, and a trailing `::` renders as
   a stray `::`.
 - A target with no rendered anchor renders as plain inline code, not a link: a
-  private member, a no-inventory external (`geopandas`, `fastapi`; only the
+  private member, a no-inventory external (`geopandas`, `fastapi`: only the
   numpy, xarray, pandas, and typing inventories are loaded), or an enum member
   (link its enum class instead).
 - Link the CoverageJSON spec from docstrings and comments where it teaches the
-  wire format; centralize the spec and RFC links in the module docstring.
+  wire format. Centralize the spec and RFC links in the module docstring.
 - Every section number cites `covjson/specification@2061005` (`spec.md` +
   `domain-types.md`), the revision this project conforms to
   ([ADR-0022](docs/adr/0022-pinned-specification-revision.md)). Quote the pinned
@@ -140,7 +140,7 @@ docstrings and the hand-written pages share one set of conventions.
 - For syntax this does not spell out (admonitions, cross-reference forms, the
   reference-page `:::` stubs), see the
   [mkdocstrings](https://mkdocstrings.github.io/) docs (Material for MkDocs and
-  mkdocs-autorefs too); for the reasoning behind a rule,
+  mkdocs-autorefs too). For the reasoning behind a rule,
   [Conventions, explained](docs/design/index.md#conventions-explained).
 
 Tests:
@@ -152,11 +152,11 @@ Tests:
 
 ## Contribution process
 
-- Branch off `main`; do not commit directly to `main`.
+- Branch off `main`. Do not commit directly to `main`.
 - Commit messages hard-wrap (about a 50-character subject, body wrapped at ~72).
   Repo Markdown files hard-wrap prose at 80 columns (not code blocks, tables, or
   long URLs). GitHub issue / PR / comment bodies do not hard-wrap.
-- Open a pull request against `main`; PR bodies are not hard-wrapped.
+- Open a pull request against `main`. PR bodies are not hard-wrapped.
 - A `design`-labeled issue evaluates for an ADR at the end of its design pass. If
   one is warranted, write it under [`docs/adr/`](docs/adr/) using the
   [template](docs/adr/template.md) (Title, Status, Context, Decision, Alternatives

@@ -6,9 +6,9 @@ exclusive, but spec 6.1.1 does not state that, so an axis carrying both decodes
 and `covjson_msgspec.validate` reports it as ``axis.form-conflict``
 (`covjson_msgspec.validation.AxisFormConflict` carries the derivation):
 
-* **value-listing**: an explicit ``values`` array;
+* **value-listing**: an explicit ``values`` array.
 * **regular**: ``start`` / ``stop`` / ``num``, the compact notation for a
-  regularly spaced axis; and
+  regularly spaced axis. And
 * **composite**: ``dataType`` ``"tuple"`` or ``"polygon"`` with named
   ``coordinates`` (used by trajectory and polygon domains).
 
@@ -49,8 +49,8 @@ from covjson_msgspec._base import CovJSONStruct
 AxisValue = float | int | str | tuple[Any, ...]
 
 # Nested-sequence shapes accepted by the composite-axis builders. A position is a
-# sequence of coordinate values (e.g. x, y); a ring is a sequence of positions
-# (closed: first position repeated last); a polygon is a sequence of rings (the
+# sequence of coordinate values (e.g. x, y). A ring is a sequence of positions
+# (closed: first position repeated last). A polygon is a sequence of rings (the
 # exterior ring first, then any holes).
 RingCoords = Iterable[Iterable[float]]
 PolygonCoords = Iterable[RingCoords]
@@ -59,7 +59,7 @@ PolygonCoords = Iterable[RingCoords]
 # Modeled as one permissive struct rather than a tagged union: the axis shapes
 # share no "type" discriminator and msgspec disallows untagged unions of
 # multiple structs. __post_init__ enforces that at least one complete form is
-# present; their exclusivity is `validate`'s `axis.form-conflict` (ADR-0023).
+# present. Their exclusivity is `validate`'s `axis.form-conflict` (ADR-0023).
 class Axis(CovJSONStruct, frozen=True):
     """A domain axis in any of its CoverageJSON shapes.
 
@@ -177,7 +177,7 @@ class Axis(CovJSONStruct, frozen=True):
     num: int | None = None
     # Wire name ``dataType``. The spec defines "primitive" (the default when
     # omitted), "tuple", and "polygon", but explicitly allows custom extension
-    # values (spec 6.1.1), so this stays a free string rather than a Literal; an
+    # values (spec 6.1.1), so this stays a free string rather than a Literal. An
     # unrecognized value is treated as primitive-like. ``None`` means "primitive".
     data_type: str | None = None
     coordinates: tuple[str, ...] | None = None
@@ -271,12 +271,12 @@ class Axis(CovJSONStruct, frozen=True):
         tiebreak, but it introduces the triple "as a compact notation for a
         regularly spaced numeric axis" whose elements "MAY be reconstructed",
         making the triple the derived form. Such an axis is reported as
-        ``axis.form-conflict`` (ADR-0023); this is what it resolves to meanwhile.
+        ``axis.form-conflict`` (ADR-0023). This is what it resolves to meanwhile.
 
         Returns
         -------
         sequence
-            For a value-listing axis, the ``values``; for a regular axis, the
+            For a value-listing axis, the ``values``. For a regular axis, the
             ``num`` evenly spaced values from ``start`` to ``stop`` inclusive.
 
         Examples
@@ -312,13 +312,13 @@ class Axis(CovJSONStruct, frozen=True):
         never evaluates falsy. Both branches are covered: `__post_init__`
         rejects an empty ``values`` array, and rejects a non-positive ``num`` on
         a *regular* axis, which is the only kind this reads ``num`` for (per
-        spec 6.1.1; a stray non-positive ``num`` beside ``values`` is
+        spec 6.1.1: a stray non-positive ``num`` beside ``values`` is
         `validate`'s ``axis.form-conflict``, and is never read here).
 
         Returns
         -------
         int
-            ``len(values)`` for a value-listing or composite axis; ``num`` for
+            ``len(values)`` for a value-listing or composite axis. ``num`` for
             a regular axis. At least 1.
 
         Examples
@@ -355,7 +355,7 @@ class Axis(CovJSONStruct, frozen=True):
         stop
             Last coordinate value (inclusive).
         num
-            Number of evenly spaced values; must be a positive integer.
+            Number of evenly spaced values. Must be a positive integer.
         coordinates
             Coordinate identifiers this axis provides (defaults to the axis id).
         bounds
@@ -437,7 +437,7 @@ class Axis(CovJSONStruct, frozen=True):
         Parameters
         ----------
         values
-            The positions; each is a sequence of primitive coordinate values
+            The positions. Each is a sequence of primitive coordinate values
             ordered to match ``coordinates``.
         coordinates
             The coordinate identifiers each position provides (e.g.
@@ -480,8 +480,8 @@ class Axis(CovJSONStruct, frozen=True):
         ----------
         polygons
             The polygons. Each polygon is a sequence of linear rings (the
-            exterior ring first, then any holes); each ring is a sequence of
-            positions; each position is a sequence of coordinate values ordered
+            exterior ring first, then any holes). Each ring is a sequence of
+            positions. Each position is a sequence of coordinate values ordered
             to match ``coordinates``. Rings should be closed (first position
             repeated last).
         coordinates

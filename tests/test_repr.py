@@ -275,7 +275,7 @@ def _render(obj: Displayable) -> str:
     """Invoke the Jupyter ``_repr_html_`` hook.
 
     The hook name has a leading underscore (the IPython protocol), which strict
-    type-checkers treat as a protected member; routing every call through this
+    type-checkers treat as a protected member. Routing every call through this
     one helper keeps the single suppression in one place.
     """
     return obj._repr_html_()  # pyright: ignore[reportPrivateUsage]

@@ -11,7 +11,7 @@ This module provides that as a *functional core*: a fetch failure is a value (a
 `FailureStrategy`) that, given the failures collected so far and a new one,
 returns a `Verdict` (keep collecting, or halt). The canned strategies cover the
 common policies (`fail_fast`, `collect_all`, `halt_on_unrecoverable`,
-`stop_after`); a caller can supply any pure function of the same shape. When a
+`stop_after`). A caller can supply any pure function of the same shape. When a
 strategy halts, the shell raises a `FetchError` carrying the failures collected
 so far.
 
@@ -63,11 +63,11 @@ class FetchFailure(msgspec.Struct, frozen=True, kw_only=True):
     """One failed fetch, as a value: the URL, how recoverable it was, and why.
 
     This is the shared base for every best-effort failure. Consumers subclass it
-    to add where the failure happened (a tile's offsets, a reference's slot); the
+    to add where the failure happened (a tile's offsets, a reference's slot). The
     strategies and `FetchError` work in terms of this base, so they stay
     independent of what was being fetched.
 
-    ``message`` is the human-readable text of the underlying error; a strategy
+    ``message`` is the human-readable text of the underlying error. A strategy
     switches on ``kind``, not on the message.
 
     Attributes
@@ -100,8 +100,8 @@ class Verdict(StrEnum):
     """A strategy's decision about a single failure: keep going, or stop.
 
     ``COLLECT`` records the failure and continues (the surviving documents are
-    still assembled, with holes where fetches failed). ``HALT`` stops the batch;
-    the shell then raises a `FetchError` with the failures collected so far.
+    still assembled, with holes where fetches failed). ``HALT`` stops the batch.
+    The shell then raises a `FetchError` with the failures collected so far.
 
     Examples
     --------
@@ -120,7 +120,7 @@ _F = TypeVar("_F", bound=FetchFailure)
 #: A pure reducer deciding a batch's response to each failure. Given the failures
 #: collected so far and the new one, it returns a `Verdict`. It is generic in the
 #: `FetchFailure` subtype, so a consumer can write a strategy over its own failure
-#: type; the canned strategies below work for any subtype.
+#: type. The canned strategies below work for any subtype.
 FailureStrategy: TypeAlias = Callable[[Sequence[_F], _F], Verdict]
 
 
@@ -135,7 +135,7 @@ def fail_fast(sofar: Sequence[FetchFailure], failure: FetchFailure) -> Verdict:
     ----------
     sofar
         The failures collected before this one (always empty, since this halts on
-        the first; present for the `FailureStrategy` shape).
+        the first, present for the `FailureStrategy` shape).
     failure
         The failure just encountered (unused).
 
@@ -162,7 +162,7 @@ def collect_all(sofar: Sequence[FetchFailure], failure: FetchFailure) -> Verdict
     Parameters
     ----------
     sofar
-        The failures collected before this one (unused; present for the
+        The failures collected before this one (unused, present for the
         `FailureStrategy` shape).
     failure
         The failure just encountered (unused).
@@ -187,7 +187,7 @@ def halt_on_unrecoverable(
     """Tolerate transient failures, but halt on an unrecoverable one.
 
     A malformed document (an `UNRECOVERABLE` decode failure) means the batch is
-    poisoned, so it stops; a `TRANSIENT` failure is collected and the batch
+    poisoned, so it stops. A `TRANSIENT` failure is collected and the batch
     continues.
 
     Parameters
@@ -195,7 +195,7 @@ def halt_on_unrecoverable(
     sofar
         The failures collected before this one (unused).
     failure
-        The failure just encountered; its ``kind`` decides the verdict.
+        The failure just encountered. Its ``kind`` decides the verdict.
 
     Returns
     -------
@@ -227,7 +227,7 @@ def stop_after(limit: int) -> FailureStrategy[FetchFailure]:
     Parameters
     ----------
     limit
-        The number of failures to tolerate before halting; must be at least 1.
+        The number of failures to tolerate before halting. Must be at least 1.
 
     Returns
     -------
@@ -266,7 +266,7 @@ class FetchError(Exception):
     """Raised when a best-effort batch halts on a failure.
 
     The failures collected up to and including the one that halted the batch are
-    available on the ``failures`` attribute; the partial result (the documents
+    available on the ``failures`` attribute. The partial result (the documents
     that did load) is deliberately not carried, since halting means "abort, no
     artifact." Use `collect_all` if you want the partial result instead.
 
@@ -299,7 +299,7 @@ def collect(
     """Fetch each item in turn, folding a strategy over the failures.
 
     Lazily fetches one item at a time: each is fetched via ``fetch_one`` and, on
-    failure, turned into a value via ``make_failure``; the strategy then decides
+    failure, turned into a value via ``make_failure``. The strategy then decides
     whether to keep collecting or halt. Because it is lazy, a halting strategy
     stops fetching at the halt point rather than fetching the whole batch first.
 
@@ -465,7 +465,7 @@ class _Ok(msgspec.Struct, Generic[_P], frozen=True):
 class _Failed(msgspec.Struct, Generic[_F], frozen=True):
     """The outcome of one failed fetch: its failure value and raised exception.
 
-    The `FetchFailure` value is what gets collected; the original ``exc`` is kept
+    The `FetchFailure` value is what gets collected. The original ``exc`` is kept
     only so the shell can chain it (``raise FetchError(...) from exc``) when a
     strategy halts. The public value itself stays exception-free.
 
@@ -494,7 +494,7 @@ def _attempt(
     Parameters
     ----------
     thunk
-        The fetch to run; returns the payload or raises.
+        The fetch to run. Returns the payload or raises.
     make_failure
         Builds the `FetchFailure` from the exception and its classified
         `FailureKind`.
@@ -531,7 +531,7 @@ def _to_outcome(
     `asyncio.gather` with ``return_exceptions=True`` yields either a payload or a
     caught exception. A `BaseException` that is not an `Exception` (notably
     `asyncio.CancelledError`) is re-raised rather than collected, so cancellation
-    is never swallowed; any other exception becomes a `FetchFailure`.
+    is never swallowed. Any other exception becomes a `FetchFailure`.
 
     Parameters
     ----------
@@ -575,7 +575,7 @@ def _fold_outcomes(
 ) -> tuple[Sequence[_P], Sequence[_F]]:
     """Fold a strategy over a stream of outcomes, halting where it says to.
 
-    Accumulates the successful payloads and the failures; for each failure the
+    Accumulates the successful payloads and the failures. For each failure the
     strategy sees the failures collected *before* it and the new one. The halting
     failure is appended before raising, so a `FetchError` carries it too, chained
     from the original exception (its ``__cause__``). Consumes the outcomes lazily,

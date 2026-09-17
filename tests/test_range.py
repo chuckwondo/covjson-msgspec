@@ -90,7 +90,7 @@ def test_values_as_projects_to_precise_type(
     result = NdArray(data_type=data_type, values=values).values_as(dtype)
     assert result == expected
     # `== expected` alone cannot catch a missing int->float promotion, since
-    # ``5 == 5.0``; assert the projected element type exactly.
+    # ``5 == 5.0``. Assert the projected element type exactly.
     assert all(type(value) is dtype for value in result if value is not None)
 
 
@@ -100,8 +100,8 @@ def test_values_as_projects_to_precise_type(
         ("integer", int, (1, 1.5)),  # a fractional float is not an int
         ("integer", int, (1, 1.0)),  # even a whole-valued float is not an int
         ("string", float, ("a",)),  # a string is not a float
-        # An int too large for a float is out of range, not a valid float value;
-        # the C convert leaks an OverflowError/SystemError that this method
+        # An int too large for a float is out of range, not a valid float value.
+        # The C convert leaks an OverflowError/SystemError that this method
         # normalizes into the documented ValidationError (see values_as).
         ("float", float, (10**400,)),
     ],
@@ -235,7 +235,7 @@ def test_assemble_reconstructs_full_array_for_each_tileset(index: int) -> None:
 def test_assemble_default_picks_the_fewest_tiles() -> None:
     full = np.arange(100, dtype=float).reshape(2, 5, 10)
     tiled = _spec_tiled()
-    # Store ONLY tileset A's single tile; default selection must choose it (and
+    # Store ONLY tileset A's single tile. Default selection must choose it (and
     # so never request a URL from the 2-tile or 12-tile sets).
     store = _tile_store(full, tiled, 0)
 
@@ -275,7 +275,7 @@ def test_assemble_tileset_index_out_of_range_errors(index: int) -> None:
 def test_assemble_invalid_tile_document_reports_url() -> None:
     tiled = _one_d_tiled(1)
 
-    # An undecodable tile is an unrecoverable failure; fail_fast raises a
+    # An undecodable tile is an unrecoverable failure. fail_fast raises a
     # FetchError chained from the ReferencedDocumentError, naming the tile's URL.
     with pytest.raises(FetchError, match="not valid CoverageJSON") as excinfo:
         tiled.assemble(store_fetcher({"0.covjson": b"nope"}))
@@ -304,7 +304,7 @@ def test_assemble_async_matches_sync_for_each_tileset(index: int) -> None:
 def test_assemble_async_default_picks_the_fewest_tiles() -> None:
     full = np.arange(100, dtype=float).reshape(2, 5, 10)
     tiled = _spec_tiled()
-    # Tile set 0 is the whole array in one tile; the default must reproduce it.
+    # Tile set 0 is the whole array in one tile. The default must reproduce it.
     store = _tile_store(full, tiled, 0)
 
     result = asyncio.run(tiled.assemble_async(async_store_fetcher(store))).array
@@ -493,7 +493,7 @@ def test_assemble_reports_only_the_shape_for_a_wrong_sized_tile() -> None:
 
     result = tiled.assemble(store_fetcher(store), strategy=collect_all)
 
-    # This tile's own shape and values agree; it is simply sized for a slot two
+    # This tile's own shape and values agree. It is simply sized for a slot two
     # cells wide. The value count is measured against the slot, so checking it
     # here as well would accuse the tile of a count it never claimed. Pinned with
     # `endswith` so a second phrase cannot creep in behind the shape.
@@ -607,7 +607,7 @@ def test_assemble_rejects_an_uncountable_tile_set_chosen_explicitly() -> None:
     )
 
     # An explicit index never counts a tile set, so `_select_tile_set` cannot
-    # reject this one; the guard that does is `_tile_layout`'s. Without a case
+    # reject this one. The guard that does is `_tile_layout`'s. Without a case
     # that picks a bad tile set by index, deleting that guard leaves the suite
     # green while assembly falls back to enumerating zero tiles.
     with pytest.raises(ValueError, match="non-positive entry"):

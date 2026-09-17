@@ -2,12 +2,12 @@
 
 Throughput numbers for the core codec operations, comparing this library against
 [covjson-pydantic](https://github.com/KNMI/covjson-pydantic) (the established
-Pydantic-based CoverageJSON library). This is issue #18; the results feed the
+Pydantic-based CoverageJSON library). This is issue #18. The results feed the
 covjson-pydantic comparison documentation (issue #22).
 
 The report is assembled from three pieces: `run.py` measures and writes
-`results.json` (the machine-readable data); `results.template.md` holds the prose
-with `{{placeholder}}` tokens; and rendering fills those placeholders from the
+`results.json` (the machine-readable data). `results.template.md` holds the prose
+with `{{placeholder}}` tokens, and rendering fills those placeholders from the
 data to produce `results.md` (the human-readable report). `results.md` and
 `results.json` are generated, committed artifacts. **Do not edit them by hand**:
 edit the template for prose, or the generator for numbers.
@@ -32,8 +32,8 @@ disagree.
 ## The document set (provenance)
 
 The five documents the tables are measured against, and where they come from.
-`results.md` describes what each one exercises and why its cost is what it is;
-this records their source. Each is verified to parse on both libraries at setup,
+`results.md` describes what each one exercises and why its cost is what it is.
+This records their source. Each is verified to parse on both libraries at setup,
 since a document only one side accepts is not a fair timing cell.
 
 | Cell | Source |
@@ -70,7 +70,7 @@ decode, so the effect is exercised without shipping a large fixture:
   So the maximal rung double-counts the temporal parse and overstates the gap: a
   consumer that resolves once (decode + parse every datetime a single time) pays
   closer to `decode` + one resolve pass, not the summed rung. The redundant
-  second parse is the dedup opportunity tracked in #62; the residual, after
+  second parse is the dedup opportunity tracked in #62. The residual, after
   dedup, is the pure-Python-vs-Rust parse cost inherent to the pure-Python core
   (temporal values are kept as raw strings and parsed on demand, never eagerly
   at decode).
@@ -88,16 +88,16 @@ A timing table can only compare documents both libraries accept. To keep the
 one-sided gaps visible instead of silently dropping them, `run.py` also decodes
 a handful of **capability probes**: small documents that are spec-valid (or
 spec-faithful) for covjson-msgspec but trip a covjson-pydantic limitation. The
-side that accepts the document reports a real decode time; the side that rejects
+side that accepts the document reports a real decode time. The side that rejects
 it shows `raises <Type>: <message>`, the exact exception it throws (type and
 verbatim message), so the gap reads as a concrete failure rather than a blank.
 
 The probes are run in both directions. The current set is entirely
 "covjson-msgspec accepts, covjson-pydantic rejects" (naive datetimes,
-reduced-precision temporal forms, extra axes, mixed-type axes); no document was
+reduced-precision temporal forms, extra axes, mixed-type axes). No document was
 found that covjson-pydantic accepts and covjson-msgspec rejects, and the
 rendered section states that explicitly rather than leaving it implied. This is
-a decode-*acceptance* comparison only; the fuller capability and correctness
+a decode-*acceptance* comparison only. The fuller capability and correctness
 story stays with issue #22 (see below).
 
 ## How the comparison is constructed
@@ -121,7 +121,7 @@ covjson-msgspec and addable to covjson-pydantic, the monotonic axis scan:
 - **Framing B** bolts a manual monotonic scan onto a decoded covjson-pydantic
   model, so covjson-pydantic does covjson-msgspec's full validation.
 
-`results.md` reads the outcome; the one subtlety worth recording here is the
+`results.md` reads the outcome. The one subtlety worth recording here is the
 `coverage-collection` Framing B row. It is like-for-like (both run the monotonic
 check), and covjson-msgspec now finishes slightly ahead, but it still carries a
 cost covjson-pydantic does not: covjson-msgspec's monotonic pass resolves
@@ -137,8 +137,8 @@ temporal resolution remains a candidate for folding into a single scan.
   No third-party benchmark harness.
 - Each operation is warmed up once, then `timeit` autoranges the iteration count
   so a single timing sits well above clock resolution.
-- The autoranged block is repeated (9 times for a full run, 5 for `--quick`);
-  we report the **median** and the **interquartile range** (IQR) across repeats,
+- The autoranged block is repeated (9 times for a full run, 5 for `--quick`).
+  We report the **median** and the **interquartile range** (IQR) across repeats,
   in microseconds per operation.
 - covjson-pydantic has no root union, so the decode class is chosen once, at
   setup, from each document's top-level `type` (never inside a timed loop).
@@ -147,7 +147,7 @@ temporal resolution remains a candidate for folding into a single scan.
   both artifacts, so any number is traceable to the code that produced it.
 
 Numbers are environment-sensitive. Compare ratios within a single run, not
-absolute microseconds across machines; regenerate on your own hardware before
+absolute microseconds across machines. Regenerate on your own hardware before
 drawing conclusions.
 
 ## `results.json` schema
@@ -174,7 +174,7 @@ A stable contract the comparison documentation (issue #22) can consume:
 Every operation is a row. A skipped operation is still a row with an explicit
 `reason`, never an omitted line, so "not applicable, and why" is distinguishable
 from "measured, fast". For fair cells the reason is a controlled value
-(`no-temporal-axis`, `dual-parse-failed`, or `lib-unsupported`); for a probe it
+(`no-temporal-axis`, `dual-parse-failed`, or `lib-unsupported`). For a probe it
 is the deciding library's own raised exception, as `<Type>: <message>`. The
 `probes` rows and `probe_notes` map back the capability-probe table.
 
@@ -190,10 +190,10 @@ things a timing table structurally cannot show:
   but a wrong answer: covjson-pydantic *accepts* `"2020"` and decodes it to
   `1970-01-01T00:33:40Z` (a Unix-timestamp misparse), and drifts `Z` vs
   `+00:00` and sub-second precision on the full form. Both libraries "succeed",
-  so nothing is raised to show; only a correctness comparison exposes it.
+  so nothing is raised to show. Only a correctness comparison exposes it.
 - **Composite axes**: a `Tuple` stub in covjson-pydantic vs full modeling here.
-- **Slightly-malformed documents**: covjson-pydantic raises at construction;
-  covjson-msgspec decodes permissively and reports issues via opt-in
+- **Slightly-malformed documents**: covjson-pydantic raises at construction,
+  while covjson-msgspec decodes permissively and reports issues via opt-in
   `validate()`, so you can load a document to inspect or repair it.
 - **Static type precision and discoverability**: covjson-pydantic's genuine
   edge, and not something a throughput or acceptance table measures.
@@ -203,7 +203,7 @@ for the comparison notes these feed.
 
 ## Non-goals
 
-- Not gated in CI (the numbers are environment-sensitive and noisy); regenerate
+- Not gated in CI (the numbers are environment-sensitive and noisy). Regenerate
   manually.
 - A one-shot snapshot, not a time series tracked across commits.
 - Memory and import-time metrics are out of scope for now (an easy follow-up).

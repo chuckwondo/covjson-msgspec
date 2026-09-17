@@ -73,7 +73,7 @@ requirement-level grading this library's validation tiers rest on.
 
 **Vendor the specification text into the repository as the pin.** Rejected as
 the *record* of the decision, though not forever as an enforcement mechanism.
-The revision identity is a fact about a decision and belongs in an ADR; a
+The revision identity is a fact about a decision and belongs in an ADR. A
 vendored copy is machinery for checking that citations still resolve, which is a
 separate question with its own cost (roughly 85 KB of third-party text plus its
 license, following the provenance pattern in `tests/corpus/README.md`).
