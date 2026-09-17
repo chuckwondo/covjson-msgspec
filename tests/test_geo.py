@@ -1,5 +1,8 @@
 """Behavioral tests for the geo bridge (to_geopandas / to_geojson)."""
 
+import contextlib
+import pathlib
+import warnings
 from collections.abc import Callable
 from typing import Any
 
@@ -19,10 +22,45 @@ from covjson_msgspec import (
     ReferenceSystemConnection,
     TiledNdArray,
     TileSet,
+    decode,
     to_geojson,
     to_geopandas,
     validate,
 )
+from samples import gregorian_series
+
+
+def _corpus_coverages() -> tuple[tuple[str, Coverage | CoverageCollection], ...]:
+    """The conformant corpus documents that decode to a coverage, by file name.
+
+    The geo bridge takes a `Coverage` / `CoverageCollection`, so the bare Domain
+    and NdArray documents (and the structural rejects test_corpus.py pins) drop
+    out here. The ``negative/`` tree is excluded deliberately: what a bridge does
+    with a deliberately malformed document is not a contract.
+
+    Called at module load to parametrize the sweep, so it precedes its first use.
+    Decoding here rather than in the test keeps the parametrized type narrow.
+    """
+    corpus = pathlib.Path(__file__).parent / "corpus"
+    # The same globs test_corpus.py uses: playground nests (grid-tiled/a, ...),
+    # the covjson-pydantic fixtures are flat.
+    paths = (
+        *(corpus / "playground").rglob("*.covjson"),
+        *(corpus / "covjson-pydantic").glob("*.json"),
+    )
+    kept: list[tuple[str, Coverage | CoverageCollection]] = []
+
+    for path in sorted(paths):
+        with contextlib.suppress(msgspec.ValidationError):
+            obj = decode(path.read_bytes())
+
+            if isinstance(obj, Coverage | CoverageCollection):
+                kept.append((path.name, obj))
+
+    return tuple(kept)
+
+
+_CORPUS_COVERAGES = _corpus_coverages()
 
 
 def test_point_is_single_point_feature() -> None:
@@ -615,11 +653,35 @@ def test_trajectory_as_points_is_the_default() -> None:
     assert [g.geom_type for g in to_geopandas(cov).geometry] == ["Point", "Point"]
 
 
-def test_invalid_trajectory_as_is_rejected() -> None:
+@pytest.mark.parametrize("trajectory_as", ["line", [], {"points": 1}])
+def test_invalid_trajectory_as_is_rejected(trajectory_as: object) -> None:
+    # The unhashable cases are the reason the guard compares against a tuple: a
+    # frozenset would hash the argument first and raise TypeError instead of the
+    # ValueError the docstring promises.
     cov = _trajectory("t", "x", "y", values=(("2020-01-01", 1.0, 10.0),))
 
     with pytest.raises(ValueError, match="trajectory_as must be"):
-        to_geopandas(cov, trajectory_as="line")  # type: ignore[arg-type]
+        to_geopandas(cov, trajectory_as=trajectory_as)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("convert", [to_geopandas, to_geojson])
+def test_an_invalid_call_is_rejected_before_the_grid_warning(
+    convert: Callable[..., object],
+) -> None:
+    # A Grid domain warns, but only once the call is known to be viable: an
+    # invalid argument must be reported as itself, not preceded by advice about a
+    # conversion that is not going to happen. Promoting the warning to an error
+    # is what pins the order, since both orderings otherwise pass.
+    cov = Coverage(
+        domain=Domain.grid(x=Axis.listed((0.0, 1.0)), y=Axis.listed((10.0, 20.0))),
+        ranges={},
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", UserWarning)
+
+        with pytest.raises(ValueError, match="trajectory_as must be"):
+            convert(cov, trajectory_as="line")
 
 
 def test_single_vertex_trajectory_linestring_is_rejected() -> None:
@@ -710,6 +772,151 @@ def test_to_geojson_trajectory_as_linestring() -> None:
     gj = to_geojson(cov, trajectory_as="linestring")
 
     assert gj["features"][0]["geometry"]["type"] == "LineString"
+
+
+@pytest.mark.parametrize(
+    "source",
+    ["2013", "2013-06", "2013-06-15", "2013-06-15T11:12:20Z", "+102013"],
+)
+def test_to_geojson_keeps_every_spec_lexical_form(source: str) -> None:
+    # The five Spec 5.2 Gregorian forms. Four of them parse to an instant, so
+    # reconstructing a string from the parsed value would render "2013" and
+    # "2013-01-01" identically. The fifth (an expanded year) is unrepresentable
+    # and never parses at all. GeoJSON carries whichever form the document used.
+    cov = gregorian_series((source, "2020-01-01T00:00:00Z"))
+    gj = to_geojson(cov)
+
+    assert [f["properties"]["t"] for f in gj["features"]] == [
+        source,
+        "2020-01-01T00:00:00Z",
+    ]
+
+
+def test_to_geopandas_still_parses_temporal_coordinates() -> None:
+    # to_geojson asks for raw strings. The typed frame must not follow it there.
+    # Without this, the GeoJSON change could silently flatten to_geopandas too.
+    gdf = to_geopandas(gregorian_series(("2013", "2014")))
+
+    assert gdf["t"].tolist() == [pd.Timestamp("2013-01-01"), pd.Timestamp("2014-01-01")]
+
+
+def test_to_geopandas_times_raw_keeps_the_document_value() -> None:
+    gdf = to_geopandas(gregorian_series(("2013", "2014")), times="raw")
+
+    assert gdf["t"].tolist() == ["2013", "2014"]
+
+
+def test_to_geopandas_times_raw_makes_the_frame_json_serializable() -> None:
+    # The reason times= belongs on this bridge and not only on to_geojson:
+    # gdf.to_json() is the geopandas idiom, and the default parsed frame hits the
+    # same stdlib json gap (no encoder for a Timestamp) that #235 repaired.
+    cov = gregorian_series(("2013", "2014"))
+
+    # GeoDataFrame.to_json's stub leaves **kwargs unknown, as the bridge modules
+    # note when they relax the same rule at module scope.
+    with pytest.raises(TypeError, match="Timestamp is not JSON serializable"):
+        to_geopandas(cov).to_json()  # pyright: ignore[reportUnknownMemberType]
+
+    raw = to_geopandas(cov, times="raw").to_json()  # pyright: ignore[reportUnknownMemberType]
+
+    assert "2013" in raw
+
+
+def test_to_geopandas_times_reaches_a_collection_member() -> None:
+    collection = CoverageCollection(
+        coverages=(gregorian_series(("2013",)), gregorian_series(("2014",)))
+    )
+
+    assert to_geopandas(collection, times="raw")["t"].tolist() == ["2013", "2014"]
+
+
+@pytest.mark.parametrize("times", ["iso", [], {"raw": 1}])
+def test_to_geopandas_rejects_an_unknown_times_on_a_polygon_domain(
+    times: object,
+) -> None:
+    # The point path would be caught downstream by to_pandas, but the polygon
+    # builder only ever compares times == "datetime", so an unrecognized value
+    # would silently behave like "raw". This is the case the shared guard exists
+    # for, so it is the case that pins it.
+    cov = Coverage(
+        domain=Domain.polygon([(0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 0.0)]),
+        ranges={},
+    )
+
+    with pytest.raises(ValueError, match="times must be 'datetime' or 'raw'"):
+        to_geopandas(cov, times=times)  # type: ignore[arg-type]
+
+
+def test_to_geojson_keeps_a_polygon_series_time_raw() -> None:
+    # The polygon builder reaches maybe_datetime on its own line, not through
+    # to_pandas, so it needs its own coverage of the raw path.
+    base = Domain.polygon(
+        [(0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 0.0)],
+        t=Axis.listed(("2013", "2014")),
+        referencing=(
+            ReferenceSystemConnection(
+                coordinates=("t",),
+                system=ReferenceSystem.temporal(calendar="Gregorian"),
+            ),
+        ),
+    )
+    cov = Coverage(
+        domain=Domain(
+            axes=dict(base.axes),
+            referencing=base.referencing,
+            domain_type="PolygonSeries",
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float", values=(7.0, 8.0), shape=(2,), axis_names=("t",)
+            )
+        },
+    )
+
+    assert [f["properties"]["t"] for f in to_geojson(cov)["features"]] == [
+        "2013",
+        "2014",
+    ]
+    assert to_geopandas(cov)["t"].tolist() == [
+        pd.Timestamp("2013-01-01"),
+        pd.Timestamp("2014-01-01"),
+    ]
+
+
+def test_geo_corpus_is_present() -> None:
+    # Guards against a silently empty parametrization, as test_corpus.py does for
+    # its own globs. An exact count would have to be hand-maintained here and in
+    # test_corpus.py's two counts every time a document is vendored in.
+    assert _CORPUS_COVERAGES
+
+
+@pytest.mark.parametrize(
+    "obj",
+    [obj for _, obj in _CORPUS_COVERAGES],
+    ids=[name for name, _ in _CORPUS_COVERAGES],
+)
+def test_corpus_coverage_emits_serializable_geojson(
+    obj: Coverage | CoverageCollection,
+) -> None:
+    # The gap that let the Timestamp TypeError ship: the bridges had never seen a
+    # corpus document. Every real-world coverage must reach JSON or say why not.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)  # a Grid warns, not the point
+
+        try:
+            geojson = to_geojson(obj)
+        except ValueError as exc:
+            # Two documents reference their ranges by URL. Needing them inline is
+            # documented behavior, so assert the reason rather than skipping:
+            # a document that stops converting for any other reason fails here.
+            assert "is not an inline NdArray" in str(exc)
+            return
+
+    # Reaching here is the serialization check: to_geojson serializes the frame
+    # internally (json.loads of gdf.to_json), so the TypeError under repair raises
+    # inside that call. Re-running json.dumps on the result would prove nothing,
+    # since a value decoded from JSON is JSON-serializable by construction.
+    assert geojson["type"] == "FeatureCollection"
 
 
 @pytest.mark.parametrize("convert", [to_geopandas, to_geojson])

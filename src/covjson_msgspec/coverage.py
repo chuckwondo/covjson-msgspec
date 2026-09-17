@@ -38,7 +38,13 @@ if TYPE_CHECKING:
     import xarray as xr
 
     from covjson_msgspec._best_effort import FailureStrategy
+
+    # The bridges' own option types, so a delegating method cannot drift from the
+    # function it delegates to. Import-time only: both bridge modules import this
+    # one, so a runtime import here would be circular.
+    from covjson_msgspec._bridging import TimeValues
     from covjson_msgspec._fetch import AsyncFetch, Fetch
+    from covjson_msgspec.geo import TrajectoryAs
     from covjson_msgspec.references import ReferenceFailure, ResolveReport
 
 # A range is inline values (`NdArray` / `TiledNdArray`) or a bare string URL
@@ -207,12 +213,12 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
             compact_regular=compact_regular,
         )
 
-    def to_pandas(self) -> pd.DataFrame:
+    def to_pandas(self, *, times: TimeValues = "datetime") -> pd.DataFrame:
         """Convert this coverage to a tidy `pandas.DataFrame`.
 
         Requires the ``pandas`` extra. Thin delegate to
         `covjson_msgspec.pandas.to_pandas`; see it for the full domain/range
-        mapping and the conditions it raises on.
+        mapping, the ``times`` option, and the conditions it raises on.
 
         Returns
         -------
@@ -222,16 +228,17 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         """
         from covjson_msgspec.pandas import to_pandas
 
-        return to_pandas(self)
+        return to_pandas(self, times=times)
 
     def to_geopandas(
-        self, *, trajectory_as: Literal["points", "linestring"] = "points"
+        self, *, trajectory_as: TrajectoryAs = "points", times: TimeValues = "datetime"
     ) -> gpd.GeoDataFrame:
         """Convert this coverage to a `geopandas.GeoDataFrame`.
 
         Requires the ``geo`` extra. Thin delegate to
         `covjson_msgspec.geo.to_geopandas`; see it for the full domain/geometry
-        mapping, the ``trajectory_as`` option, and the conditions it raises on.
+        mapping, the ``trajectory_as`` and ``times`` options, and the conditions
+        it raises on.
 
         Returns
         -------
@@ -240,10 +247,10 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         """
         from covjson_msgspec.geo import to_geopandas
 
-        return to_geopandas(self, trajectory_as=trajectory_as)
+        return to_geopandas(self, trajectory_as=trajectory_as, times=times)
 
     def to_geojson(
-        self, *, trajectory_as: Literal["points", "linestring"] = "points"
+        self, *, trajectory_as: TrajectoryAs = "points"
     ) -> Mapping[str, Any]:
         """Convert this coverage to a GeoJSON ``FeatureCollection`` mapping.
 
@@ -537,13 +544,14 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
             compact_regular=compact_regular,
         )
 
-    def to_pandas(self) -> pd.DataFrame:
+    def to_pandas(self, *, times: TimeValues = "datetime") -> pd.DataFrame:
         """Convert this collection to a single tidy `pandas.DataFrame`.
 
         Requires the ``pandas`` extra. Thin delegate to
         `covjson_msgspec.pandas.to_pandas`; the resolved members are concatenated
         under a leading ``coverage`` index level. See it for the per-member
-        domain/range mapping and the conditions it raises on.
+        domain/range mapping, the ``times`` option, and the conditions it raises
+        on.
 
         Returns
         -------
@@ -552,18 +560,18 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
         """
         from covjson_msgspec.pandas import to_pandas
 
-        return to_pandas(self)
+        return to_pandas(self, times=times)
 
     def to_geopandas(
-        self, *, trajectory_as: Literal["points", "linestring"] = "points"
+        self, *, trajectory_as: TrajectoryAs = "points", times: TimeValues = "datetime"
     ) -> gpd.GeoDataFrame:
         """Convert this collection to a single `geopandas.GeoDataFrame`.
 
         Requires the ``geo`` extra. Thin delegate to
         `covjson_msgspec.geo.to_geopandas`; the resolved members are concatenated
         with a leading ``coverage`` column identifying each. See it for the
-        per-member domain/geometry mapping, the ``trajectory_as`` option, and the
-        conditions it raises on.
+        per-member domain/geometry mapping, the ``trajectory_as`` and ``times``
+        options, and the conditions it raises on.
 
         Returns
         -------
@@ -572,10 +580,10 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
         """
         from covjson_msgspec.geo import to_geopandas
 
-        return to_geopandas(self, trajectory_as=trajectory_as)
+        return to_geopandas(self, trajectory_as=trajectory_as, times=times)
 
     def to_geojson(
-        self, *, trajectory_as: Literal["points", "linestring"] = "points"
+        self, *, trajectory_as: TrajectoryAs = "points"
     ) -> Mapping[str, Any]:
         """Convert this collection to a GeoJSON ``FeatureCollection`` mapping.
 
