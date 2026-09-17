@@ -23,6 +23,7 @@ from covjson_msgspec import (
     to_datetime,
     to_pandas,
 )
+from samples import gregorian_series
 
 
 def test_point_is_single_row_with_scalar_columns() -> None:
@@ -614,6 +615,86 @@ def test_to_pandas_propagates_a_range_value_error() -> None:
 
     with pytest.raises(msgspec.ValidationError):
         to_pandas(cov)
+
+
+@pytest.mark.parametrize(
+    ("sources", "parsed"),
+    [
+        (("2013", "2014"), ("2013-01-01", "2014-01-01")),
+        (("2013-06", "2013-07"), ("2013-06-01", "2013-07-01")),
+        (("2013-06-15", "2013-06-16"), ("2013-06-15", "2013-06-16")),
+        (
+            ("2013-06-15T11:12:20Z", "2013-06-15T11:12:21Z"),
+            ("2013-06-15 11:12:20", "2013-06-15 11:12:21"),
+        ),
+    ],
+)
+def test_times_raw_keeps_the_source_lexical_form(
+    sources: tuple[str, ...], parsed: tuple[str, ...]
+) -> None:
+    # Spec 5.2's four representable Gregorian forms all parse to an instant, so
+    # the default frame cannot tell the year "2013" from midnight on January 1st.
+    # times="raw" is the only way to keep which form the document actually used.
+    cov = gregorian_series(sources)
+
+    assert to_pandas(cov).index.tolist() == [pd.Timestamp(v) for v in parsed]
+    assert to_pandas(cov, times="raw").index.tolist() == list(sources)
+
+
+def test_times_raw_applies_to_a_composite_axis() -> None:
+    # A Trajectory carries t as a composite component, a separate code path from
+    # the individual-axis one above (composite_columns, not axis.coordinate_values).
+    cov = Coverage(
+        domain=Domain.trajectory(
+            composite=Axis.tuple_(
+                (("2013", 1.0, 2.0), ("2014", 3.0, 4.0)),
+                coordinates=("t", "x", "y"),
+            ),
+            referencing=(
+                ReferenceSystemConnection(
+                    coordinates=("t",),
+                    system=ReferenceSystem.temporal(calendar="Gregorian"),
+                ),
+            ),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=(1.0, 2.0),
+                shape=(2,),
+                axis_names=("composite",),
+            )
+        },
+    )
+
+    assert to_pandas(cov)["t"].tolist() == [
+        pd.Timestamp("2013-01-01"),
+        pd.Timestamp("2014-01-01"),
+    ]
+    assert to_pandas(cov, times="raw")["t"].tolist() == ["2013", "2014"]
+
+
+def test_times_raw_applies_to_every_collection_member() -> None:
+    collection = CoverageCollection(
+        coverages=(
+            gregorian_series(("2013", "2014")),
+            gregorian_series(("2015", "2016")),
+        )
+    )
+    levels = to_pandas(collection, times="raw").index.get_level_values("t")
+
+    assert levels.tolist() == ["2013", "2014", "2015", "2016"]
+
+
+@pytest.mark.parametrize("times", ["iso", [], {"datetime": 1}])
+def test_times_rejects_an_unknown_value(times: object) -> None:
+    # The unhashable cases are the reason the guard compares against a tuple: a
+    # frozenset would hash the argument first and raise TypeError instead of the
+    # ValueError the docstring promises.
+    cov = gregorian_series(("2013", "2014"))
+
+    with pytest.raises(ValueError, match="times must be 'datetime' or 'raw'"):
+        to_pandas(cov, times=times)  # type: ignore[arg-type]
 
 
 def _point_series_member(

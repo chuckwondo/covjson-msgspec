@@ -23,7 +23,9 @@ Mapping
   the row position, with one column per tuple component (the tuples are
   transposed).
 - A temporal axis governed by a standard-calendar `TemporalRS` is parsed to
-  pandas datetimes; a non-standard calendar stays as ISO strings.
+  pandas datetimes. A non-standard calendar stays as ISO strings. Pass
+  ``times="raw"`` to skip that parsing and keep every temporal coordinate as the
+  string the document carried.
 
 A multi-dimensional domain (e.g. Grid) is flattened to long form with a
 ``MultiIndex`` over its axes; for gridded data the xarray bridge is usually the
@@ -50,11 +52,13 @@ from typing import TYPE_CHECKING, Any, cast
 
 from covjson_msgspec._bridging import (
     POLYGON_DOMAIN_TYPES,
+    TimeValues,
     broadcast,
     composite_columns,
     maybe_datetime,
     range_column,
     require_inline_ndarray,
+    require_time_values,
     temporal_coordinates,
 )
 from covjson_msgspec.coverage import Coverage, CoverageCollection
@@ -69,7 +73,9 @@ _INSTALL_HINT = (
 )
 
 
-def to_pandas(obj: Coverage | CoverageCollection) -> pd.DataFrame:
+def to_pandas(
+    obj: Coverage | CoverageCollection, *, times: TimeValues = "datetime"
+) -> pd.DataFrame:
     """Convert a `Coverage` or `CoverageCollection` to a tidy `pandas.DataFrame`.
 
     Requires the ``pandas`` extra. For a `Coverage`, each parameter range becomes
@@ -85,6 +91,13 @@ def to_pandas(obj: Coverage | CoverageCollection) -> pd.DataFrame:
         The coverage or collection to convert. Each coverage's ``domain`` must be
         an inline `Domain` (not a URL reference) and every range an inline
         `NdArray`.
+    times
+        How temporal coordinates reach the frame. ``"datetime"`` (the default)
+        parses a standard-calendar axis to pandas datetimes, the typed
+        projection. ``"raw"`` leaves every temporal coordinate as the string the
+        document carried, which is the only way to keep a reduced Spec 5.2 form
+        (``"2013"``, ``"2013-01"``) distinguishable from the instant it would
+        otherwise be promoted to.
 
     Returns
     -------
@@ -102,8 +115,8 @@ def to_pandas(obj: Coverage | CoverageCollection) -> pd.DataFrame:
     ValueError
         If a domain is a URL reference, a domain type is a polygon type
         (use the geopandas bridge), a composite ``tuple`` axis has a value that
-        is not a tuple matching its coordinate identifiers, or a range is not an
-        inline `NdArray`.
+        is not a tuple matching its coordinate identifiers, a range is not an
+        inline `NdArray`, or ``times`` is not ``"datetime"`` or ``"raw"``.
     msgspec.ValidationError
         If a range value cannot be projected to the Python type its ``dataType``
         names, propagated from
@@ -210,19 +223,54 @@ def to_pandas(obj: Coverage | CoverageCollection) -> pd.DataFrame:
              2020-01-02  1.0  2.0  281.0
     b        2020-01-01  3.0  4.0  290.0
              2020-01-02  3.0  4.0  291.0
+
+    A standard-calendar `TemporalRS` parses ``t`` to datetimes, which promotes a
+    reduced Spec 5.2 form to the instant it starts: the year ``"2013"`` becomes
+    midnight on January 1st, and the frame can no longer tell the two apart.
+    ``times="raw"`` keeps the document's own string instead:
+
+    >>> from covjson_msgspec import Axis, Domain, NdArray, ReferenceSystem
+    >>> from covjson_msgspec import ReferenceSystemConnection
+    >>> years = Coverage(
+    ...     domain=Domain.point_series(
+    ...         x=Axis.listed((1.0,)),
+    ...         y=Axis.listed((2.0,)),
+    ...         t=Axis.listed(("2013", "2014")),
+    ...         referencing=(
+    ...             ReferenceSystemConnection(
+    ...                 coordinates=("t",),
+    ...                 system=ReferenceSystem.temporal(calendar="Gregorian"),
+    ...             ),
+    ...         ),
+    ...     ),
+    ...     ranges={
+    ...         "v": NdArray(
+    ...             data_type="float",
+    ...             values=(280.0, 281.0),
+    ...             shape=(2,),
+    ...             axis_names=("t",),
+    ...         )
+    ...     },
+    ... )
+    >>> to_pandas(years).index.tolist()
+    [Timestamp('2013-01-01 00:00:00'), Timestamp('2014-01-01 00:00:00')]
+    >>> to_pandas(years, times="raw").index.tolist()
+    ['2013', '2014']
     """
+    require_time_values(times)
+
     try:
         import pandas  # noqa: F401  # pyright: ignore[reportUnusedImport]
     except ModuleNotFoundError as exc:  # pragma: no cover - env-dependent
         raise ModuleNotFoundError(_INSTALL_HINT) from exc
 
     if isinstance(obj, CoverageCollection):
-        return _collection_to_pandas(obj)
+        return _collection_to_pandas(obj, times)
 
-    return _coverage_to_pandas(obj)
+    return _coverage_to_pandas(obj, times)
 
 
-def _coverage_to_pandas(coverage: Coverage) -> pd.DataFrame:
+def _coverage_to_pandas(coverage: Coverage, times: TimeValues) -> pd.DataFrame:
     """Convert a single `Coverage` to a tidy frame (the per-coverage core).
 
     The workhorse behind `to_pandas` for one coverage, and the per-member step of
@@ -237,6 +285,10 @@ def _coverage_to_pandas(coverage: Coverage) -> pd.DataFrame:
     ----------
     coverage
         The coverage to convert; its ``domain`` must be an inline `Domain`.
+    times
+        How temporal coordinates reach the frame (see `to_pandas`). ``"raw"``
+        resolves no temporal coordinates at all, so `_axis_layout` parses
+        nothing.
 
     Returns
     -------
@@ -268,7 +320,9 @@ def _coverage_to_pandas(coverage: Coverage) -> pd.DataFrame:
         )
         raise ValueError(msg)
 
-    temporal = temporal_coordinates(domain)
+    # "raw" keeps every temporal coordinate as the document's own string by
+    # naming none of them temporal, so `_axis_layout` parses nothing.
+    temporal = temporal_coordinates(domain) if times == "datetime" else frozenset()
     layout = _axis_layout(domain, temporal)
 
     # Lay every column source onto the shared grid: composite components, then
@@ -301,7 +355,9 @@ def _coverage_to_pandas(coverage: Coverage) -> pd.DataFrame:
     return frame
 
 
-def _collection_to_pandas(collection: CoverageCollection) -> pd.DataFrame:
+def _collection_to_pandas(
+    collection: CoverageCollection, times: TimeValues
+) -> pd.DataFrame:
     """Concatenate a collection's members into one frame under a ``coverage`` level.
 
     Members are resolved first so each inherits the collection's parameters and
@@ -314,6 +370,9 @@ def _collection_to_pandas(collection: CoverageCollection) -> pd.DataFrame:
     ----------
     collection
         The collection to convert.
+    times
+        How temporal coordinates reach the frame (see `to_pandas`), passed
+        through to each member.
 
     Returns
     -------
@@ -338,7 +397,7 @@ def _collection_to_pandas(collection: CoverageCollection) -> pd.DataFrame:
         for index, coverage in enumerate(resolved)
     ]
     frame = pd.concat(
-        [_coverage_to_pandas(coverage) for coverage in resolved],
+        [_coverage_to_pandas(coverage, times) for coverage in resolved],
         keys=keys,
         names=["coverage"],
     )

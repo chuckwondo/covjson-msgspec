@@ -16,7 +16,7 @@ so that each fact has one home rather than one per consumer.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence, Set
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, get_args
 
 from covjson_msgspec.axis import Axis
 from covjson_msgspec.coverage import Range
@@ -36,6 +36,72 @@ POLYGON_DOMAIN_TYPES = frozenset(
 # Calendars whose dates pandas / numpy can parse to datetime64; anything else
 # stays as ISO strings (pandas) or needs cftime (xarray).
 STANDARD_CALENDARS = frozenset({"gregorian", "standard", "proleptic_gregorian"})
+
+# How a temporal coordinate reaches a bridge's output: parsed to pandas datetimes
+# (the typed projection), or left as the value the document carried (the faithful
+# one). Spec 5.2's reduced forms ("2013", "2013-01") have no datetime
+# representation that preserves which form they were, so parsing is lossy and
+# "raw" is the way to keep them. It lives here because `to_pandas` and
+# `to_geopandas` both offer it, and one closed set cannot have two homes.
+TimeValues = Literal["datetime", "raw"]
+# Derived from the Literal, not restated, so neither the runtime guard nor the
+# message it raises can drift from the type the checkers enforce. A tuple rather
+# than a frozenset: ``in`` then compares by equality, so an unhashable argument
+# gets the documented ValueError instead of a TypeError from hashing it.
+_TIME_VALUES = get_args(TimeValues)
+
+
+def require_time_values(times: TimeValues) -> TimeValues:
+    """Return ``times`` unchanged, or raise a uniform `ValueError`.
+
+    `to_pandas` and `to_geopandas` both take this option, so centralizing the
+    check keeps one closed set, one message, and one place to extend. The
+    parameter is typed, but an untyped caller can still pass anything, and the
+    polygon path treats an unrecognized value as ``"raw"`` rather than failing,
+    so the guard is what makes a typo loud.
+
+    Parameters
+    ----------
+    times
+        The value to check, from the caller's ``times=`` argument.
+
+    Returns
+    -------
+    str
+        ``times`` unchanged.
+
+    Raises
+    ------
+    ValueError
+        If ``times`` is not one of the `TimeValues` members.
+
+    Examples
+    --------
+    >>> require_time_values("raw")
+    'raw'
+
+    The message names the accepted values, read off the type itself:
+
+    >>> require_time_values("iso")
+    Traceback (most recent call last):
+        ...
+    ValueError: times must be 'datetime' or 'raw'; got 'iso'
+
+    An unhashable argument is rejected the same way, rather than raising
+    `TypeError` from a set lookup:
+
+    >>> require_time_values([])
+    Traceback (most recent call last):
+        ...
+    ValueError: times must be 'datetime' or 'raw'; got []
+    """
+
+    if times not in _TIME_VALUES:
+        accepted = " or ".join(map(repr, _TIME_VALUES))
+        msg = f"times must be {accepted}; got {times!r}"
+        raise ValueError(msg)
+
+    return times
 
 
 def require_inline_ndarray(key: str, range_: Range, target: str) -> NdArray:

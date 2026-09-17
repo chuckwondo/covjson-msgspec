@@ -25,6 +25,14 @@ Mapping
   resolve it, else with CoverageJSON's default geographic CRS, ``OGC:CRS84``
   (WGS84 longitude/latitude); a projected reference system tags it with that
   system's ``id`` (an EPSG / OGC CRS URI).
+- A temporal coordinate is a real datetime in the `to_geopandas` frame (the typed
+  projection) but stays the value the document carried in `to_geojson` (the
+  faithful one). Spec 5.2's reduced forms (``"2013"``, ``"2013-01"``) have no
+  datetime that records which form they were, so only the unparsed value
+  round-trips them. Not parsing is also what keeps it serializable: stdlib
+  ``json`` has no encoder for a pandas Timestamp, whereas the document's own
+  value (a string for the Spec 5.2 forms, a number for a numeric axis) is
+  already JSON.
 
 A multi-dimensional gridded domain (Grid) is degenerately emitted as one point
 feature per cell (with a `UserWarning`, since the xarray bridge is the better fit
@@ -50,15 +58,17 @@ import contextlib
 import json
 import warnings
 from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast, get_args
 
 from covjson_msgspec._bridging import (
     POLYGON_DOMAIN_TYPES,
+    TimeValues,
     broadcast,
     coordinate_identifiers,
     maybe_datetime,
     range_column,
     require_inline_ndarray,
+    require_time_values,
     temporal_coordinates,
 )
 from covjson_msgspec.axis import Axis, AxisValue
@@ -71,6 +81,7 @@ if TYPE_CHECKING:
     import numpy as np
     import numpy.typing as npt
     import pandas as pd
+
 
 # Raised (as the message) when the bridge is used without its dependencies.
 _INSTALL_HINT = (
@@ -86,7 +97,11 @@ _DEFAULT_GEOGRAPHIC_CRS = "OGC:CRS84"
 # How a Trajectory's vertices map to geometry: one ``Point`` feature per vertex
 # (keeping each vertex's measurements), or a single ``LineString`` for the path.
 TrajectoryAs = Literal["points", "linestring"]
-_TRAJECTORY_AS = frozenset({"points", "linestring"})
+# Derived from the Literal, not restated, so neither the runtime guard nor the
+# message it raises can drift from the type the checkers enforce. A tuple rather
+# than a frozenset: ``in`` then compares by equality, so an unhashable argument
+# gets the documented ValueError instead of a TypeError from hashing it.
+_TRAJECTORY_AS = get_args(TrajectoryAs)
 
 # A Grid is gridded data, not vector features; we degenerately emit one point per
 # cell, but the xarray bridge is the better fit, so warn rather than do it silently.
@@ -100,6 +115,7 @@ def to_geopandas(
     obj: Coverage | CoverageCollection,
     *,
     trajectory_as: TrajectoryAs = "points",
+    times: TimeValues = "datetime",
 ) -> gpd.GeoDataFrame:
     """Convert a `Coverage` or `CoverageCollection` to a `geopandas.GeoDataFrame`.
 
@@ -123,6 +139,16 @@ def to_geopandas(
         measurements; ``"linestring"`` emits a single ``LineString`` feature for
         the whole path (geometry only, since per-vertex measurements do not
         reduce to one row). Other domain types ignore this option.
+    times
+        How temporal coordinates reach the frame, as on
+        [`to_pandas`][covjson_msgspec.to_pandas]. ``"datetime"`` (the default)
+        parses a standard-calendar axis to pandas datetimes; ``"raw"`` leaves
+        every temporal coordinate as the value the document carried, which is
+        both the only way to keep a reduced Spec 5.2 form (``"2013"``,
+        ``"2013-01"``) distinguishable from the instant it would be promoted to,
+        and what ``GeoDataFrame.to_json`` needs, since stdlib ``json`` has no
+        encoder for a pandas Timestamp. `to_geojson` is this bridge's ``"raw"``
+        path already taken.
 
     Returns
     -------
@@ -143,8 +169,9 @@ def to_geopandas(
         coordinates, a range is not an inline `NdArray`, ``trajectory_as`` is not
         ``"points"`` or ``"linestring"``, a geometry-bearing domain's
         ``composite`` axis declares the wrong ``dataType`` or resolves to
-        coordinates without ``x`` / ``y``, or (in ``"linestring"`` mode) a
-        Trajectory has fewer than two vertices.
+        coordinates without ``x`` / ``y``, (in ``"linestring"`` mode) a
+        Trajectory has fewer than two vertices, or ``times`` is not
+        ``"datetime"`` or ``"raw"``.
     msgspec.ValidationError
         If a range value cannot be projected to the Python type its ``dataType``
         names, propagated from
@@ -175,32 +202,31 @@ def to_geopandas(
     <POINT (1 2)>
     >>> gdf["v"].tolist()
     [280.0]
+
+    ``times="raw"`` keeps a reduced Spec 5.2 value as the document wrote it,
+    which is also what makes the frame's own ``to_json`` work:
+
+    >>> from covjson_msgspec import ReferenceSystem, ReferenceSystemConnection
+    >>> years = Coverage(
+    ...     domain=Domain.point_series(
+    ...         x=Axis.listed((1.0,)),
+    ...         y=Axis.listed((2.0,)),
+    ...         t=Axis.listed(("2013", "2014")),
+    ...         referencing=(
+    ...             ReferenceSystemConnection(
+    ...                 coordinates=("t",),
+    ...                 system=ReferenceSystem.temporal(calendar="Gregorian"),
+    ...             ),
+    ...         ),
+    ...     ),
+    ...     ranges={},
+    ... )
+    >>> to_geopandas(years)["t"].tolist()
+    [Timestamp('2013-01-01 00:00:00'), Timestamp('2014-01-01 00:00:00')]
+    >>> to_geopandas(years, times="raw")["t"].tolist()
+    ['2013', '2014']
     """
-    if trajectory_as not in _TRAJECTORY_AS:
-        msg = f"trajectory_as must be 'points' or 'linestring'; got {trajectory_as!r}"
-        raise ValueError(msg)
-
-    # Surface the friendly install hint here; the helpers re-import geopandas
-    # locally (a cached lookup) so they keep a precise gpd type for the checker.
-    try:
-        import geopandas  # noqa: F401  # pyright: ignore[reportUnusedImport]
-    except ModuleNotFoundError as exc:  # pragma: no cover - env-dependent
-        raise ModuleNotFoundError(_INSTALL_HINT) from exc
-
-    # Warn from this public entry point (not the helpers) so stacklevel=2 lands on
-    # the caller's code rather than a private frame; a collection warns once if any
-    # member is a Grid.
-    members = (
-        obj.resolved_coverages() if isinstance(obj, CoverageCollection) else (obj,)
-    )
-
-    if any(member.effective_domain_type == "Grid" for member in members):
-        warnings.warn(_GRID_WARNING, UserWarning, stacklevel=2)
-
-    if isinstance(obj, CoverageCollection):
-        return _collection_to_geopandas(obj, trajectory_as)
-
-    return _coverage_to_geopandas(obj, trajectory_as)
+    return _to_geopandas(obj, trajectory_as, times)
 
 
 def to_geojson(
@@ -210,11 +236,18 @@ def to_geojson(
 ) -> Mapping[str, Any]:
     """Convert a `Coverage` or `CoverageCollection` to a GeoJSON mapping.
 
-    Requires the ``geo`` extra. Thin wrapper over `to_geopandas`: each coverage
-    element becomes a GeoJSON ``Feature`` whose ``properties`` are the parameter
-    and coordinate values and whose ``geometry`` is the element's point or polygon
-    (see the module docstring for the full mapping). A `CoverageCollection`'s
-    features carry a ``coverage`` property identifying their source member.
+    Requires the ``geo`` extra. Each coverage element becomes a GeoJSON
+    ``Feature`` whose ``properties`` are the parameter and coordinate values and
+    whose ``geometry`` is the element's point or polygon (see the module
+    docstring for the full mapping). A `CoverageCollection`'s features carry a
+    ``coverage`` property identifying their source member.
+
+    It shares `to_geopandas`'s mapping but differs in one place: a temporal
+    coordinate is emitted as the ISO 8601 string the document carried, where
+    `to_geopandas` returns a real datetime. GeoJSON is an interchange format, and
+    the source string is both JSON-ready and the only form that keeps a reduced
+    Spec 5.2 value (``"2013"``, ``"2013-01"``) distinguishable from the instant
+    it would otherwise be promoted to.
 
     Parameters
     ----------
@@ -227,26 +260,30 @@ def to_geojson(
     Returns
     -------
     mapping
-        A GeoJSON ``FeatureCollection`` as a plain (JSON-compatible) mapping.
+        A GeoJSON ``FeatureCollection`` as a plain (JSON-compatible) mapping,
+        with every temporal coordinate left as the value the document carried
+        (an ISO 8601 string for the Spec 5.2 forms, but a numeric axis stays
+        numeric).
 
     Raises
     ------
     ModuleNotFoundError
-        Propagated from `to_geopandas` when the bridge's dependencies are not
-        installed; install ``covjson-msgspec[geo]``.
+        If the bridge's dependencies are not installed; install
+        ``covjson-msgspec[geo]``.
     ValueError
-        Propagated from `to_geopandas` (URL domain, missing ``x`` / ``y``, a
-        non-composite ``composite`` axis, a non-inline range, or an invalid
-        ``trajectory_as``).
+        On the conditions `to_geopandas` lists (URL domain, missing ``x`` /
+        ``y``, a non-composite ``composite`` axis, a non-inline range, or an
+        invalid ``trajectory_as``), which both raise from the conversion core
+        they share.
     msgspec.ValidationError
-        Propagated from `to_geopandas` when a range value cannot be projected to
-        the Python type its ``dataType`` names.
+        If a range value cannot be projected to the Python type its ``dataType``
+        names.
 
     Warns
     -----
     UserWarning
-        Propagated from `to_geopandas` when a domain is a Grid (emitted as one
-        point feature per cell; the xarray bridge is the better fit).
+        If a domain is a Grid, which is degenerately emitted as one point feature
+        per cell (the xarray bridge is the better fit for gridded data).
 
     Examples
     --------
@@ -267,10 +304,37 @@ def to_geojson(
     'FeatureCollection'
     >>> gj["features"][0]["geometry"]
     {'type': 'Point', 'coordinates': [1.0, 2.0]}
+
+    A temporal coordinate keeps the form the document used, rather than being
+    promoted to the instant it starts:
+
+    >>> from covjson_msgspec import Axis, Coverage, Domain
+    >>> from covjson_msgspec import ReferenceSystem, ReferenceSystemConnection
+    >>> years = Coverage(
+    ...     domain=Domain.point_series(
+    ...         x=Axis.listed((1.0,)),
+    ...         y=Axis.listed((2.0,)),
+    ...         t=Axis.listed(("2013", "2014")),
+    ...         referencing=(
+    ...             ReferenceSystemConnection(
+    ...                 coordinates=("t",),
+    ...                 system=ReferenceSystem.temporal(calendar="Gregorian"),
+    ...             ),
+    ...         ),
+    ...     ),
+    ...     ranges={},
+    ... )
+    >>> [f["properties"]["t"] for f in years.to_geojson()["features"]]
+    ['2013', '2014']
+    >>> years.to_geopandas()["t"].tolist()  # the typed frame still parses
+    [Timestamp('2013-01-01 00:00:00'), Timestamp('2014-01-01 00:00:00')]
     """
-    # geopandas' to_json serializes geometry, columns, datetimes, and (unlike the
-    # __geo_interface__ mapping) drops the row index, giving clean JSON output.
-    gdf = to_geopandas(obj, trajectory_as=trajectory_as)
+    # geopandas' to_json builds the geometry and (unlike the __geo_interface__
+    # mapping) drops the row index, then hands the result to stdlib json.dumps,
+    # which has no encoder for a pandas Timestamp. Temporal coordinates reach
+    # here as the values the document carried (times="raw"), which are both
+    # JSON-ready and faithful to the Spec 5.2 form it used.
+    gdf = _to_geopandas(obj, trajectory_as, "raw")
 
     # An empty CoverageCollection yields a frame with no geometry column, on which
     # to_json would raise; emit an empty FeatureCollection directly instead.
@@ -280,8 +344,125 @@ def to_geojson(
     return cast("dict[str, Any]", json.loads(gdf.to_json()))
 
 
+def _has_grid(obj: Coverage | CoverageCollection) -> bool:
+    """Whether any of a coverage's (or collection's) domains is a Grid.
+
+    The pure decision behind the Grid `UserWarning`, kept separate from raising
+    it so the rule stays testable on its own. `_to_geopandas` is the single
+    caller, which is what puts the warning after the argument and install checks
+    for both public entry points. A collection resolves its members first, so an
+    inherited ``domainType`` counts.
+
+    Parameters
+    ----------
+    obj
+        The coverage or collection to inspect.
+
+    Returns
+    -------
+    bool
+        ``True`` if at least one domain is a Grid.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Coverage, Domain
+    >>> point = Coverage(
+    ...     domain=Domain.point(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+    ...     ranges={},
+    ... )
+    >>> _has_grid(point)
+    False
+    >>> grid = Coverage(
+    ...     domain=Domain.grid(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))),
+    ...     ranges={},
+    ... )
+    >>> _has_grid(grid)
+    True
+
+    A collection is a Grid if any member is:
+
+    >>> from covjson_msgspec import CoverageCollection
+    >>> _has_grid(CoverageCollection(coverages=(point, grid)))
+    True
+    >>> _has_grid(CoverageCollection(coverages=()))
+    False
+    """
+    members = (
+        obj.resolved_coverages() if isinstance(obj, CoverageCollection) else (obj,)
+    )
+
+    return any(member.effective_domain_type == "Grid" for member in members)
+
+
+def _to_geopandas(
+    obj: Coverage | CoverageCollection,
+    trajectory_as: TrajectoryAs,
+    times: TimeValues,
+) -> gpd.GeoDataFrame:
+    """Build the `GeoDataFrame` both public entry points are shaped from.
+
+    `to_geopandas` and `to_geojson` share every step except how temporal
+    coordinates are carried, so they differ only in the ``times`` they ask for:
+    ``"datetime"`` for the typed frame, ``"raw"`` for the JSON one. This holds
+    the argument validation, the install hint, the Grid `UserWarning`, and the
+    dispatch between a single coverage and a collection.
+
+    Parameters
+    ----------
+    obj
+        The coverage or collection to convert.
+    trajectory_as
+        How a Trajectory domain maps to geometry (see `to_geopandas`).
+    times
+        How temporal coordinates reach the frame (see
+        [`to_pandas`][covjson_msgspec.to_pandas]).
+
+    Returns
+    -------
+    geopandas.GeoDataFrame
+        One feature per coverage element (see `to_geopandas` for the mapping).
+
+    Raises
+    ------
+    ModuleNotFoundError
+        If the bridge's dependencies are not installed.
+    ValueError
+        If ``trajectory_as`` is invalid, or propagated from the frame builders.
+
+    Warns
+    -----
+    UserWarning
+        If a domain is a Grid (see `to_geopandas`).
+    """
+    require_time_values(times)
+
+    if trajectory_as not in _TRAJECTORY_AS:
+        accepted = " or ".join(map(repr, _TRAJECTORY_AS))
+        msg = f"trajectory_as must be {accepted}; got {trajectory_as!r}"
+        raise ValueError(msg)
+
+    # Surface the friendly install hint here; the helpers re-import geopandas
+    # locally (a cached lookup) so they keep a precise gpd type for the checker.
+    try:
+        import geopandas  # noqa: F401  # pyright: ignore[reportUnusedImport]
+    except ModuleNotFoundError as exc:  # pragma: no cover - env-dependent
+        raise ModuleNotFoundError(_INSTALL_HINT) from exc
+
+    # Warn only once the call is known to be viable, so a rejected call reports
+    # what is wrong with it rather than advice about a conversion that is not
+    # going to happen. stacklevel=3 is this frame, the public entry point, then
+    # the caller: the same depth from `to_geopandas` and `to_geojson` alike.
+    if _has_grid(obj):
+        warnings.warn(_GRID_WARNING, UserWarning, stacklevel=3)
+
+    if isinstance(obj, CoverageCollection):
+        return _collection_to_geopandas(obj, trajectory_as, times)
+
+    return _coverage_to_geopandas(obj, trajectory_as, times)
+
+
 def _coverage_to_geopandas(
-    coverage: Coverage, trajectory_as: TrajectoryAs
+    coverage: Coverage, trajectory_as: TrajectoryAs, times: TimeValues
 ) -> gpd.GeoDataFrame:
     """Convert a single `Coverage` to a `GeoDataFrame` (per-coverage core).
 
@@ -300,6 +481,10 @@ def _coverage_to_geopandas(
     trajectory_as
         How a Trajectory maps to geometry (see `to_geopandas`); ignored for other
         domain types.
+    times
+        How temporal coordinates reach the frame (see
+        [`to_pandas`][covjson_msgspec.to_pandas]). Ignored in ``"linestring"``
+        mode, which keeps geometry only.
 
     Returns
     -------
@@ -326,11 +511,11 @@ def _coverage_to_geopandas(
     domain_type = coverage.effective_domain_type
 
     if domain_type in POLYGON_DOMAIN_TYPES:
-        frame, geometry = _polygon_frame(coverage, domain)
+        frame, geometry = _polygon_frame(coverage, domain, times)
     elif domain_type == "Trajectory" and trajectory_as == "linestring":
         frame, geometry = _trajectory_linestring_frame(domain)
     else:
-        frame, geometry = _point_frame(coverage, domain)
+        frame, geometry = _point_frame(coverage, domain, times)
 
     gdf = gpd.GeoDataFrame(frame, geometry=geometry, crs=_crs(domain))
 
@@ -344,7 +529,7 @@ def _coverage_to_geopandas(
 
 
 def _collection_to_geopandas(
-    collection: CoverageCollection, trajectory_as: TrajectoryAs
+    collection: CoverageCollection, trajectory_as: TrajectoryAs, times: TimeValues
 ) -> gpd.GeoDataFrame:
     """Concatenate a collection's members into one frame keyed by a ``coverage`` column.
 
@@ -363,6 +548,9 @@ def _collection_to_geopandas(
         The collection to convert.
     trajectory_as
         How Trajectory members map to geometry (see `to_geopandas`).
+    times
+        How temporal coordinates reach the frame (see
+        [`to_pandas`][covjson_msgspec.to_pandas]), passed through to each member.
 
     Returns
     -------
@@ -383,7 +571,7 @@ def _collection_to_geopandas(
     frames = []
 
     for index, coverage in enumerate(resolved):
-        gdf = _coverage_to_geopandas(coverage, trajectory_as)
+        gdf = _coverage_to_geopandas(coverage, trajectory_as, times)
         # Key each member by its id when set, falling back to its position. A
         # leading plain column (not an index level) survives to_json into each
         # feature's properties.
@@ -403,7 +591,7 @@ def _collection_to_geopandas(
 
 
 def _point_frame(
-    coverage: Coverage, domain: Domain
+    coverage: Coverage, domain: Domain, times: TimeValues
 ) -> tuple[pd.DataFrame, npt.NDArray[np.object_]]:
     """Build a point-per-element frame and ``Point`` geometry from ``x`` / ``y``.
 
@@ -424,6 +612,9 @@ def _point_frame(
     domain
         The coverage's domain, used to spot a composite (``tuple``) axis whose
         bare position level should be dropped.
+    times
+        How temporal coordinates reach the frame, passed straight through to
+        [`to_pandas`][covjson_msgspec.to_pandas].
 
     Returns
     -------
@@ -442,7 +633,7 @@ def _point_frame(
 
     # The tidy frame puts x / y as columns for every point-like domain; promote
     # any index levels (t / z / composite) to columns so they survive to_json.
-    frame = to_pandas(coverage)
+    frame = to_pandas(coverage, times=times)
     frame = (
         frame.reset_index(drop=True)
         if frame.index.name is None and not isinstance(frame.index, pd.MultiIndex)
@@ -696,7 +887,7 @@ def _trajectory_linestring_frame(
 
 
 def _polygon_frame(
-    coverage: Coverage, domain: Domain
+    coverage: Coverage, domain: Domain, times: TimeValues
 ) -> tuple[pd.DataFrame, npt.NDArray[np.object_]]:
     """Build ``Polygon`` geometry and an attribute frame for the Polygon family.
 
@@ -715,6 +906,9 @@ def _polygon_frame(
     domain
         The domain whose ``composite`` axis supplies the polygons (and optional
         ``t`` / ``z`` axes).
+    times
+        How the ``t`` coordinate reaches the frame (see
+        [`to_pandas`][covjson_msgspec.to_pandas]). ``"raw"`` parses nothing.
 
     Returns
     -------
@@ -746,24 +940,27 @@ def _polygon_frame(
     dims = ["composite"]
     sizes = {"composite": len(polygons)}
     t_axis = domain.axes.get("t")
-    times: list[AxisValue] = (
+    time_values: list[AxisValue] = (
         list(t_axis.coordinate_values) if t_axis is not None else []
     )
 
-    if len(times) > 1:
+    if len(time_values) > 1:
         dims.append("t")
-        sizes["t"] = len(times)
+        sizes["t"] = len(time_values)
 
     columns: dict[str, Any] = {
         key: range_column(require_inline_ndarray(key, range_, "geopandas"), dims, sizes)
         for key, range_ in coverage.ranges.items()
     }
 
-    temporal = temporal_coordinates(domain)
+    # "raw" keeps every temporal coordinate as the document's own value by naming
+    # none of them temporal. Gating the set (rather than each use of it) is how the
+    # pandas bridge spells the same decision, so the two cannot drift apart.
+    temporal = temporal_coordinates(domain) if times == "datetime" else frozenset()
 
-    if times:
+    if time_values:
         present = ("t",) if "t" in dims else ()
-        column = broadcast(np.asarray(times, dtype=object), present, dims, sizes)
+        column = broadcast(np.asarray(time_values, dtype=object), present, dims, sizes)
         columns["t"] = maybe_datetime(list(column), "t" in temporal)
 
     if (z_axis := domain.axes.get("z")) is not None:
