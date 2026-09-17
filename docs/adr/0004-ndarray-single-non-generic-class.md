@@ -48,7 +48,7 @@ structural reasons:
   convert), adding machinery the single-class model avoids.
 - *Spec fidelity.* CoverageJSON uses `"type"` as the object discriminator
   (NdArray vs TiledNdArray) and `"dataType"` as a data attribute, not a type
-  discriminator. Modeling it as a field mirrors the spec; subclasses are a
+  discriminator. Modeling it as a field mirrors the spec. Subclasses are a
   pydantic-shaped reinterpretation of the wire format.
 
 Subclasses also enforce element type at decode time, coupling validation into
@@ -62,7 +62,7 @@ then removed. Rejected because:
   (TypeVar resolved to its `Scalar` bound) is built, a later `NdArray[int]`
   decode can reuse that cached resolution, silently accepting a non-integer. The
   quirk is
-  inherent to generic msgspec Structs; keeping the generic means keeping the
+  inherent to generic msgspec Structs. Keeping the generic means keeping the
   unreliability, however well it is disclaimed.
 - *The ergonomic gain is narrow.* The type parameter gave precise `.values`
   typing only for standalone or freshly-constructed `NdArray` objects. The
@@ -106,7 +106,7 @@ without the decode-time payoff that justifies it for covjson-pydantic.
   integer beyond `int64`) stays NumPy's `OverflowError`: it is a representation
   limit, not a nonconformant document. `validate(check_values=True)` keeps a
   deliberately different, non-promoting rule, because it asks a *membership*
-  question rather than a *projection* one; an integer too large for any `float`
+  question rather than a *projection* one. An integer too large for any `float`
   is conformant to it and unprojectable to `values_as`, and a test pins that
   pair so the two rules are not accidentally unified.
 - Bare decode deterministically enforces the `float | int | str` union (nested

@@ -1,7 +1,7 @@
 # covjson-msgspec vs covjson-pydantic: benchmark results
 
 > [!NOTE]
-> This file is generated; do not edit it by hand. Edit the prose in
+> This file is generated. Do not edit it by hand. Edit the prose in
 > `benchmarks/results.template.md` or the numbers in `benchmarks/run.py`, then
 > regenerate. To re-render prose changes without re-measuring:
 >
@@ -69,8 +69,8 @@ covjson-pydantic exposes a single decode operation, `model_validate_json`, that 
 **fused**: one call always does three things at once, whether or not you need
 them, with no way to ask for less:
 
-1. structural decode;
-2. full spec validation;
+1. structural decode.
+2. full spec validation.
 3. parsing every temporal string into a `datetime`.
 
 covjson-msgspec keeps those three concerns **unfused** and opt-in, as separate
@@ -84,7 +84,7 @@ steps you invoke only when you need them:
 
 So the msgspec columns below are a **ladder**: each rung adds one concern on top of
 the one before, and you choose how far up to climb. A proxy that just relays a
-document stops at the first rung; a service that must trust and index the data
+document stops at the first rung. A service that must trust and index the data
 climbs to the top.
 
 Reading the table:
@@ -107,7 +107,7 @@ Reading the table:
 > axis order nor tile-set consistency, meaning it accepts documents the spec says
 > MUST be rejected: a conformance failure, not a speed win. Read those rows
 > accordingly: where covjson-msgspec is slower, that skipped validation is the
-> reason; where covjson-msgspec is faster, it leads *while* enforcing conformance
+> reason. Where covjson-msgspec is faster, it leads *while* enforcing conformance
 > covjson-pydantic drops. The `covjson-pydantic spec compliance` column in The
 > document set names the failing check per cell.
 
@@ -121,7 +121,7 @@ Reading the table:
 
 The same asymmetry as decode: covjson-pydantic's round-trip validates and parses
 datetimes on its decode half. `structural` does neither (the default read + write
-cost); `full` adds validation and datetimes to match.
+cost). `full` adds validation and datetimes to match.
 
 {{roundtrip_table}}
 
@@ -162,9 +162,9 @@ Even a like-for-like row (no ⚠️) carries a cost worth naming: covjson-msgspe
 monotonic scan resolves temporal values from their strings, per member domain, a
 separate pass covjson-pydantic avoids by comparing `datetime`s it already parsed
 during its fused decode. That extra pass is a real cost, not dropped validation,
-and on the temporal `coverage-collection` it once left covjson-msgspec behind;
-covjson-msgspec now finishes ahead there, and the repeated resolution remains a
-candidate for folding into a single scan. `benchmarks/README.md` works the
+and on the temporal `coverage-collection` it once left covjson-msgspec behind,
+which now finishes ahead there. The repeated resolution remains a candidate for
+folding into a single scan. `benchmarks/README.md` works the
 `coverage-collection` result through.
 
 Framing A, trim our extra so covjson-msgspec does no more than covjson-pydantic:
@@ -178,7 +178,7 @@ Framing B, add covjson-msgspec's monotonic check to covjson-pydantic:
 ## Capability probes (decode, median us/op)
 
 Documents that expose a one-sided capability gap. A time (us/op) means the library
-decoded it; `raises ...` is the exact exception the library throws instead,
+decoded it. `raises ...` is the exact exception the library throws instead,
 verbatim (type and message), so the gap is a concrete failure rather than a
 paraphrase.
 

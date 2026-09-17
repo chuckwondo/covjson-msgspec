@@ -1,6 +1,6 @@
 """Behavioral tests for the parameter cluster (encode/decode + invariants).
 
-Doctests in the module cover the happy-path ergonomics; these focus on
+Doctests in the module cover the happy-path ergonomics. These focus on
 round-tripping through JSON and on the invariants holding when data arrives via
 ``decode`` (not just via the builders)."""
 
@@ -24,7 +24,7 @@ def test_continuous_parameter_roundtrips() -> None:
         Unit(symbol="K"),
     )
     data = msgspec.json.encode(param)
-    # rename -> lowerCamelCase wire names; tag present
+    # rename -> lowerCamelCase wire names. Tag present
     assert b'"type":"Parameter"' in data
     assert b'"observedProperty"' in data
     assert msgspec.json.decode(data, type=Parameter) == param

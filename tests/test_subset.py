@@ -35,7 +35,7 @@ _REF = (
 def test_isel_integer_drops_axis_slice_keeps_it() -> None:
     sub = isel(_grid(), y=0, x=slice(1, 3))
 
-    # x sliced and kept; y dropped from the range, retained as a 1-value axis.
+    # x sliced and kept. Y dropped from the range, retained as a 1-value axis.
     assert _arr(sub, "v").axis_names == ("x",)
     assert _arr(sub, "v").shape == (2,)
     assert _arr(sub, "v").values == (1.0, 2.0)
@@ -138,7 +138,7 @@ def test_isel_composite_axis_unsupported() -> None:
 
 
 def test_isel_only_touches_ranges_that_vary_over_the_axis() -> None:
-    # One range varies over x only; selecting y must leave it untouched.
+    # One range varies over x only. Selecting y must leave it untouched.
     cov = Coverage(
         domain=Domain.grid(x=Axis.regular(0.0, 30.0, 4), y=Axis.regular(0.0, 10.0, 2)),
         ranges={
@@ -215,8 +215,8 @@ def test_isel_slices_bounds() -> None:
 def test_isel_wrong_length_bounds_raises_diagnostic(
     bounds: tuple[float, ...], got: int
 ) -> None:
-    # decode is permissive, so a bounds array that is not 2 * len(values) loads;
-    # subset raises a diagnostic ValueError naming the axis.
+    # decode is permissive, so a bounds array that is not 2 * len(values) loads.
+    # Subset raises a diagnostic ValueError naming the axis.
     cov = Coverage(
         domain=Domain(
             axes={
@@ -352,7 +352,7 @@ def test_isel_matches_xarray_roundtrip() -> None:
     ds = cov.to_xarray().isel(y=1, x=slice(0, 3))
     assert _arr(sub, "v").values == tuple(ds["v"].values.ravel().tolist())
     assert _axis(sub, "x").coordinate_values == tuple(ds["x"].values.tolist())
-    # xarray keeps y as a scalar coordinate; our domain keeps it as a 1-value axis.
+    # xarray keeps y as a scalar coordinate. Our domain keeps it as a 1-value axis.
     assert _axis(sub, "y").coordinate_values == (float(ds["y"].values),)
 
 

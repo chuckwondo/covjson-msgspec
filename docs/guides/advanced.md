@@ -25,7 +25,7 @@ These are user-side patterns, not library features: lean on `aiolimiter`,
     The runnable `adaptive` fetcher closure and the injected `Scheduler` seam for
     bounded, cancellable fan-out are tracked in
     [#32](https://github.com/chuckwondo/covjson-msgspec/issues/32). This guide
-    surfaces and explains the patterns; the copy-pasteable code will be added here
+    surfaces and explains the patterns. The copy-pasteable code will be added here
     when that lands.
 
 ## Choosing an error strategy

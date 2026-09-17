@@ -6,7 +6,7 @@ framework without the core depending on one.
 
 ## The framework-agnostic helpers
 
-`encode_response` returns the body and the `Content-Type` to set; `decode_response`
+`encode_response` returns the body and the `Content-Type` to set. `decode_response`
 verifies an incoming `Content-Type` and decodes the body:
 
 ```python

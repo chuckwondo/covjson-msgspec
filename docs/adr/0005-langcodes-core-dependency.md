@@ -14,12 +14,12 @@ produced ADR-0001/0002 and the #36/#43 checks, deliberately split out because
 it raised a question those PRs didn't need to answer: how should `validate()`
 check tag well-formedness?
 
-The architecture's stated tenet is that the core depends only on msgspec;
-every other dependency (numpy, xarray, pandas, geopandas) lives behind an
+The architecture's stated tenet is that the core depends only on msgspec.
+Every other dependency (numpy, xarray, pandas, geopandas) lives behind an
 opt-in bridge extra, lazy-imported inside helper bodies. The first plan for
 this check honored that tenet literally: a dependency-free regex approximating
 the RFC 5646 grammar. But a regex can only check *shape*: it cannot tell
-`"jp"` (well-formed, but not a real IANA-registered language subtag; the real
+`"jp"` (well-formed, but not a real IANA-registered language subtag: the real
 code for Japanese is `"ja"`) from `"ja"`. For a MUST spec-conformance check,
 that is a real correctness gap, not a cosmetic one: `validate()`'s whole
 purpose is to tell a caller their document actually conforms, and "shape
@@ -28,7 +28,7 @@ looks right" is a materially weaker guarantee than "this is a real tag."
 The msgspec-only tenet exists to keep the *install* light: no heavy or native
 dependencies pulled in for a caller who only wants to decode and encode
 documents. That reason doesn't automatically rule out every possible
-dependency; it rules out the kind of dependency the bridges carry (numpy,
+dependency. It rules out the kind of dependency the bridges carry (numpy,
 xarray, geopandas: large, sometimes native-compiled, each behind its own
 extra). A candidate library that is itself small, pure Python, and adds no
 further transitive dependencies in its base install doesn't compromise that
@@ -61,7 +61,7 @@ itself, not lazy-imported inside a function, since this is core validation
 code, not an opt-in bridge. The validity predicate
 (`_is_valid_language_tag` in `validation.py`, `@cache`-wrapped since a
 document commonly repeats the same handful of tags) combines a structural
-character-set regex with `langcodes.tag_is_valid()` for the semantic check;
+character-set regex with `langcodes.tag_is_valid()` for the semantic check.
 `_language_tag_issues` applies it per key and separately flags a
 present-but-empty i18n map (`i18n.empty`), the other MUST this issue covers.
 
@@ -76,7 +76,7 @@ point of `validate()` is to give a caller a trustworthy answer.
 
 **`langcodes` as a lazy-imported optional extra, following the bridge
 pattern.** Rejected. `validate()`'s contract is to deterministically collect
-every issue in a document; if this one check's behavior (or its absence)
+every issue in a document. If this one check's behavior (or its absence)
 depended on whether an extra happened to be installed, the same document could
 validate cleanly in one environment and fail in another. That non-determinism
 is a worse trade than a small, dependency-free package landing in the core.
@@ -92,7 +92,7 @@ exists today has no offsetting benefit.
 
 ## Consequences
 
-- `dependencies` now lists two packages instead of one; CLAUDE.md's
+- `dependencies` now lists two packages instead of one. CLAUDE.md's
   Architecture section is updated to name both and link here, rather than
   asserting "msgspec only."
 - This sets the bar for any future core-dependency proposal: small, pure

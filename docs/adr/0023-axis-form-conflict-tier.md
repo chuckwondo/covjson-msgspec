@@ -26,7 +26,7 @@ finding, and re-encoded with both forms intact.
 Measuring the case across implementations gives a different picture than
 ADR-0018 assumed. covjson-msgspec at `main` (a97878d), covjson-pydantic 0.8.0,
 covjson-reader 0.16.3, and the covjson-validator schemas at `b28a86e`, each run
-against the same documents; spec text from `covjson/specification@2061005`:
+against the same documents. Spec text from `covjson/specification@2061005`:
 
 | `x` axis | msgspec | pydantic | covjson-reader | validator |
 | --- | --- | --- | --- | --- |
@@ -71,7 +71,7 @@ validating a stray's value would tell a publisher to fix a member they should
 drop.
 
 The rule is deferred, not dropped. `{"values":[0,5],"num":0}` is an error the
-whole time it is ambiguous, via `axis.form-conflict`; repair that by dropping
+whole time it is ambiguous, via `axis.form-conflict`. Repair that by dropping
 `values` and construction rejects the `num` immediately, while dropping `num`
 means the violation never existed. Without the gate the same defect would land
 in two tiers by the stray's magnitude (`{"values":[0,5],"num":0}` rejected,
@@ -79,7 +79,7 @@ in two tiers by the stray's magnitude (`{"values":[0,5],"num":0}` rejected,
 shape the alternatives below reject, and the message would name `num` when the
 defect is that two forms are present at all.
 
-`coordinate_values` already resolved a both-forms axis to `values`; that
+`coordinate_values` already resolved a both-forms axis to `values`. That
 tiebreak is now documented on the accessor rather than left implicit behind a
 guard that made it unreachable.
 
@@ -124,7 +124,7 @@ of it, and `validate(mode="raise")` should catch it.
 **Normalize on decode: drop the stray members and keep `values`.** Rejected. It
 would agree with every reader's behavior, but decode dropping a spec-defined
 member is exactly what the byte-faithful model tenet forbids. `num` is not a
-custom member ([ADR-0012](0012-custom-members-dropped-on-decode.md)); silently
+custom member ([ADR-0012](0012-custom-members-dropped-on-decode.md)). Silently
 discarding it would make `decode` lossy and hide the non-conformance instead of
 reporting it.
 
@@ -134,7 +134,7 @@ reporting it.
   caller who never calls `validate` gets our reading, `values`, where
   covjson-reader would give another. The finding is error-severity, so
   `validate(mode="raise")` rejects it.
-- Loosening decode is a compatible change; tightening it back would not be.
+- Loosening decode is a compatible change. Tightening it back would not be.
   Nothing published carries a mixed form (zero across 175 axes), and this lands
   before 0.1.0, so the walk-back cost is bounded to that window.
 - The rule gains a machine-readable home. `AxisFormConflict` carries its
@@ -142,7 +142,7 @@ reporting it.
   which a construction-tier guard structurally could not offer.
 - The distinction the measurement found, a contradicting triple versus a
   redundant one, is now expressible: `validate` can afford the O(num)
-  reconstruction if the two ever warrant different severities. Not built; the
+  reconstruction if the two ever warrant different severities. Not built. The
   gate to revisit is a real document relying on the redundant form.
 - `ADR-0018`'s invariant table no longer lists "exactly one form" as
   construction-enforced, which strengthens rather than weakens its conclusion

@@ -20,7 +20,7 @@ and why) is worked through in [Core concepts](../concepts.md): the single
 non-generic `NdArray`, the one-struct `Axis`, `UNSET` for omittable inheritance
 members, and the permissive-decode line.
 
-**The ADRs** are the append-only detailed record; [the ADR index](../adr/README.md)
+**The ADRs** are the append-only detailed record. [the ADR index](../adr/README.md)
 lists them all. A few of the load-bearing ones:
 
 - [ADR-0002](../adr/0002-opt-in-tiered-validation.md): cross-cutting checks live in
@@ -45,16 +45,16 @@ and conventions.
 ## Conventions, explained
 
 Most of the coding conventions in `CONTRIBUTING.md` are self-evident one-liners. A
-few carry reasoning worth spelling out; this is that reasoning.
+few carry reasoning worth spelling out. This is that reasoning.
 
 ### The two-underscore boundary
 
-**Convention:** do not import another module's `_private` member; to share an
+**Convention:** do not import another module's `_private` member. To share an
 internal helper across modules, give it a home in a `_`-prefixed module and import
 its non-underscore name.
 
 **Why:** the two underscores mark different boundaries. A `_` on a *member* means
-"private to this module" (only that file uses it); a `_` on a *module* means
+"private to this module" (only that file uses it). A `_` on a *module* means
 "internal to the package" (its non-underscore names are the intra-package API,
 off-limits to end users). Keeping them distinct means every module-local `_helper`
 stays genuinely file-local: safe to rename or inline after grepping a single file.

@@ -40,7 +40,7 @@ _ISO_FORMS: Final[Mapping[str, str]] = {
 }
 
 # ISO 8601 has no sub-second designator, so the finer NumPy units are written as
-# a fractional number of seconds; the value is how many decimal places that
+# a fractional number of seconds. The value is how many decimal places that
 # unit needs.
 _ISO_SUBSECOND_DIGITS: Final[Mapping[str, int]] = {
     "ms": 3,
@@ -121,7 +121,7 @@ def _iso_duration(count: int, unit: str) -> str:
     Parameters
     ----------
     count
-        How many of ``unit`` the duration spans; may be negative or zero.
+        How many of ``unit`` the duration spans. May be negative or zero.
     unit
         A NumPy duration unit code (``"Y"``, ``"D"``, ``"h"``, ``"ns"``, ...).
 

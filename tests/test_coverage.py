@@ -50,7 +50,7 @@ def test_effective_domain_type_prefers_inline_domain() -> None:
     cov = Coverage(
         domain=Domain(axes={"x": Axis.listed((1.0,))}, domain_type="Grid"),
         ranges={},
-        domain_type="Point",  # a (spec-discouraged) mismatch; the domain wins
+        domain_type="Point",  # a (spec-discouraged) mismatch. The domain wins
     )
 
     assert cov.effective_domain_type == "Grid"
@@ -189,7 +189,7 @@ def test_decode_rejects_null_for_inheritance_fields(
     type_: type[Coverage] | type[CoverageCollection],
     head: str,
 ) -> None:
-    # The spec forbids `null` for these omittable members; UNSET typing rejects
+    # The spec forbids `null` for these omittable members. UNSET typing rejects
     # it loudly at decode rather than silently coercing it to "absent" (which
     # would let a member's explicit `null` inherit the collection's value).
     blob = f"""
@@ -286,7 +286,7 @@ def test_context_preserved_through_roundtrip(
 
     assert cov.context == expected
     # The library's faithfulness invariant is value equality, decode(encode(x)) == x
-    # (omit_defaults already precludes byte-identity); the union meets it.
+    # (omit_defaults already precludes byte-identity). The union meets it.
     assert msgspec.json.decode(msgspec.json.encode(cov), type=Coverage) == cov
 
 
@@ -316,7 +316,7 @@ def test_context_preserved_in_nested_positions() -> None:
     # @context is spec-defined only at the document root (section 8), but the
     # root-able structs are reused nested, so a member coverage / nested domain /
     # nested range carries the field too. The library preserves it wherever it
-    # appears rather than dropping it; there is no root-only enforcement in the
+    # appears rather than dropping it. There is no root-only enforcement in the
     # type (a positional rule that section 8 does not grade as an error anyway).
     blob = (
         b'{"type":"CoverageCollection","coverages":[{'

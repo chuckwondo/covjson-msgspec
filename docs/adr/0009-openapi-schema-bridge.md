@@ -64,7 +64,7 @@ FastAPI adapter, mirroring the existing `media_type.py` / `fastapi.py` split.
 - **Auto-wiring every route's response schema.** The helper could try to set the
   response schema on routes returning `CovJSONResponse`, but it cannot reliably
   know which routes those are or which document type each returns. Rejected as too
-  magic; the route author references a component explicitly via `schema_ref`.
+  magic. The route author references a component explicitly via `schema_ref`.
 - **Publishing a standalone CoverageJSON validation schema.** Out of scope: the
   official covjson.org schema is authoritative for validation, and comparing our
   output against it is the separate concern of issue #15.
@@ -81,7 +81,7 @@ FastAPI adapter, mirroring the existing `media_type.py` / `fastapi.py` split.
   `CoverageJSON.Coverage` in the schema browser. This is the accepted cost of
   collision safety when injecting into an arbitrary host application.
 - The output tracks msgspec's schema generator and FastAPI's OpenAPI 3.1 default.
-  A host on FastAPI below 0.99.0 (before the floor) would not align; the floor
+  A host on FastAPI below 0.99.0 (before the floor) would not align. The floor
   rules that out.
 - Revisit if a user needs bare (un-namespaced) component names (add an opt-in
   `prefix=`) or OpenAPI 3.0 support (add dialect handling).

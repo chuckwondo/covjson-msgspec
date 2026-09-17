@@ -1,4 +1,4 @@
-# ADR-0013: `UNSET` for omittable inheritance members; reject `null` at decode
+# ADR-0013: `UNSET` for omittable inheritance members. Reject `null` at decode
 
 ## Status
 
@@ -18,10 +18,10 @@ matter for one specific group:
 The group where both flaws bite is the five structural members that participate
 in `CoverageCollection` inheritance: `domainType`, `parameters`, and
 `parameterGroups`, on both `Coverage` and `CoverageCollection`. The spec (§6.4,
-§6.5) types these as a string, an object, and an array respectively; makes them
+§6.5) types these as a string, an object, and an array respectively. Makes them
 optional (with `parameters` conditionally required: "A coverage object MUST have
 a `parameters` member if the coverage object is not part of a coverage
-collection or if the coverage collection does not have a `parameters` member");
+collection or if the coverage collection does not have a `parameters` member"),
 and inherits them from the collection to a member that omits its own ("If a
 coverage collection object has the member `domainType`, then this member is
 inherited to all included coverages"). Nowhere does the spec permit any of these
@@ -82,7 +82,7 @@ inheritance trigger) from a written `null`.
 
 Reject `null` at decode is a tier-1 field-type check, not a relaxation of the
 permissive-decode stance in ADR-0002. ADR-0002 keeps cross-cutting *semantic*
-rules out of decode and refuses to reject *interpretable* objects; a `null`
+rules out of decode and refuses to reject *interpretable* objects. A `null`
 where the spec types an object, string, or array is neither. It is the same
 class as `"parameters": 5`, which msgspec already rejects at decode. Rejecting
 it is also the byte-faithful choice: the model never reinvents "absent" from a
@@ -120,9 +120,9 @@ harmful and unguarded.
 **Also convert the discriminators.** Rejected. Their forms are already guarded
 at construction. An `Axis` requires `values` or a complete `start`/`stop`/`num`
 triple, so `"values": null` is rejected by `__post_init__` whenever no complete
-triple is present; it slips through only as a redundant no-op, when a valid
+triple is present. It slips through only as a redundant no-op, when a valid
 regular triple already makes the axis interpretable. (ADR-0023 later moved the
-forms' *exclusivity* to `validate()`; this argument rests on the neither-form
+forms' *exclusivity* to `validate()`: this argument rests on the neither-form
 branch, which stayed at construction.)
 `ObservedProperty` guards `categories` against its categorical flag likewise.
 So `UNSET` there buys only the rejection of a redundant `null` on an
@@ -139,7 +139,7 @@ more fields.
   not runtime-type-check construction, so a `None` forced in past the annotation
   would slip past the `is UNSET` reads that replaced the old `is None` reads
   (for example, into the parameter-group validator, which expects an object).
-  `None` is not made runtime-unrepresentable (a msgspec limitation); the
+  `None` is not made runtime-unrepresentable (a msgspec limitation). The
   invariant is enforced by strict mypy/basedpyright, which forbid every
   internal `None`-construction, and decode and `_resolve` cannot produce one.
   The temptation to write `is UNSET or is None` is declined: it would re-merge

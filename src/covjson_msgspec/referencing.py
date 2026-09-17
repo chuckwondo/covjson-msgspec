@@ -100,7 +100,7 @@ class VerticalCRS(CovJSONStruct, frozen=True, tag="VerticalCRS"):
     A typed projection produced by `ReferenceSystem.refine`. Carries an optional
     ``id`` (section 5.1.3). Full inline CRS definitions (section 5.1.4, a
     ``datum``/``cs`` structure) are left undefined by the standard and are not
-    modelled; such members drop on decode, per ADR-0012.
+    modelled. Such members drop on decode, per ADR-0012.
 
     Examples
     --------
@@ -125,7 +125,7 @@ class TemporalRS(CovJSONStruct, frozen=True, tag="TemporalRS"):
     model carries it verbatim: the calendar string is neither validated nor
     interpreted, and the time values it governs stay opaque ISO 8601 strings on
     their axis (see `covjson_msgspec.axis.AxisValue`). A non-Gregorian calendar
-    therefore round-trips untouched; interpretation is opt-in, via
+    therefore round-trips untouched. Interpretation is opt-in, via
     `covjson_msgspec.temporal.to_datetime` (stdlib) or the export bridges.
 
     Examples
@@ -138,7 +138,7 @@ class TemporalRS(CovJSONStruct, frozen=True, tag="TemporalRS"):
     # No default by design: with the base's omit_defaults a default would drop
     # this required member on encode.
     calendar: str
-    # Wire name ``timeScale`` (camel rule); optional, defaults to UTC when absent.
+    # Wire name ``timeScale`` (camel rule). Optional, defaults to UTC when absent.
     time_scale: str | None = None
 
 
@@ -147,7 +147,7 @@ class IdentifierRS(CovJSONStruct, frozen=True, tag="IdentifierRS"):
 
     A typed projection produced by `ReferenceSystem.refine`. ``target_concept``
     (wire ``targetConcept``) is required and guaranteed present on a refined
-    ``IdentifierRS`` (a core missing it refines to `OpaqueRS`); ``identifiers``
+    ``IdentifierRS`` (a core missing it refines to `OpaqueRS`). ``identifiers``
     maps each identifier string used in the range to the `Concept` it denotes.
 
     Examples
@@ -185,7 +185,7 @@ class OpaqueRS(CovJSONStruct, frozen=True):
     (a ``TemporalRS`` with no ``calendar``, an ``IdentifierRS`` with no
     ``targetConcept``). `is_custom` tells the two apart, and the ``type_`` is
     preserved either way. The standard defines no members for a custom type
-    beyond ``type``, so none are carried here; any incidentally-present member is
+    beyond ``type``, so none are carried here. Any incidentally-present member is
     still readable on the `ReferenceSystem` core it was refined from.
 
     Examples
@@ -201,7 +201,7 @@ class OpaqueRS(CovJSONStruct, frozen=True):
     def is_custom(self) -> bool:
         """Return whether the ``type_`` is a custom value rather than a known kind.
 
-        ``True`` for a section 7.2 custom type this library does not model;
+        ``True`` for a section 7.2 custom type this library does not model.
         ``False`` when the ``type_`` names a known kind (so the system is a
         malformed instance of it, which `covjson_msgspec.validation.validate`
         reports).
@@ -238,7 +238,7 @@ class ReferenceSystem(CovJSONStruct, frozen=True):
     members as optionals. It decodes any reference system in a single pass, so a
     document carrying a custom ``type`` (section 7.2) still loads. Read it with
     `refine`, which projects it to a precise `ResolvedReferenceSystem` variant.
-    Build a known kind with the builders (`geographic`, `temporal`, ...); a custom
+    Build a known kind with the builders (`geographic`, `temporal`, ...). A custom
     type has no builder (it pairs no required members), so construct one directly
     as ``ReferenceSystem(type_="uor:HEALPixRS")``.
 
@@ -246,7 +246,7 @@ class ReferenceSystem(CovJSONStruct, frozen=True):
     reference system whose member reuses a known member name with an incompatible
     JSON type (e.g. ``{"type": "uor:X", "calendar": 123}``) fails to decode. Custom
     member names SHOULD be compact URIs (section 7.1), which never collide, so this
-    is rare; it is the price of a typed core over an opaque one.
+    is rare. It is the price of a typed core over an opaque one.
 
     Examples
     --------
@@ -346,7 +346,7 @@ class ReferenceSystem(CovJSONStruct, frozen=True):
     def refine(self) -> ResolvedReferenceSystem:
         """Project this core to its precise `ResolvedReferenceSystem` variant.
 
-        A well-formed known kind projects to its own variant; a custom type or a
+        A well-formed known kind projects to its own variant. A custom type or a
         known kind missing its required member projects to `OpaqueRS`. A returned
         `TemporalRS` therefore always has a ``calendar`` and a returned
         `IdentifierRS` always a ``target_concept``.
@@ -400,7 +400,7 @@ class ReferenceSystemConnection(CovJSONStruct, frozen=True):
     """Connects a set of coordinate identifiers to their reference system.
 
     This object has no ``type`` member of its own. ``system`` is the permissive
-    `ReferenceSystem` core; call [`refine`][covjson_msgspec.ReferenceSystem.refine] on
+    `ReferenceSystem` core. Call [`refine`][covjson_msgspec.ReferenceSystem.refine] on
     it for a precise typed variant.
 
     Examples

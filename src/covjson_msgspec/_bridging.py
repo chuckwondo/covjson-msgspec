@@ -9,7 +9,7 @@ optional dependency.
 
 A few helpers here read a spec-defined fact off the model rather than serve a
 bridge specifically (`coordinate_systems`, `temporal_coordinates`,
-`coordinate_identifiers`); [`validation`][covjson_msgspec.validation] shares those,
+`coordinate_identifiers`). [`validation`][covjson_msgspec.validation] shares those,
 so that each fact has one home rather than one per consumer.
 """
 
@@ -28,12 +28,12 @@ if TYPE_CHECKING:
     import numpy.typing as npt
 
 # Polygon domains carry vector geometry, not a tidy table or a regular grid, so
-# only the geopandas bridge handles them; pandas and xarray reject them.
+# only the geopandas bridge handles them. Pandas and xarray reject them.
 POLYGON_DOMAIN_TYPES = frozenset(
     {"Polygon", "PolygonSeries", "MultiPolygon", "MultiPolygonSeries"}
 )
 
-# Calendars whose dates pandas / numpy can parse to datetime64; anything else
+# Calendars whose dates pandas / numpy can parse to datetime64. Anything else
 # stays as ISO strings (pandas) or needs cftime (xarray).
 STANDARD_CALENDARS = frozenset({"gregorian", "standard", "proleptic_gregorian"})
 
@@ -118,7 +118,7 @@ def require_inline_ndarray(key: str, range_: Range, target: str) -> NdArray:
         The parameter/range key, quoted into the error message so the caller can
         tell which range failed.
     range_
-        The range to narrow; any `Range` member is accepted.
+        The range to narrow. Any `Range` member is accepted.
     target
         The destination bridge name (``"pandas"`` / ``"geopandas"`` /
         ``"xarray"``), interpolated into the message.
@@ -176,7 +176,7 @@ def range_column(
     """Lay a range's values over the canonical ``dims`` grid as a flat column.
 
     A coverage's ranges may each vary over a different subset of the domain's
-    axes, in any order; a dataframe column, though, has to be a single flat
+    axes, in any order. A dataframe column, though, has to be a single flat
     sequence aligned to one shared coordinate grid. This reorders the range onto
     the canonical ``dims`` order, then broadcasts it up to the full grid so every
     range yields a column of the same length, ready to drop into a frame.
@@ -236,7 +236,7 @@ def range_column(
 
     if isinstance(array, np.ma.MaskedArray):
         # pandas has no general masked integer column, so a masked entry becomes
-        # NaN; cast to float first since NaN cannot live in an integer array.
+        # NaN. Cast to float first since NaN cannot live in an integer array.
         array = np.ma.filled(array.astype(np.float64), np.nan)
 
     # Transpose the range's own axis order onto the canonical dim order, pushing
@@ -393,7 +393,7 @@ def temporal_coordinates(domain: Domain) -> Set[str]:
     """The coordinate identifiers governed by a standard-calendar temporal system.
 
     The bridges convert time axes to real datetimes only when their calendar is
-    one pandas / numpy can parse (see `STANDARD_CALENDARS`); an exotic calendar
+    one pandas / numpy can parse (see `STANDARD_CALENDARS`). An exotic calendar
     (e.g. ``"360_day"``) has no datetime64 representation, so those coordinates
     stay as ISO strings. This scans the domain's
     [`referencing`][covjson_msgspec.Domain.referencing] and returns the coordinate
@@ -507,7 +507,7 @@ def composite_columns(
 ) -> Sequence[tuple[str, Sequence[Any]]]:
     """Transpose a ``"tuple"`` axis's values into one column per coordinate.
 
-    A composite ``"tuple"`` axis stores one tuple (a position) per row; the
+    A composite ``"tuple"`` axis stores one tuple (a position) per row. The
     dataframe/array bridges lay each component out as its own column. Spec 6.1.1
     requires every value to be a tuple whose size matches the coordinate
     identifier count (`coordinate_identifiers`), and
@@ -529,8 +529,8 @@ def composite_columns(
     Returns
     -------
     sequence of (str, sequence)
-        One ``(identifier, column)`` pair per coordinate, in identifier order;
-        each column holds that component across the axis's positions.
+        One ``(identifier, column)`` pair per coordinate, in identifier order.
+        Each column holds that component across the axis's positions.
 
     Raises
     ------
@@ -582,7 +582,7 @@ def maybe_datetime(values: Sequence[Any], is_temporal: bool) -> Any:
     Paired with `temporal_coordinates`: a caller decides per axis whether its
     coordinate is a standard-calendar time (``is_temporal``) and passes that
     flag here. When set, the values are parsed to a tz-naive
-    `pandas.DatetimeIndex`; otherwise they are returned untouched, so the same
+    `pandas.DatetimeIndex`. Otherwise they are returned untouched, so the same
     call site handles both time and non-time axes.
 
     Parameters
@@ -596,7 +596,7 @@ def maybe_datetime(values: Sequence[Any], is_temporal: bool) -> Any:
     -------
     pandas.DatetimeIndex or sequence
         A [`DatetimeIndex`][pandas.DatetimeIndex] when ``is_temporal`` and parsing
-        succeeds; otherwise ``values`` unchanged. Parsing that raises (a malformed time
+        succeeds. Otherwise ``values`` unchanged. Parsing that raises (a malformed time
         string) also falls back to ``values`` rather than propagating.
 
     Examples
@@ -626,7 +626,7 @@ def maybe_datetime(values: Sequence[Any], is_temporal: bool) -> Any:
     # not via temporal.resolve(): the two are different functions with different
     # codomains, so resolve is deliberately not the decider here. See ADR-0015.
     #
-    # ISO 8601 may carry a trailing "Z"; strip it so the result is tz-naive
+    # ISO 8601 may carry a trailing "Z". Strip it so the result is tz-naive
     # (matching the xarray bridge, which treats naive times as UTC).
     cleaned = [
         value.removesuffix("Z") if isinstance(value, str) else value for value in values
@@ -634,7 +634,7 @@ def maybe_datetime(values: Sequence[Any], is_temporal: bool) -> Any:
 
     try:
         # ``utc=True`` applies any ``±hh:mm`` offset (a Spec 5.2 form) and yields a
-        # UTC-aware index; ``tz_localize(None)`` then drops the zone to naive-UTC,
+        # UTC-aware index. ``tz_localize(None)`` then drops the zone to naive-UTC,
         # the same flatten the xarray bridge performs. ``format="ISO8601"`` also
         # lets a single axis mix naive and offset values without pandas raising on
         # the inferred format (it would otherwise fall through to the raw strings).

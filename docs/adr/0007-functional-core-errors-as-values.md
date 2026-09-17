@@ -1,4 +1,4 @@
-# ADR-0007: Functional core, imperative shell; fetch errors as values
+# ADR-0007: Functional core, imperative shell. Fetch errors as values
 
 ## Status
 
@@ -32,7 +32,7 @@ Model a fetch failure as a value and the batch's response to failures as a pure
 reducer, in a domain-independent module `_best_effort.py`:
 
 - **`FetchFailure`** (a frozen `msgspec.Struct`): the URL, a `FailureKind`, and a
-  message. It is the shared base; the tile-assembly consumer subclasses it as
+  message. It is the shared base. The tile-assembly consumer subclasses it as
   `TileFailure` (adding the tile's `offsets`) and reference resolution as
   `ReferenceFailure`. This is *structural reuse* (a base carrying common fields
   so generic code programs against it), not a discriminated union: a given
@@ -41,13 +41,13 @@ reducer, in a domain-independent module `_best_effort.py`:
 - **`FailureStrategy`** = `Callable[[tuple[F, ...], F], Verdict]`: a pure reducer
   that, given the failures collected so far and a new one, returns a `Verdict`
   (`COLLECT` or `HALT`). Canned strategies (`collect_all`,
-  `halt_on_unrecoverable`, `stop_after`) cover the common policies; a caller can
+  `halt_on_unrecoverable`, `stop_after`) cover the common policies. A caller can
   supply any pure function of the shape.
 - **`collect` / `collect_async`**: the imperative shell. They fetch each item,
   turn a failure into a `FetchFailure`, fold the strategy over the failures, and
   on `HALT` raise a `FetchError` carrying the failures collected so far, chained
   from the original exception (its `__cause__`). All the
-  fold/attempt/classification plumbing is file-local; consumers depend only on
+  fold/attempt/classification plumbing is file-local. Consumers depend only on
   these two orchestration entry points plus the vocabulary.
 - **`fail_fast`** is the default and an *ordinary* `FailureStrategy` that returns
   `HALT` on the first failure. It is not a distinguished sentinel: it folds like
@@ -56,19 +56,19 @@ reducer, in a domain-independent module `_best_effort.py`:
 `assemble` / `assemble_async` gain a keyword-only `strategy=` (defaulting to
 `fail_fast`) and **always return `AssembleReport`** (`report.array` plus
 `report.failures`). Every failure path is uniform: the default raises a
-`FetchError` on the first failed tile; a collecting strategy returns the array
+`FetchError` on the first failed tile. A collecting strategy returns the array
 with `None` holes and the failures reported.
 
 ## Alternatives considered
 
 **Exceptions threaded through the core.** Rejected, as in ADR-0006. Threading a
 partial result and a list of failures out through raised exceptions forces every
-intermediate layer to catch, inspect, and re-raise; the report is a value, so it
+intermediate layer to catch, inspect, and re-raise. The report is a value, so it
 should be returned as one, with the single raise confined to the shell.
 
 **A mutable error accumulator passed down and appended to.** Rejected, as in
 ADR-0006. It couples the checker to a shared side-channel and fights the
-functional-core grain; the pure reducer threads no accumulator (the shell owns
+functional-core grain. The pure reducer threads no accumulator (the shell owns
 the collected failures) and each strategy is trivially pure and testable in
 isolation.
 
@@ -100,7 +100,7 @@ unrepresentable. But it is outweighed: the sentinel is "a strategy that is not a
 `FailureStrategy`," the overload/union return complicates the type surface, and
 every bit of that machinery would duplicate into #31's `resolve_references`. The
 uniform design keeps `fail_fast` an ordinary strategy and always returns the
-result type; the raw-exception information is preserved via `FetchError.__cause__`
+result type. The raw-exception information is preserved via `FetchError.__cause__`
 (chaining), so only the *caught type* changes, not the information. Since nothing
 is released yet, there is no compatibility cost to the uniform default.
 
@@ -114,37 +114,37 @@ is released yet, there is no compatibility cost to the uniform default.
   `NdArray` return is reached through `report.array`.
 - **The raise-vs-return-a-partial choice is the strategy choice.** `HALT` means
   "this batch is poisoned, abort," so `FetchError` carries the failures and the
-  partial artifact is discarded; a caller who wants the partial-with-holes uses
+  partial artifact is discarded. A caller who wants the partial-with-holes uses
   `collect_all`, which never halts and returns an `AssembleReport`.
-- **Sync folds lazily; async is eager.** `collect` fetches one item at a time, so
+- **Sync folds lazily. Async is eager.** `collect` fetches one item at a time, so
   a halting strategy stops fetching at the halt point. `collect_async` launches
   all fetches at once (via `asyncio.gather`) for concurrency, so it necessarily
   fetches the whole batch before folding. True early-abort of in-flight
   concurrent fetches is cooperative cancellation of the gather: the injected
   scheduler seam (issue #32), out of scope here. `THROTTLED` and any richer
-  strategy state land there too; `collect_async` re-raises a child's
+  strategy state land there too. `collect_async` re-raises a child's
   `asyncio.CancelledError` rather than collecting it, so cancellation is never
   swallowed.
-- **The enum-vs-sum-type rule** (distinct payload -> union like `Issue`; label
+- **The enum-vs-sum-type rule** (distinct payload -> union like `Issue`, label
   over a common shape -> enum like `Severity` / `FailureKind`) is now applied
   twice, and is a reusable guideline for future finding/failure taxonomies.
 - **The `Result`-vs-`Report` naming rule.** A `*Result` is a discriminated
-  union of typed outcomes (Rust-`Result`-shaped, exactly one arm; e.g.,
-  `TemporalResult` in ADR-0008); a best-effort *product* bundling a (partial)
+  union of typed outcomes (Rust-`Result`-shaped, exactly one arm, e.g.,
+  `TemporalResult` in ADR-0008). A best-effort *product* bundling a (partial)
   value with the failures it tolerated is a `*Report`. `AssembleResult` and
   `ResolveResult` were renamed `AssembleReport` / `ResolveReport` to fit: they
   carry a value (`.array` / `.value`) *and* `.failures`, so they are reports,
   not one-of results.
 - **Low coupling by a domain-independence boundary.** `_best_effort.py` imports no
-  `NdArray` or `Coverage` and knows nothing about tiles; consumers depend on the
+  `NdArray` or `Coverage` and knows nothing about tiles. Consumers depend on the
   two `collect` seams plus the vocabulary, never on the fold/outcome plumbing.
   This ADR therefore also covers the synchronous injected-fetcher seam as applied
   to reference resolution (#31), which reuses `collect` / `collect_async`
-  verbatim; #31 needs no separate ADR. The async/concurrency layer on top of the
+  verbatim. #31 needs no separate ADR. The async/concurrency layer on top of the
   seam is explicitly *not* covered here (it rides with #32 if picked up).
 - A `ReferencedDocumentError` (a `ValueError` subclass) is raised at the shared
   fetch/decode seam so a *decode* failure is distinguishable from a *fetch*
-  failure a caller's own fetcher raises; this is non-breaking for existing
+  failure a caller's own fetcher raises. This is non-breaking for existing
   `except ValueError` handlers.
 - **Reference resolution fetches per site, not per unique URL.** Applying the seam
   to `resolve_references` / `_async` (#31), each reference *site* (a coverage's
@@ -153,7 +153,7 @@ is released yet, there is no compatibility cost to the uniform default.
   every `ReferenceFailure` to an exact `(coverage_index, slot)` and lets a
   strategy count attempts uniformly (one site, one attempt: the same shape as
   one tile, one attempt in assembly). The cost is that a URL shared across
-  collection members is fetched once per member; that is sound because the
+  collection members is fetched once per member. That is sound because the
   injected fetcher owns caching: a caller who shares, say, one domain document
   across every member wraps the fetcher in a cache to fetch it once, the same
   dependency-injection-at-the-edges tenet that keeps the core I/O-free.

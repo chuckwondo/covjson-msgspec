@@ -73,7 +73,7 @@ def test_to_numpy_reshapes_to_shape() -> None:
 
 def test_to_numpy_value_count_mismatch_raises_clear_error() -> None:
     # Decoding is permissive, so a value count inconsistent with shape only
-    # surfaces at to_numpy; it should report a clear message, not numpy's
+    # surfaces at to_numpy. It should report a clear message, not numpy's
     # cryptic "cannot reshape array of size ...".
     arr = NdArray(
         data_type="float", values=(1.0, 2.0, 3.0), shape=(2, 2), axis_names=("y", "x")
@@ -117,7 +117,7 @@ def test_to_numpy_float_out_of_range_is_validation_error() -> None:
 
 def test_validate_clean_does_not_guarantee_to_numpy() -> None:
     # validate(check_values=True) asks a membership question and keeps a stored
-    # int an int, so an oversized int is conformant; to_numpy asks a projection
+    # int an int, so an oversized int is conformant. to_numpy asks a projection
     # question, and there is no float to project it to. Pinning the pair keeps
     # the two deliberately-different rules from being "unified" by accident.
     arr = NdArray(data_type="float", values=(10**400,), shape=(1,), axis_names=("x",))
@@ -208,7 +208,7 @@ def test_from_numpy_infinities_become_none() -> None:
         (np.array([2**64 - 1], dtype=np.uint64), (18446744073709551615,)),
         (np.array(["ab", "cd"]), ("ab", "cd")),
         # longdouble shares dtype kind "f" with float64 but has no lossless
-        # Python float, so tolist() returns numpy scalars; it must convert
+        # Python float, so tolist() returns numpy scalars. It must convert
         # element by element instead.
         (np.array([1.5, 2.5], dtype=np.longdouble), (1.5, 2.5)),
     ],
@@ -352,7 +352,7 @@ def test_from_numpy_explicit_data_type_override() -> None:
             ("PT0.000000001S", "PT0.0000015S"),
         ),
         (np.array([10**9], dtype="timedelta64[ns]"), ("PT1S",)),
-        # The sign leads the whole duration; "P-3D" would not parse.
+        # The sign leads the whole duration. "P-3D" would not parse.
         (np.array([-3, 0], dtype="timedelta64[D]"), ("-P3D", "P0D")),
         # NaT is missing data like any other gap. numpy.isfinite is what catches
         # it, which only works while the values are still timedelta64, so this
@@ -377,7 +377,7 @@ def test_from_numpy_rejects_numeric_data_type_for_durations(
 ) -> None:
     # numpy makes timedelta64 an np.integer subtype, so this used to infer
     # "integer" and die on int(datetime.timedelta). Refusing names the remedy
-    # instead; a caller who wants the raw counts converts the array first.
+    # instead. A caller who wants the raw counts converts the array first.
     with pytest.raises(ValueError, match="cannot represent it"):
         NdArray.from_numpy(
             np.array([1], dtype="timedelta64[D]"), ("t",), data_type=data_type

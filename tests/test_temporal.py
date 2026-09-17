@@ -66,7 +66,7 @@ _UTC_PLUS_2 = timezone(timedelta(hours=2))
         ("", Malformed("")),
         # Guard-boundary cases for the "T" fast path: a "T" that is not a
         # datetime, or a lowercase "t", falls to Malformed rather than to a wrong
-        # form; a signed non-expanded value and length junk stay malformed via
+        # form. A signed non-expanded value and length junk stay malformed via
         # the chain. (The non-ASCII digit case is test_non_ascii_digits_malformed.)
         ("2020T", Malformed("2020T")),
         ("2020-01-01t00:00:00Z", Malformed("2020-01-01t00:00:00Z")),
@@ -94,7 +94,7 @@ def test_resolve(value: str, expected: TemporalResult) -> None:
 def test_non_ascii_digits_malformed() -> None:
     """The ``[0-9]`` digit class rejects non-ASCII digits (``\\d`` would accept).
 
-    The value is built with ``chr`` so the source stays ASCII; it is the
+    The value is built with ``chr`` so the source stays ASCII. It is the
     fullwidth spelling of ``"2020"`` (``U+FF10`` is fullwidth zero).
     """
     fullwidth_year = "".join(chr(0xFF10 + int(digit)) for digit in "2020")
@@ -139,7 +139,7 @@ def test_aware_iff_second_precision(value: str, aware: bool) -> None:
 
 
 def test_datetime_resolves_without_any_pattern(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A valid datetime is settled by ``msgspec.convert`` alone; no pattern runs.
+    """A valid datetime is settled by ``msgspec.convert`` alone. No pattern runs.
 
     The ``"T"`` fast path parses through msgspec's native decoder, so none of the
     five compiled patterns (``_DATETIME`` included) is touched for a conformant
@@ -163,7 +163,7 @@ def test_fast_path_matches_regex_oracle() -> None:
     regex oracle `_resolve_datetime_form` does. Since `resolve` falls back to that
     oracle whenever ``convert`` rejects, the discriminating power is entirely on
     the inputs ``convert`` accepts, so the corpus is built to exercise that branch
-    (`_datetime_fuzz_value`); the `Moment` floor asserts it has not gone vacuous.
+    (`_datetime_fuzz_value`). The `Moment` floor asserts it has not gone vacuous.
     """
     rng = random.Random(20260713)
     corpus = [_datetime_fuzz_value(rng) for _ in range(20000)]
@@ -179,8 +179,8 @@ def test_subsecond_fractional_rounds_to_moment() -> None:
     """A sub-microsecond fractional second (>= 7 digits) resolves to a rounded Moment.
 
     msgspec's decoder rounds to the microsecond where the old ``fromisoformat``
-    path truncated (``...00.1234567Z`` yields ``...123457``, not ``...123456``);
-    both discard precision a `datetime` cannot hold. This pins the accepted
+    path truncated (``...00.1234567Z`` yields ``...123457``, not ``...123456``).
+    Both discard precision a `datetime` cannot hold. This pins the accepted
     rounding so the difference stays intentional rather than a silent drift.
     """
     result = resolve("2020-01-01T00:00:00.1234567Z")

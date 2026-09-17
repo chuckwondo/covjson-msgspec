@@ -28,17 +28,17 @@ point on the curve:
   ISO 8601 temporal strings stay strings, for instance), and lossy conversions are
   confined to the opt-in bridges.
   [Custom members](https://github.com/covjson/specification/blob/master/spec.md#71-custom-members)
-  (extension keys the spec permits but does not define) are dropped by design;
-  relaying a document's raw bytes forwards them unchanged. The root JSON-LD
+  (extension keys the spec permits but does not define) are dropped by design.
+  Relaying a document's raw bytes forwards them unchanged. The root JSON-LD
   `@context` is
-  preserved; one conformance edge is still in progress: accepting custom
+  preserved. One conformance edge is still in progress: accepting custom
   reference-system types.
 - **Effects at the edges.** The core never reaches the network or imports a web
   framework. You inject a fetcher, so the same code serves sync and async
   services alike.
 
-The [design decisions](adr/README.md) record the reasoning behind these choices;
-a head-to-head with the established Pydantic library, covjson-pydantic, is on its
+The [design decisions](adr/README.md) record the reasoning behind these choices.
+A head-to-head with the established Pydantic library, covjson-pydantic, is on its
 way.
 
 ## Install
@@ -56,7 +56,7 @@ way.
 
 Which side of the wire you are on shapes how you use the library. Either way, the
 base install (`pip install covjson-msgspec`) covers the whole decode / build /
-encode round trip; the scientific bridges and the FastAPI adapter are opt-in extras
+encode round trip. The scientific bridges and the FastAPI adapter are opt-in extras
 layered on top.
 
 ### Consuming a coverage

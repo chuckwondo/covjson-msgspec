@@ -2,7 +2,7 @@
 
 The recurring principles behind the library's design, each stated as a principle
 and its operational consequence. [Tenets in practice](tenets-in-practice.md)
-illustrates each one with a concrete decision from the code; the
+illustrates each one with a concrete decision from the code. The
 [architecture decision records](../adr/README.md) hold the specific decisions that
 apply them, and [Core concepts](../concepts.md) works the type model through in
 detail.
@@ -26,9 +26,9 @@ fetcher. Errors are values first, with an opt-in raise confined to the edge.
 ## Immutable by default, statically enforced
 
 The model is immutable data, and the type system enforces it: mutating a value
-is a type error, not a convention left to trust. Struct instances are `frozen`;
-sequence members are `tuple`, not `list`; mapping members and read-only
-parameters are `Mapping`, not `dict`; sets are `frozenset` or the read-only
+is a type error, not a convention left to trust. Struct instances are `frozen`.
+Sequence members are `tuple`, not `list`. Mapping members and read-only
+parameters are `Mapping`, not `dict`. Sets are `frozenset` or the read-only
 `AbstractSet`, not `set`. A mutable builtin is confined to two places: a local
 accumulator inside a function, and a return handed to external plumbing that
 needs a concrete type. So a value read from the model, or produced by a domain
@@ -46,7 +46,7 @@ stays permissive: a repairable, slightly-nonconformant document still loads. See
 ## A byte-faithful model, lossy only in bridges
 
 Decode preserves every spec-defined member exactly (temporal values stay raw ISO
-8601 strings; numbers keep their precision). Conversions that lose information
+8601 strings, numbers keep their precision). Conversions that lose information
 happen only in the opt-in export bridges. The one carve-out is custom members,
 which decode drops ([ADR-0012](../adr/0012-custom-members-dropped-on-decode.md)).
 
@@ -54,7 +54,7 @@ which decode drops ([ADR-0012](../adr/0012-custom-members-dropped-on-decode.md))
 
 Where one concrete type encodes several logical types, precise typing is an opt-in
 projection (an accessor or a builder), never the stored representation, and never
-element-typed subclasses or type guards. The stored form stays faithful; the
+element-typed subclasses or type guards. The stored form stays faithful. The
 precision is a view you ask for. See
 [ADR-0004](../adr/0004-ndarray-single-non-generic-class.md) and
 [Core concepts](../concepts.md).

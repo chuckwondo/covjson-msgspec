@@ -1,4 +1,4 @@
-# ADR-0012: Custom members dropped on decode; lossless relay forwards raw bytes
+# ADR-0012: Custom members dropped on decode. Lossless relay forwards raw bytes
 
 ## Status
 
@@ -33,7 +33,7 @@ things:
   [Section 5.1.4 inline CRS definitions][spec-5.1.4], which the spec calls "not
   yet fully defined" and are distinct from generic extensions. They apply to the
   three geospatial CRS types (`GeographicCRS`, `ProjectedCRS`, `VerticalCRS`),
-  not to `TemporalRS` or `IdentifierRS`; we identify CRSs by `id` and do not
+  not to `TemporalRS` or `IdentifierRS`. We identify CRSs by `id` and do not
   model them (see the `covjson_msgspec.referencing` module docstring).
 
 The load-bearing fact is [Section 7][spec-7]'s scope: extensions may appear on
@@ -45,11 +45,11 @@ the types we happen to have observed is therefore incomplete by construction.
 ## Decision
 
 **The typed model is a deliberately lossy projection of the document, not a
-byte-preserving store; custom members are dropped on decode and we add no
+byte-preserving store. Custom members are dropped on decode and we add no
 capture mechanism.** Decode stays permissive (accept and ignore), never
 `forbid_unknown_fields` (accept and reject).
 
-**To relay or proxy a document unchanged, forward its raw bytes; do not route
+**To relay or proxy a document unchanged, forward its raw bytes. Do not route
 through `decode -> encode`.** Reaching for `decode` to preserve bytes is the
 wrong tool: a caller that only needs to reformat can round-trip the raw tree
 (`msgspec.json.decode(raw, type=dict[str, msgspec.Raw])` then re-encode) and
@@ -60,7 +60,7 @@ the right shape.
 ## Alternatives considered
 
 **`forbid_unknown_fields=True` (reject documents carrying custom members).**
-Rejected. The spec explicitly permits extensions; rejecting a valid document is
+Rejected. The spec explicitly permits extensions. Rejecting a valid document is
 strictly worse for interoperability than accepting and ignoring it, and it
 would make us reject the spec's own [Section 5.1.4][spec-5.1.4] examples.
 
@@ -91,7 +91,7 @@ preserving custom siblings, and no such consumer exists today.
 
 **Retain the raw parsed tree as the source of truth, the typed model as a
 view.** Rejected. The model is `frozen`, so "modifying" a value means
-constructing a new one; an overlay-on-encode step then cannot distinguish a
+constructing a new one. An overlay-on-encode step then cannot distinguish a
 field the caller changed from one left alone, making the reconciliation
 ambiguous.
 
@@ -130,15 +130,15 @@ supported typed path is instead manual subclassing (see the consequence below).
   dropped custom member, whose value is absent from the decoded object itself
   and unrecoverable. The motive is the CoverageJSON wire idiom (optional
   members are omitted, never emitted as `null`), yielding one canonical,
-  null-free encoding; reduced size is incidental.
+  null-free encoding. Reduced size is incidental.
 - Lossless relay/proxy is a tool-choice, not a feature: forward raw bytes (or
   reformat the raw `dict[str, msgspec.Raw]` tree), never `decode -> encode`.
 - [Section 5.1.4][spec-5.1.4] `cs` / `datum` inline CRS definitions stay
-  unmodeled; CRSs are identified by `id`.
+  unmodeled. CRSs are identified by `id`.
 - The supported way to capture a custom member *with full static typing* is to
   declare the subclass chain by hand: subclass the target and every ancestor on
   its path to a root, then build a `msgspec.json.Decoder` over a custom root
-  union; the existing encoder needs no change. Real-world custom members are
+  union. The existing encoder needs no change. Real-world custom members are
   shallow (`preferredColor` on a `Category` is the deepest observed, at four),
   so the chain is short, and the decoded types stay fully typed. A how-to
   documents this pattern. A codegen helper that *emits* that subclass source

@@ -147,7 +147,7 @@ def test_composite_axis_requires_coordinates_on_decode(data_type: str) -> None:
 
 def test_polygon_axis_requires_at_least_two_coordinates() -> None:
     # RFC 7946 3.1.1: a GeoJSON position has >= 2 components, so a polygon needs
-    # >= 2 coordinate identifiers; a single one declares impossible 1-D positions
+    # >= 2 coordinate identifiers. A single one declares impossible 1-D positions
     # that a self-consistent 1-D polygon would slip past validate() (ADR-0019).
     with pytest.raises(ValueError, match=r"at least 2 `coordinates`, got 1"):
         Axis(values=((((0.0, 0.0),),),), data_type="polygon", coordinates=("x",))
@@ -222,7 +222,7 @@ def test_tuple_builder_materializes_positions() -> None:
 
 
 def test_custom_data_type_decodes() -> None:
-    # The spec (6.1.1) allows custom extension dataType values; the model accepts
+    # The spec (6.1.1) allows custom extension dataType values. The model accepts
     # any string and treats an unrecognized one as primitive-like (no composite
     # coordinates required).
     blob = b'{"dataType": "knmi:range", "values": ["2022-01-01T04:03:00Z"]}'

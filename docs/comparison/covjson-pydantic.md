@@ -2,7 +2,7 @@
 
 **Status: pre-draft working notes.** This file accretes per-topic comparisons
 that will feed the published comparison documentation (issue #22). It is a
-contributor-facing scratchpad, not the final user-facing doc; expect it to be
+contributor-facing scratchpad, not the final user-facing doc. Expect it to be
 restructured when #22 is written and the docs toolchain (#19) is chosen.
 
 **Re-evaluate when the relevant open issues land.** Several judgments below turn
@@ -40,7 +40,7 @@ Versions compared: covjson-pydantic `domain.py` / `base_models.py` as of
 **covjson-msgspec: one permissive struct plus an open dict.**
 
 - A single `Axis` struct models all three forms (value-listing, regular,
-  composite); `__post_init__` enforces that one *complete* form is present (a
+  composite). `__post_init__` enforces that one *complete* form is present (a
   cheap, local, O(1) invariant), and `validate()` reports an axis carrying both
   as `axis.form-conflict` (ADR-0023). On the axis *form* rules the construction
   boundary is the same one covjson-pydantic draws: measured against 0.8.0, both
@@ -59,9 +59,9 @@ Versions compared: covjson-pydantic `domain.py` / `base_models.py` as of
 | --- | --- | --- | --- |
 | Extra / custom axes | `Axes` is `extra="forbid"` with fixed slots, so a conformant document carrying an additional axis fails to decode | `dict[str, Axis]` admits any axis name | covjson-msgspec (faithfulness) |
 | Temporal values | `t` parsed to `AwareDatetime`: lossy (`Z` vs `+00:00`, fractional seconds, out-of-range dates, non-Gregorian calendars) | raw ISO 8601 strings, byte-faithful round trip | covjson-msgspec |
-| Validation placement | construction-time raise; cannot load a non-conformant document to inspect or repair | permissive decode plus opt-in `validate()` | covjson-msgspec (ADR-0002) |
+| Validation placement | construction-time raise. Cannot load a non-conformant document to inspect or repair | permissive decode plus opt-in `validate()` | covjson-msgspec (ADR-0002) |
 | Composite axes | `ValuesAxis[Tuple]` stub with a "TODO: better support" | full `tuple` and `polygon` modeling, with builders | covjson-msgspec (completeness) |
-| Static element-type precision | `axes.t.values` is typed `List[datetime]`; precise per slot | `axes["t"]` is a form-agnostic `Axis`; the caller narrows | covjson-pydantic |
+| Static element-type precision | `axes.t.values` is typed `List[datetime]`. Precise per slot | `axes["t"]` is a form-agnostic `Axis`. The caller narrows | covjson-pydantic |
 | Discoverability | named `Axes` fields are self-documenting | a dict is opaque to the type system | covjson-pydantic |
 | Per-form rules | `CompactAxis.single_value_case` reads cleanly in isolation | all forms share one `__post_init__` | slight edge to covjson-pydantic |
 | Regular `num == 1` => `start == stop` | enforced in `CompactAxis.single_value_case` | enforced in `Axis.__post_init__` (#36) | parity |
@@ -79,7 +79,7 @@ are independently shedding (#23).
 
 Where covjson-pydantic is genuinely better is static type precision and
 discoverability: `axes.t.values` typed as datetimes, and named slots a reader
-can see in the type. That is not an oversight on our side; it is the deliberate
+can see in the type. That is not an oversight on our side. It is the deliberate
 "faithful core, precision as an opt-in projection" tenet. The honest caveat is
 that for axes we have not built that projection yet (#21), so today a user gets
 less static type help than covjson-pydantic offers. The published doc should not
@@ -89,10 +89,10 @@ claim parity on ergonomics unless and until that projection exists.
 
 - **Adopted (#36):** the `num == 1` => `start == stop` MUST check, now enforced
   in `Axis.__post_init__`. This started as a row where covjson-pydantic was more
-  correct; the published doc can cite it as an example of adopting a good idea.
-- **Deliberate divergences, one subsection each:** open dict vs fixed `Axes`;
-  raw-string vs parsed temporal; opt-in `validate()` vs construction-time raise;
-  one permissive struct vs class-per-form plus a generic; full composite
+  correct. The published doc can cite it as an example of adopting a good idea.
+- **Deliberate divergences, one subsection each:** open dict vs fixed `Axes`.
+  Raw-string vs parsed temporal. Opt-in `validate()` vs construction-time raise.
+  One permissive struct vs class-per-form plus a generic. Full composite
   modeling vs the `Tuple` stub.
 - **Be self-critical:** per-axis static typing and discoverability is the one
   place to frame as a trade (faithfulness over static precision, recovered via

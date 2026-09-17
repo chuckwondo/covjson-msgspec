@@ -62,7 +62,7 @@ def fetch_and_decode(fetch: Fetch, url: str, decoder: msgspec.json.Decoder[_T]) 
     assembly pull a referenced document, so the fetch-then-decode contract and
     its error reporting stay identical across them. Exceptions raised by
     ``fetch`` itself (network, auth, missing key) propagate unchanged, since they
-    are the caller's domain; only a decode failure is rewrapped to name the
+    are the caller's domain. Only a decode failure is rewrapped to name the
     offending URL.
 
     Parameters
@@ -121,7 +121,7 @@ async def fetch_and_decode_async(
     The awaitable counterpart of `fetch_and_decode`, with an identical contract:
     the single choke point through which the async variants of `resolve_references`
     and tile assembly pull a referenced document. Exceptions raised by ``fetch``
-    itself (network, auth, missing key) propagate unchanged; only a decode failure
+    itself (network, auth, missing key) propagate unchanged. Only a decode failure
     is rewrapped to name the offending URL. Many of these can be driven
     concurrently with `asyncio.gather`.
 

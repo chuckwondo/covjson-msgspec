@@ -60,7 +60,7 @@ def test_leaves_inline_members_untouched_and_resolves_mixed_ranges() -> None:
 
     resolved = resolve_references(cov, fetch).value
 
-    # The inline range is preserved as-is; only the URL range is fetched.
+    # The inline range is preserved as-is. Only the URL range is fetched.
     assert resolved.ranges["a"] is inline
     resolved_b = resolved.ranges["b"]
     assert isinstance(resolved_b, NdArray)
@@ -102,9 +102,9 @@ def test_decode_failure_raises_fetch_error_chained_from_decode() -> None:
         resolve_references(cov, fetch)
 
     # fail_fast raises FetchError chained from the decode error (only the caught
-    # type changes; the underlying error is preserved via __cause__).
+    # type changes: the underlying error is preserved via __cause__).
     assert isinstance(excinfo.value.__cause__, ReferencedDocumentError)
-    # FetchError.failures is typed over the base FetchFailure; the slot /
+    # FetchError.failures is typed over the base FetchFailure. The slot /
     # coverage_index attribution is checked in the collect_all tests, whose
     # ResolveReport.failures is typed over ReferenceFailure.
     (failure,) = excinfo.value.failures

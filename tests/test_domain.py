@@ -141,7 +141,7 @@ def test_multipolygon_builder_holds_many_polygons() -> None:
 
 def test_polygon_domain_roundtrips_on_the_wire() -> None:
     # The nested polygon interior decodes as lists (it is typed Any), so a decoded
-    # Domain is not object-equal to the constructed one; the wire form is stable.
+    # Domain is not object-equal to the constructed one. The wire form is stable.
     dom = Domain.polygon([(0.0, 0.0), (2.0, 0.0), (2.0, 2.0), (0.0, 0.0)])
     blob = msgspec.json.encode(dom)
     back = msgspec.json.decode(blob, type=Domain)
