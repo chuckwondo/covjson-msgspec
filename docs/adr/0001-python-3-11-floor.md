@@ -29,7 +29,7 @@ while analyzing a type`. Independently, msgspec's version-independent "at most
 one array-like member per union" rule blocks unioning the tuple form and the
 polygon form without collapsing the element back to a recursive alias (the same
 `RecursionError`) or to `Any`. So the composite-typing precision is gated on
-both a 3.12+ floor *and* a future msgspec that resolves recursive types; 3.12
+both a 3.12+ floor *and* a future msgspec that resolves recursive types. 3.12
 alone delivers none of it.
 
 ## Decision
@@ -44,7 +44,7 @@ requirement: revisit only when titiler raises its own floor.
   It would decouple us from titiler's current `>=3.11`, the precise outcome the
   coupling exists to prevent. And the headline payoff (precise recursive
   composite typing) is not delivered by 3.12 with current msgspec anyway, per
-  the `RecursionError` finding above; the only real 3.12 gains available today
+  the `RecursionError` finding above. The only real 3.12 gains available today
   are cosmetic (PEP 695 aliases for non-recursive types, `class C[T]` syntax,
   `typing.override`).
 - **Float the floor to the latest stable Python with no declared coupling.**
@@ -57,11 +57,11 @@ requirement: revisit only when titiler raises its own floor.
   assignment instead of PEP 695 `type` statements, and the recursive polygon
   interior is typed `Any` because msgspec cannot resolve a recursive
   plain-assignment alias on 3.11 (no `ForwardRef` support there). PEP 696
-  `TypeVar` defaults are imported from `typing_extensions`; that backport
+  `TypeVar` defaults are imported from `typing_extensions`. That backport
   dependency disappears once the last generic user is removed, independently of
   the floor.
 - The floor is a tracked coupling, not a settled endpoint. The gate to revisit
   is titiler raising its `requires-python` past 3.11. Even then, the
   composite-typing half of the payoff additionally waits on msgspec gaining
-  recursive-type support; the two gates are independent, and only the
+  recursive-type support. The two gates are independent, and only the
   conjunction makes a bump worthwhile.

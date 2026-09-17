@@ -31,11 +31,11 @@ nowhere on the public surface. Any caller wanting the verdict re-derived
 
 **The verdict is not a lazy question (the impossibility result).** Issues are
 yielded in document order with errors and warnings interleaved, so a valid or
-warnings-only document is known valid only once the whole stream is exhausted; a
+warnings-only document is known valid only once the whole stream is exhausted. A
 prefix cannot answer it. The only lazily-deliverable bool is "non-empty," which
 is *not* the question (it flags valid-with-warnings documents). Two run-verified
 facts pin this: `bool(iter([]))` is `True`, so a bare iterator can never answer
-"any issues?" via truthiness; and `msgspec.json.encode` rejects any iterator
+"any issues?" via truthiness, and `msgspec.json.encode` rejects any iterator
 (generator and `list_iterator` alike), so an iterator return is no longer a
 serializable report. A verdict-bearing return is therefore inherently
 materialized: laziness and a real verdict cannot coexist.
@@ -45,7 +45,7 @@ established that a `*Report` is a frozen value carrier
 ([`ResolveReport`](../reference/references.md),
 [`AssembleReport`](../reference/range.md)) while a `*Result` is a discriminated
 union of outcome cases (`TemporalResult = Moment | Unrepresentable | Malformed`).
-Validation's outcome bundles many findings plus a verdict; it is a value carrier,
+Validation's outcome bundles many findings plus a verdict. It is a value carrier,
 not a sum of cases, so `Report` is the right suffix.
 
 The change is free of compatibility cost: the library is pre-1.0 and unreleased,
@@ -60,13 +60,13 @@ so there are no external callers to migrate.
   alongside, so the findings *are* the payload.
 - `ok: bool`, `errors: tuple[Issue, ...]`, `warnings: tuple[Issue, ...]` are
   computed accessors. `errors` is the single home of the verdict definition
-  ("error-severity issue"); `ok` is `not self.errors` and `warnings` is defined
+  ("error-severity issue"). `ok` is `not self.errors` and `warnings` is defined
   positively (`severity is Severity.WARNING`), each pinned to a specific severity
   so that adding a third `Severity` lands in neither and can neither flip `ok` nor
   be mislabelled a warning.
 - No container protocol: the report is deliberately neither iterable nor sized.
   The report bundles three views (`issues`, `errors`, `warnings`), so an implicit
-  `for x in report` or `len(report)` would silently pick one; instead both raise
+  `for x in report` or `len(report)` would silently pick one. Instead both raise
   `TypeError` and the caller names the view it means.
 - `__bool__` is annotated `-> NoReturn` and **raises** `ValueError`. `mode="raise"`
   reuses the verdict: `if report.errors: raise CovJSONValidationError(report.errors)`.
@@ -84,7 +84,7 @@ to the type checker: `if report:` and `bool(report)` become checker errors
 
 The report encodes to JSON as an object, `{"issues": [...]}`, rather than the
 bare array a `list[Issue]` produced. This is a deliberate, one-way wire-shape
-choice; the tagged-union `code` discriminant still round-trips each finding, now
+choice. The tagged-union `code` discriminant still round-trips each finding, now
 under the `issues` key.
 
 ## Alternatives considered
@@ -112,7 +112,7 @@ no value, so the findings stand alone as the payload. It is a `Report` because i
 is a frozen value carrier, not because it shares that field layout.
 
 **Exposing `__iter__` / `__len__` for ergonomics.** Rejected. A `ValidationReport`
-is not a single collection; it bundles three views (all findings, the errors, the
+is not a single collection. It bundles three views (all findings, the errors, the
 warnings). An implicit `len(report)` or `for x in report` silently picks one (the
 least-wrong "all"), inviting a caller who thinks of validation as "finding errors"
 to read `len(report)` as the error count. Named accessors (`.issues`, `.errors`,
@@ -130,7 +130,7 @@ not a `TypeError`.
   *valid* exists once.
 - Call sites reach the findings through a named accessor: `report.issues` (all),
   `report.errors`, or `report.warnings`. Iterating, unpacking, indexing, or
-  `len`-ing the result goes through `.issues`; comparisons move from `== []` to
+  `len`-ing the result goes through `.issues`. Comparisons move from `== []` to
   `report.issues == ()`. A pre-1.0 migration with no external cost, and every call
   site now states which view it means.
 - `if report:` is a type error (unreachable, via `NoReturn`) and raises at

@@ -5,7 +5,7 @@ CoverageJSON document (`Coverage`, `CoverageCollection`, `Domain`, `NdArray`,
 `TiledNdArray`) with the core `encode`, and labels it with the CoverageJSON media
 type (``application/prs.coverage+json``, spec section 10) rather than the generic
 ``application/json``. It builds on the framework-agnostic helpers in
-`covjson_msgspec.media_type`; the framework dependency lives only behind the
+`covjson_msgspec.media_type`. The framework dependency lives only behind the
 ``[fastapi]`` extra and is imported here, so importing the rest of the package
 never requires FastAPI.
 
@@ -125,7 +125,7 @@ class CovJSONResponse(Response):
         """Encode a CoverageJSON document into the response body bytes.
 
         Mirrors `Response.render`'s handling of ``None`` (an empty body, e.g.,
-        a 204) rather than encoding it to the JSON literal ``null``; any other
+        a 204) rather than encoding it to the JSON literal ``null``. Any other
         content is delegated to the core `encode`.
 
         Parameters
@@ -160,8 +160,8 @@ def add_openapi_schemas(app: FastAPI) -> None:
     Merges [`component_schemas`][covjson_msgspec.component_schemas] into the app's
     generated OpenAPI ``components.schemas`` so a `CovJSONResponse` endpoint can be
     fully described in Swagger / Redoc. Wraps the app's existing ``openapi`` callable
-    rather than rebuilding the document, so any other customization is preserved;
-    the wrapper runs on every ``app.openapi()`` call and merges in place, so it is
+    rather than rebuilding the document, so any other customization is preserved.
+    The wrapper runs on every ``app.openapi()`` call and merges in place, so it is
     order-independent (before or after the schema is first built) and idempotent.
 
     Point a route's response at a registered component with
@@ -227,5 +227,5 @@ def add_openapi_schemas(app: FastAPI) -> None:
 
     # Reassigning `app.openapi` is FastAPI's own documented way to customize the
     # generated schema (its "Extending OpenAPI" guide, linked in the module
-    # docstring); the type-checker ignores are stub conservatism, not a red flag.
+    # docstring). The type-checker ignores are stub conservatism, not a red flag.
     app.openapi = openapi  # type: ignore[method-assign]  # ty: ignore[invalid-assignment]

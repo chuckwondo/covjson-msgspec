@@ -9,21 +9,21 @@ GeoJSON ``FeatureCollection`` mapping (`to_geojson`).
 Mapping
 -------
 - A point-like domain reuses the tidy `to_pandas` frame (where ``x`` / ``y`` are
-  always columns) and attaches a ``Point`` geometry built from them; each row
+  always columns) and attaches a ``Point`` geometry built from them. Each row
   becomes one feature. A trajectory is therefore emitted as one point feature per
-  vertex (preserving each vertex's measurements) by default; pass
+  vertex (preserving each vertex's measurements) by default. Pass
   ``trajectory_as="linestring"`` to emit a single ``LineString`` for the path
   instead (geometry only, dropping the per-vertex measurements).
 - A Polygon / PolygonSeries domain becomes one feature (repeated over ``t`` for a
-  series); a MultiPolygon / MultiPolygonSeries domain becomes one feature per
+  series). A MultiPolygon / MultiPolygonSeries domain becomes one feature per
   polygon. The ``composite`` axis supplies the ``Polygon`` geometry.
 - A vertical (``z``) coordinate is carried into point geometry as a third
   dimension (a ``POINT Z``) and also kept as a column. For a polygon it reaches
   the geometry (a ``POLYGON Z``) only when ``z`` is one of the ``composite`` ring
-  coordinates; a standalone ``z`` axis on a polygon stays a column only.
+  coordinates. A standalone ``z`` axis on a polygon stays a column only.
 - A geographic reference system tags the result with its ``id`` when pyproj can
   resolve it, else with CoverageJSON's default geographic CRS, ``OGC:CRS84``
-  (WGS84 longitude/latitude); a projected reference system tags it with that
+  (WGS84 longitude/latitude). A projected reference system tags it with that
   system's ``id`` (an EPSG / OGC CRS URI).
 - A temporal coordinate is a real datetime in the `to_geopandas` frame (the typed
   projection) but stays the value the document carried in `to_geojson` (the
@@ -90,7 +90,7 @@ _INSTALL_HINT = (
 )
 
 # CoverageJSON's default geographic CRS: WGS84 longitude/latitude (OGC CRS84).
-# CRS84 is lon/lat, matching how the bridge builds x / y geometry; EPSG:4326
+# CRS84 is lon/lat, matching how the bridge builds x / y geometry. EPSG:4326
 # names the same datum but in lat/lon authority order, so CRS84 is the right tag.
 _DEFAULT_GEOGRAPHIC_CRS = "OGC:CRS84"
 
@@ -103,7 +103,7 @@ TrajectoryAs = Literal["points", "linestring"]
 # gets the documented ValueError instead of a TypeError from hashing it.
 _TRAJECTORY_AS = get_args(TrajectoryAs)
 
-# A Grid is gridded data, not vector features; we degenerately emit one point per
+# A Grid is gridded data, not vector features. We degenerately emit one point per
 # cell, but the xarray bridge is the better fit, so warn rather than do it silently.
 _GRID_WARNING = (
     "converting a Grid domain to vector geometry emits one point feature per "
@@ -136,13 +136,13 @@ def to_geopandas(
     trajectory_as
         How a Trajectory domain maps to geometry. ``"points"`` (the default)
         emits one ``Point`` feature per vertex, preserving each vertex's
-        measurements; ``"linestring"`` emits a single ``LineString`` feature for
+        measurements. ``"linestring"`` emits a single ``LineString`` feature for
         the whole path (geometry only, since per-vertex measurements do not
         reduce to one row). Other domain types ignore this option.
     times
         How temporal coordinates reach the frame, as on
         [`to_pandas`][covjson_msgspec.to_pandas]. ``"datetime"`` (the default)
-        parses a standard-calendar axis to pandas datetimes; ``"raw"`` leaves
+        parses a standard-calendar axis to pandas datetimes. ``"raw"`` leaves
         every temporal coordinate as the value the document carried, which is
         both the only way to keep a reduced Spec 5.2 form (``"2013"``,
         ``"2013-01"``) distinguishable from the instant it would be promoted to,
@@ -154,7 +154,7 @@ def to_geopandas(
     -------
     geopandas.GeoDataFrame
         A frame of the parameter and coordinate columns with a ``geometry``
-        column; its CRS is the geographic system's resolvable ``id`` (else
+        column. Its CRS is the geographic system's resolvable ``id`` (else
         ``OGC:CRS84``, the WGS84 lon/lat default), or the projected system's
         ``id`` for a projected one. For a collection, the member frames
         concatenated under a leading ``coverage`` column.
@@ -162,7 +162,7 @@ def to_geopandas(
     Raises
     ------
     ModuleNotFoundError
-        If the bridge's dependencies are not installed; install
+        If the bridge's dependencies are not installed. Install
         ``covjson-msgspec[geo]``.
     ValueError
         If a domain is a URL reference, a point-like domain lacks ``x`` / ``y``
@@ -255,7 +255,7 @@ def to_geojson(
         The coverage or collection to convert (same requirements as
         `to_geopandas`).
     trajectory_as
-        How a Trajectory domain maps to geometry; see `to_geopandas`.
+        How a Trajectory domain maps to geometry. See `to_geopandas`.
 
     Returns
     -------
@@ -268,7 +268,7 @@ def to_geojson(
     Raises
     ------
     ModuleNotFoundError
-        If the bridge's dependencies are not installed; install
+        If the bridge's dependencies are not installed. Install
         ``covjson-msgspec[geo]``.
     ValueError
         On the conditions `to_geopandas` lists (URL domain, missing ``x`` /
@@ -337,7 +337,7 @@ def to_geojson(
     gdf = _to_geopandas(obj, trajectory_as, "raw")
 
     # An empty CoverageCollection yields a frame with no geometry column, on which
-    # to_json would raise; emit an empty FeatureCollection directly instead.
+    # to_json would raise. Emit an empty FeatureCollection directly instead.
     if "geometry" not in gdf.columns:
         return {"type": "FeatureCollection", "features": []}
 
@@ -441,7 +441,7 @@ def _to_geopandas(
         msg = f"trajectory_as must be {accepted}; got {trajectory_as!r}"
         raise ValueError(msg)
 
-    # Surface the friendly install hint here; the helpers re-import geopandas
+    # Surface the friendly install hint here. The helpers re-import geopandas
     # locally (a cached lookup) so they keep a precise gpd type for the checker.
     try:
         import geopandas  # noqa: F401  # pyright: ignore[reportUnusedImport]
@@ -471,15 +471,15 @@ def _coverage_to_geopandas(
     domain type to the matching frame builder: `_polygon_frame` for the Polygon
     family, `_trajectory_linestring_frame` for a Trajectory in ``"linestring"``
     mode, else `_point_frame`. The builder returns a plain frame plus a geometry
-    array, which are combined with the CRS from `_crs`; ``domain_type`` and
+    array, which are combined with the CRS from `_crs`. ``domain_type`` and
     ``id`` ride along in ``gdf.attrs``.
 
     Parameters
     ----------
     coverage
-        The coverage to convert; its ``domain`` must be an inline `Domain`.
+        The coverage to convert. Its ``domain`` must be an inline `Domain`.
     trajectory_as
-        How a Trajectory maps to geometry (see `to_geopandas`); ignored for other
+        How a Trajectory maps to geometry (see `to_geopandas`). Ignored for other
         domain types.
     times
         How temporal coordinates reach the frame (see
@@ -631,7 +631,7 @@ def _point_frame(
 
     from covjson_msgspec.pandas import to_pandas
 
-    # The tidy frame puts x / y as columns for every point-like domain; promote
+    # The tidy frame puts x / y as columns for every point-like domain. Promote
     # any index levels (t / z / composite) to columns so they survive to_json.
     frame = to_pandas(coverage, times=times)
     frame = (
@@ -641,7 +641,7 @@ def _point_frame(
     )
 
     # A composite ("tuple") axis becomes a bare positional index level (0, 1,
-    # 2 ...) in the tidy frame; its x / y / z components already ride as their
+    # 2 ...) in the tidy frame. Its x / y / z components already ride as their
     # own columns, so drop the position level rather than leak it into each
     # feature's properties.
     if leaked := [
@@ -657,13 +657,13 @@ def _point_frame(
 def _point_geometry(frame: pd.DataFrame) -> npt.NDArray[np.object_]:
     """Build the per-row ``Point`` geometry from a point frame's ``x`` / ``y`` columns.
 
-    A ``z`` column is carried into the geometry as a third dimension (``POINT Z``;
+    A ``z`` column is carried into the geometry as a third dimension (``POINT Z``,
     GeoJSON allows it) and also stays a column.
 
     Parameters
     ----------
     frame
-        The point frame; must have ``x`` and ``y`` columns (and optionally ``z``).
+        The point frame. Must have ``x`` and ``y`` columns (and optionally ``z``).
 
     Returns
     -------
@@ -693,7 +693,7 @@ def _point_geometry(frame: pd.DataFrame) -> npt.NDArray[np.object_]:
 
     # With array inputs shapely.points always yields an object array of Points
     # (its overloads also admit a scalar Point for scalar inputs, which cannot
-    # arise here); pin the array type so the geometry column is precisely typed.
+    # arise here). Pin the array type so the geometry column is precisely typed.
     return cast("npt.NDArray[np.object_]", geometry)
 
 
@@ -828,7 +828,7 @@ def _trajectory_linestring_frame(
 
     The builder for ``trajectory_as="linestring"``. It reads the path from the
     ``composite`` axis's ordered ``(x, y[, z])`` positions and emits one feature
-    for the whole path; a ``z`` component makes it 3D (``LINESTRING Z``). Because
+    for the whole path. A ``z`` component makes it 3D (``LINESTRING Z``). Because
     a path's per-vertex measurements do not reduce to a single row, the geometry
     is kept alone, with a one-row frame and no range columns: this is why it
     takes only ``domain`` (no coverage), unlike `_point_frame` / `_polygon_frame`.
@@ -847,10 +847,10 @@ def _trajectory_linestring_frame(
     ------
     ValueError
         If the ``composite`` axis is not a ``"tuple"`` axis, lacks ``x`` / ``y``
-        coordinates, or has fewer than two vertices (too few for a line; use the
+        coordinates, or has fewer than two vertices (too few for a line: use the
         default points geometry).
     """
-    # Linestring mode reads only the composite axis; unlike _point_frame and
+    # Linestring mode reads only the composite axis. Unlike _point_frame and
     # _polygon_frame it needs nothing from the coverage (the per-vertex range
     # values are dropped when collapsing the path to one geometry).
     import numpy as np
@@ -893,9 +893,9 @@ def _polygon_frame(
 
     The builder for Polygon / PolygonSeries / MultiPolygon / MultiPolygonSeries.
     Each value of the ``composite`` axis is a polygon (a sequence of rings) turned
-    into a shapely ``Polygon`` by `_shapely_polygon`; a ``z`` ring component makes
+    into a shapely ``Polygon`` by `_shapely_polygon`. A ``z`` ring component makes
     it 3D (``POLYGON Z``). The element axes are the polygons, plus ``t`` when it
-    varies (a *Series), in canonical row-major order; each parameter range and the
+    varies (a *Series), in canonical row-major order. Each parameter range and the
     ``t`` / ``z`` coordinates are broadcast across that grid so every column (and
     the repeated geometry) lines up row for row.
 
@@ -978,7 +978,7 @@ def _shapely_polygon(
 ) -> Any:
     """Turn one CoverageJSON polygon (a sequence of rings) into a shapely ``Polygon``.
 
-    Each ring is a sequence of positions; ring 0 is the exterior shell and any
+    Each ring is a sequence of positions. Ring 0 is the exterior shell and any
     remaining rings are holes. The ``*_index`` arguments say which slot of each
     position holds ``x`` / ``y`` (and ``z`` when present, yielding a 3D polygon).
 
@@ -998,7 +998,7 @@ def _shapely_polygon(
     """
     import shapely
 
-    # A polygon is a sequence of rings; ring 0 is the exterior, the rest holes.
+    # A polygon is a sequence of rings. Ring 0 is the exterior, the rest holes.
     # Include the vertical component per position when the axis carries one.
     def position_coords(position: Any) -> tuple[float, ...]:
         """Pull ``(x, y)`` (or ``(x, y, z)``) out of one ring position."""
@@ -1053,7 +1053,7 @@ def _crs(domain: Domain) -> str | None:
     # A horizontal reference system supplies the result CRS. A geographic system
     # honors a resolvable `id` and otherwise falls back to the lon/lat default
     # (see `_geographic_crs`). A projected system is identified by its `id` (an
-    # EPSG / OGC CRS URI that pyproj resolves); pass it through, falling back to
+    # EPSG / OGC CRS URI that pyproj resolves). Pass it through, falling back to
     # unset when it carries none. Any other system leaves the CRS unset.
     for connection in domain.referencing:
         match connection.system.refine():
@@ -1063,7 +1063,7 @@ def _crs(domain: Domain) -> str | None:
                 return crs_id
             case _:
                 # A vertical / temporal / identifier system (or a projected one
-                # with no id) does not supply the horizontal CRS; keep looking.
+                # with no id) does not supply the horizontal CRS. Keep looking.
                 pass
 
     return None
@@ -1073,10 +1073,10 @@ def _geographic_crs(crs_id: str | None) -> str:
     """Resolve a geographic system's ``id`` to a CRS string, defaulting to lon/lat.
 
     Honors ``crs_id`` when pyproj can resolve it (mirroring the
-    [`ProjectedCRS`][covjson_msgspec.ProjectedCRS] branch of `_crs`); otherwise (no
+    [`ProjectedCRS`][covjson_msgspec.ProjectedCRS] branch of `_crs`). Otherwise (no
     ``id``, or an unresolvable placeholder like ``"crs"``) falls back to
     `_DEFAULT_GEOGRAPHIC_CRS` (``OGC:CRS84``). CRS84 is lon/lat, matching how the
-    bridge lays out ``x`` / ``y`` geometry; ``EPSG:4326`` names the same datum in
+    bridge lays out ``x`` / ``y`` geometry. ``EPSG:4326`` names the same datum in
     lat/lon authority order, so it is deliberately *not* the fallback.
 
     Parameters
@@ -1101,7 +1101,7 @@ def _geographic_crs(crs_id: str | None) -> str:
     # CoverageJSON's default geographic CRS is WGS84 longitude/latitude (OGC
     # CRS84), which is the lon/lat axis order the bridge builds x / y geometry
     # in. Honor an `id` that pyproj can resolve (mirroring the ProjectedCRS
-    # branch); otherwise (no id, or an unresolvable placeholder like "crs") fall
+    # branch). Otherwise (no id, or an unresolvable placeholder like "crs") fall
     # back to that default rather than failing. Unlike EPSG:4326, whose authority
     # axis order is lat/lon, CRS84 matches the data, so it is the right fallback.
     if crs_id is not None:

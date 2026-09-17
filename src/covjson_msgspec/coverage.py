@@ -57,7 +57,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
 
     ``ranges`` maps each parameter key to its values (an `NdArray`, a
     `TiledNdArray`, or a URL string). A standalone coverage carries its own
-    ``parameters``; a coverage inside a `CoverageCollection` may instead inherit
+    ``parameters``. A coverage inside a `CoverageCollection` may instead inherit
     them (see `CoverageCollection.resolved_coverages`).
 
     Examples
@@ -94,7 +94,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
     (280.0,)
 
     A root JSON-LD ``@context`` (spec section 8) is preserved verbatim through
-    the round trip; see `JsonLdContext` for the value shapes:
+    the round trip. See `JsonLdContext` for the value shapes:
 
     >>> cov = Coverage(
     ...     domain="http://ex/domain.covjson",
@@ -111,7 +111,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
     domain_type: str | UnsetType = UNSET
     parameters: Mapping[str, Parameter] | UnsetType = UNSET
     parameter_groups: tuple[ParameterGroup, ...] | UnsetType = UNSET
-    # JSON-LD @context (spec section 8); see `JsonLdContext`.
+    # JSON-LD @context (spec section 8). See `JsonLdContext`.
     context: JsonLdContext | UnsetType = msgspec.field(name="@context", default=UNSET)
 
     @property
@@ -122,7 +122,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         inline `Domain` (its natural home), and on the `Coverage` itself (a
         denormalized copy, used when the domain is an external URL reference, or
         supplied by a `CoverageCollection` that declares the type once for all
-        members; see `CoverageCollection.resolved_coverages`). When both are
+        members: see `CoverageCollection.resolved_coverages`). When both are
         present the spec requires them to match, so this prefers the domain's own
         value and falls back to the coverage-level one (which is all that is
         available for a URL-reference domain).
@@ -156,7 +156,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         domain = self.domain
         declared = domain.domain_type if isinstance(domain, Domain) else None
 
-        # `self.domain_type` is `UNSET` when the coverage declares none; the
+        # `self.domain_type` is `UNSET` when the coverage declares none. The
         # trailing `or None` normalizes that back to the property's `str | None`
         # contract so `UnsetType` never escapes this projection.
         return declared or self.domain_type or None
@@ -165,7 +165,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         """Convert this coverage to a CF-aware `xarray.Dataset`.
 
         Requires the ``xarray`` extra. Thin delegate to
-        `covjson_msgspec.xarray.to_xarray`; see it for the full domain/range
+        `covjson_msgspec.xarray.to_xarray`. See it for the full domain/range
         mapping and the conditions it raises on.
 
         Returns
@@ -193,7 +193,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         """Build a `Coverage` from an `xarray.Dataset`.
 
         Requires the ``xarray`` extra. Thin delegate to
-        `covjson_msgspec.xarray.from_xarray`; see it for the role detection, the
+        `covjson_msgspec.xarray.from_xarray`. See it for the role detection, the
         override seams, and the documented lossy points.
 
         Returns
@@ -217,7 +217,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         """Convert this coverage to a tidy `pandas.DataFrame`.
 
         Requires the ``pandas`` extra. Thin delegate to
-        `covjson_msgspec.pandas.to_pandas`; see it for the full domain/range
+        `covjson_msgspec.pandas.to_pandas`. See it for the full domain/range
         mapping, the ``times`` option, and the conditions it raises on.
 
         Returns
@@ -236,7 +236,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         """Convert this coverage to a `geopandas.GeoDataFrame`.
 
         Requires the ``geo`` extra. Thin delegate to
-        `covjson_msgspec.geo.to_geopandas`; see it for the full domain/geometry
+        `covjson_msgspec.geo.to_geopandas`. See it for the full domain/geometry
         mapping, the ``trajectory_as`` and ``times`` options, and the conditions
         it raises on.
 
@@ -255,7 +255,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         """Convert this coverage to a GeoJSON ``FeatureCollection`` mapping.
 
         Requires the ``geo`` extra. Thin delegate to
-        `covjson_msgspec.geo.to_geojson`; see it for the full domain/geometry
+        `covjson_msgspec.geo.to_geojson`. See it for the full domain/geometry
         mapping, the ``trajectory_as`` option, and the conditions it raises on.
 
         Returns
@@ -275,7 +275,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
     ) -> ResolveReport[Coverage]:
         """Inline this coverage's URL-string domain and range references.
 
-        Thin delegate to `covjson_msgspec.references.resolve_references`; see it
+        Thin delegate to `covjson_msgspec.references.resolve_references`. See it
         for the resolution rules, the best-effort ``strategy``, and what it does
         (and does not) follow.
 
@@ -284,14 +284,14 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
         fetch
             A callable mapping a referenced document's URL to its raw bytes.
         strategy
-            How to respond to a reference that fails to fetch or decode; see
+            How to respond to a reference that fails to fetch or decode. See
             `covjson_msgspec.references.resolve_references`.
 
         Returns
         -------
         ResolveReport
             ``report.value`` is a new coverage with its URL references inlined
-            (this instance unchanged when it has none); ``report.failures`` lists
+            (this instance unchanged when it has none). ``report.failures`` lists
             any references a collecting strategy tolerated.
         """
         from covjson_msgspec.references import resolve_references
@@ -306,7 +306,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
     ) -> ResolveReport[Coverage]:
         """Concurrently inline this coverage's URL-string references.
 
-        Thin delegate to `covjson_msgspec.references.resolve_references_async`; the
+        Thin delegate to `covjson_msgspec.references.resolve_references_async`. The
         awaitable counterpart of `resolve_references`, fetching the references
         concurrently.
 
@@ -316,19 +316,19 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
             An awaitable callable mapping a referenced document's URL to its raw
             bytes.
         strategy
-            How to respond to a reference that fails to fetch or decode; see
+            How to respond to a reference that fails to fetch or decode. See
             `covjson_msgspec.references.resolve_references`.
 
         Returns
         -------
         ResolveReport
             ``report.value`` is a new coverage with its URL references inlined
-            (this instance unchanged when it has none); ``report.failures`` lists
+            (this instance unchanged when it has none). ``report.failures`` lists
             any references a collecting strategy tolerated.
         """
         from covjson_msgspec.references import resolve_references_async
 
-        # pyrefly: ignore[bad-return]  Self-typed report; blocking pair accepts it
+        # pyrefly: ignore[bad-return]  Self-typed report. Blocking pair accepts it
         return await resolve_references_async(self, fetch, strategy=strategy)
 
     def isel(
@@ -339,7 +339,7 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
     ) -> Coverage:
         """Subset this coverage by integer position along named axes.
 
-        Thin delegate to `covjson_msgspec.subset.isel`; see it for the selection
+        Thin delegate to `covjson_msgspec.subset.isel`. See it for the selection
         rules (integer drops the axis, slice keeps it) and what is supported.
 
         Parameters
@@ -368,8 +368,8 @@ class Coverage(CovJSONStruct, frozen=True, tag="Coverage"):
     ) -> Coverage:
         """Subset this coverage by coordinate label along named axes.
 
-        Thin delegate to `covjson_msgspec.subset.sel`; see it for the matching
-        rules (exact or ``method="nearest"``; inclusive label slices) and what is
+        Thin delegate to `covjson_msgspec.subset.sel`. See it for the matching
+        rules (exact or ``method="nearest"``, inclusive label slices) and what is
         supported.
 
         Parameters
@@ -443,7 +443,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
     parameters: Mapping[str, Parameter] | UnsetType = UNSET
     parameter_groups: tuple[ParameterGroup, ...] | UnsetType = UNSET
     referencing: tuple[ReferenceSystemConnection, ...] = ()
-    # JSON-LD @context (spec section 8); see `JsonLdContext`.
+    # JSON-LD @context (spec section 8). See `JsonLdContext`.
     context: JsonLdContext | UnsetType = msgspec.field(name="@context", default=UNSET)
 
     def resolved_coverages(self) -> Sequence[Coverage]:
@@ -467,7 +467,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
 
         # Each branch turns on `is UNSET` (the member omitted the field), not
         # truthiness. A present but empty `{}` / `()` is the member declaring
-        # "none of its own"; it must not inherit the collection's value. Do not
+        # "none of its own". It must not inherit the collection's value. Do not
         # "simplify" these to `if not coverage.parameters`: an empty container is
         # falsy yet is not absence, and that swap silently reinstates the
         # graft-on-empty bug this modeling exists to prevent. The present-empty
@@ -497,7 +497,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
         """Convert this collection to an `xarray.DataTree`.
 
         Requires the ``xarray`` extra. Thin delegate to
-        `covjson_msgspec.xarray.to_datatree`; see it for the per-member mapping
+        `covjson_msgspec.xarray.to_datatree`. See it for the per-member mapping
         and the conditions it raises on.
 
         Returns
@@ -524,7 +524,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
         """Build a `CoverageCollection` from an `xarray.DataTree`.
 
         Requires the ``xarray`` extra. Thin delegate to
-        `covjson_msgspec.xarray.from_datatree`; see it for the per-node
+        `covjson_msgspec.xarray.from_datatree`. See it for the per-node
         conversion and the override seams.
 
         Returns
@@ -548,7 +548,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
         """Convert this collection to a single tidy `pandas.DataFrame`.
 
         Requires the ``pandas`` extra. Thin delegate to
-        `covjson_msgspec.pandas.to_pandas`; the resolved members are concatenated
+        `covjson_msgspec.pandas.to_pandas`. The resolved members are concatenated
         under a leading ``coverage`` index level. See it for the per-member
         domain/range mapping, the ``times`` option, and the conditions it raises
         on.
@@ -568,7 +568,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
         """Convert this collection to a single `geopandas.GeoDataFrame`.
 
         Requires the ``geo`` extra. Thin delegate to
-        `covjson_msgspec.geo.to_geopandas`; the resolved members are concatenated
+        `covjson_msgspec.geo.to_geopandas`. The resolved members are concatenated
         with a leading ``coverage`` column identifying each. See it for the
         per-member domain/geometry mapping, the ``trajectory_as`` and ``times``
         options, and the conditions it raises on.
@@ -588,7 +588,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
         """Convert this collection to a GeoJSON ``FeatureCollection`` mapping.
 
         Requires the ``geo`` extra. Thin delegate to
-        `covjson_msgspec.geo.to_geojson`; every member's features carry a
+        `covjson_msgspec.geo.to_geojson`. Every member's features carry a
         ``coverage`` property identifying their source. See it for the per-member
         domain/geometry mapping, the ``trajectory_as`` option, and the conditions
         it raises on.
@@ -610,9 +610,9 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
     ) -> ResolveReport[CoverageCollection]:
         """Inline every member coverage's URL-string references.
 
-        Thin delegate to `covjson_msgspec.references.resolve_references`; see it
+        Thin delegate to `covjson_msgspec.references.resolve_references`. See it
         for the resolution rules and the best-effort ``strategy``. Collection-level
-        inheritance is not applied; call `resolved_coverages` first if you need
+        inheritance is not applied. Call `resolved_coverages` first if you need
         that.
 
         Parameters
@@ -620,14 +620,14 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
         fetch
             A callable mapping a referenced document's URL to its raw bytes.
         strategy
-            How to respond to a reference that fails to fetch or decode; see
+            How to respond to a reference that fails to fetch or decode. See
             `covjson_msgspec.references.resolve_references`.
 
         Returns
         -------
         ResolveReport
             ``report.value`` is a new collection whose members have their URL
-            references inlined; ``report.failures`` lists any references a
+            references inlined. ``report.failures`` lists any references a
             collecting strategy tolerated (each with its ``coverage_index``).
         """
         from covjson_msgspec.references import resolve_references
@@ -642,7 +642,7 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
     ) -> ResolveReport[CoverageCollection]:
         """Concurrently inline every member coverage's URL-string references.
 
-        Thin delegate to `covjson_msgspec.references.resolve_references_async`; the
+        Thin delegate to `covjson_msgspec.references.resolve_references_async`. The
         awaitable counterpart of `resolve_references`, fetching every member's
         references concurrently.
 
@@ -652,19 +652,19 @@ class CoverageCollection(CovJSONStruct, frozen=True, tag="CoverageCollection"):
             An awaitable callable mapping a referenced document's URL to its raw
             bytes.
         strategy
-            How to respond to a reference that fails to fetch or decode; see
+            How to respond to a reference that fails to fetch or decode. See
             `covjson_msgspec.references.resolve_references`.
 
         Returns
         -------
         ResolveReport
             ``report.value`` is a new collection whose members have their URL
-            references inlined; ``report.failures`` lists any references a
+            references inlined. ``report.failures`` lists any references a
             collecting strategy tolerated (each with its ``coverage_index``).
         """
         from covjson_msgspec.references import resolve_references_async
 
-        # pyrefly: ignore[bad-return]  Self-typed report; blocking pair accepts it
+        # pyrefly: ignore[bad-return]  Self-typed report. Blocking pair accepts it
         return await resolve_references_async(self, fetch, strategy=strategy)
 
     def _repr_html_(self) -> str:
@@ -712,7 +712,7 @@ def decode(data: bytes | str) -> CoverageJSON:
     Decoding enforces structure and field types, not cross-cutting spec
     conformance (a domain's ``domainType`` axis rules, range/domain alignment,
     value-vs-``dataType`` matches). A successfully decoded document is not
-    necessarily spec-conformant; call [`validate`][covjson_msgspec.validate] on
+    necessarily spec-conformant. Call [`validate`][covjson_msgspec.validate] on
     the result when you need those guarantees. This permissiveness is deliberate:
     it lets you load a slightly malformed document to inspect or repair it rather
     than failing at the door.

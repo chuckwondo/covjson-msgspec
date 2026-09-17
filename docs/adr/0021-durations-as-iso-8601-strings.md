@@ -27,7 +27,7 @@ path.** msgspec encodes a `datetime.timedelta` as an ISO 8601 duration
 axis path leaned on that by storing raw `timedelta` objects in `Axis.values`.
 That went unnoticed because the bytes came out right. It was wrong in two ways
 regardless: `AxisValue` does not admit `timedelta`, so the stored value was
-off-type and the document had one shape going out and another coming back; and
+off-type and the document had one shape going out and another coming back. And
 because `.tolist()` yields `int` rather than `timedelta` for `ns`, a nanosecond
 duration coordinate was read as an evenly-spaced *numeric* axis and its unit
 left the document entirely. Deciding this for `from_numpy` alone would have
@@ -119,13 +119,13 @@ via msgspec, and `"PT6H"` in a range, and made this ADR false on arrival.
   bridge means calling `to_iso_durations`, not choosing a format again.
 - A `timedelta64[ns]` coordinate is now a listed axis of ISO strings instead of
   bare numbers, so its unit reaches the document. Any consumer reading such an
-  axis as numeric sees a wire-format change; the previous output recorded no
+  axis as numeric sees a wire-format change. The previous output recorded no
   unit at all, so it was not recoverable data.
 - `Axis.values` no longer holds `datetime.timedelta`, so a coverage from
   `from_xarray` compares equal to the same coverage decoded from its own bytes.
 - `to_xarray` returns a duration axis as a string coordinate. Previously an
   unserialized coverage came back as `timedelta64[us]`, but only because
-  `Axis.values` held the off-type `timedelta`; the same coverage decoded from
+  `Axis.values` held the off-type `timedelta`. The same coverage decoded from
   its own JSON already came back as strings. So this replaces a divergence
   between an object and its own bytes with one answer, rather than removing a
   round-trip that worked. A time axis *does* survive the round trip, because
@@ -138,7 +138,7 @@ via msgspec, and `"PT6H"` in a range, and made this ADR false on arrival.
   seconds (`"PT86400S"` for a day). xarray normalizes every coarser-than-second
   duration dtype to `timedelta64[s]` when a `Dataset` is built, so the declared
   unit is gone before the bridge sees it. We are faithful to what we are
-  handed; `NdArray.from_numpy` called directly preserves `"P1D"`.
+  handed. `NdArray.from_numpy` called directly preserves `"P1D"`.
 - A caller wanting numbers out of a duration array converts it first. The
   refusal is a `ValueError` that names that remedy.
 - Revisit if CoverageJSON gains a duration `dataType`, or if a consumer appears

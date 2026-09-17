@@ -16,23 +16,23 @@ years / months / days SHOULD use one of five ISO 8601 lexical forms:
   ``"+102018"``), for years outside the four-digit range.
 - ``YYYY-MM``: a year and month.
 - ``YYYY-MM-DD``: a complete date.
-- ``YYYY-MM-DDThh:mm:ss[.f]Z``: a date and time; the trailing ``Z`` (or a
+- ``YYYY-MM-DDThh:mm:ss[.f]Z``: a date and time. The trailing ``Z`` (or a
   ``±hh:mm`` offset) is required, so a naive time is not one of the forms.
 
 `resolve` classifies a string into one of three outcomes:
 
 - `Moment`: a valid form representable as a `datetime`, filled to the start of
   the period for the reduced forms, with the detected `Precision` recorded. It is
-  timezone-aware exactly when it carries a ``Z`` / offset (i.e., second precision);
-  the date and reduced forms are naive, as they carry no zone to attach.
+  timezone-aware exactly when it carries a ``Z`` / offset (i.e., second precision).
+  The date and reduced forms are naive, as they carry no zone to attach.
 - `Unrepresentable`: a valid form a stdlib `datetime` cannot hold, namely a year
   outside ``1..9999`` (an expanded year, or ``"0000"``), or a leap second
-  (``":60"``). The raw string is preserved; cftime or numpy ``datetime64[s]`` are
+  (``":60"``). The raw string is preserved. Cftime or numpy ``datetime64[s]`` are
   the escape hatch for these.
 - `Malformed`: a string matching none of the five forms.
 
 `to_datetime` is the thin convenience for the common "just give me a datetime"
-case; `resolve` is the full, information-preserving result. Both are pure
+case. `resolve` is the full, information-preserving result. Both are pure
 functions of the string alone: a ``timeScale`` (e.g., TAI) is not interpreted, and
 the stored value is never mutated.
 
@@ -53,7 +53,7 @@ class Precision(enum.StrEnum):
     """How much of a `Moment` its source string actually specified.
 
     The reduced forms are filled to the start of the period, so ``"2020"`` and
-    ``"2020-01-01T00:00:00Z"`` can both yield a January 1st `datetime`; this
+    ``"2020-01-01T00:00:00Z"`` can both yield a January 1st `datetime`. This
     records which one the value really pinned down.
     """
 
@@ -71,7 +71,7 @@ class Moment(msgspec.Struct, frozen=True):
     when
         The point in time, filled to the start of the period for the reduced
         forms. It is timezone-aware exactly when the source carried a ``Z`` /
-        offset (i.e., [`SECOND`][covjson_msgspec.temporal.Precision]); the date and
+        offset (i.e., [`SECOND`][covjson_msgspec.temporal.Precision]). The date and
         reduced forms are naive.
     precision
         How much of ``when`` the source string actually specified.
@@ -107,7 +107,7 @@ TemporalResult = Moment | Unrepresentable | Malformed
 
 
 # One anchored pattern per form family (the ``±XYYYY`` expanded year requires a
-# sign then five or more digits; the datetime form requires a trailing ``Z`` or
+# sign then five or more digits: the datetime form requires a trailing ``Z`` or
 # ``±hh:mm`` offset). Digits use ``[0-9]`` to stay ASCII only, as ISO 8601
 # requires (bare ``\d`` would also match non-ASCII digits, e.g., Arabic-Indic).
 # ``[0-9]`` is preferred over the equivalent ``\d`` + ``re.ASCII`` for speed: it
@@ -328,7 +328,7 @@ def _resolve_datetime_form(value: str) -> TemporalResult:
     The pure-Python classifier for the ``YYYY-MM-DDThh:mm:ss`` form, kept as the
     fallback for the rare inputs `resolve`'s fast path routes here: those
     ``msgspec.convert`` rejects. A leap second is a valid form a ``datetime``
-    cannot hold, so it is `Unrepresentable`; anything the pattern does not match,
+    cannot hold, so it is `Unrepresentable`. Anything the pattern does not match,
     or that ``fromisoformat`` then rejects (an out-of-range month, say), is
     `Malformed`. Named for its mechanism, not its strictness: the fast path
     enforces the identical spec form, so this is not the "strict" one.
@@ -341,7 +341,7 @@ def _resolve_datetime_form(value: str) -> TemporalResult:
     Malformed(value='2020-13-01T00:00:00Z')
     """
     if (m := _DATETIME.fullmatch(value)) is not None:
-        # A leap second is a valid form ``datetime`` rejects; seconds above 60
+        # A leap second is a valid form ``datetime`` rejects. Seconds above 60
         # fail ``fromisoformat`` and fall through to `Malformed`.
         return (
             Unrepresentable(value)

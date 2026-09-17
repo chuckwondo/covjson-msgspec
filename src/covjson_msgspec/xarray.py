@@ -8,8 +8,8 @@ read by the wider CF-aware ecosystem. A `CoverageCollection` maps to an
 Mapping
 -------
 - Each parameter range becomes a data variable, with its ``axisNames`` as dims.
-- An individual (multi-valued) primitive axis becomes a dimension coordinate;
-  a single-valued axis becomes a scalar coordinate (the size-1 dimension is
+- An individual (multi-valued) primitive axis becomes a dimension coordinate.
+  A single-valued axis becomes a scalar coordinate (the size-1 dimension is
   dropped, a documented round-trip loss).
 - A composite ``tuple`` axis (e.g. a trajectory) becomes one dimension with one
   non-dimension coordinate per tuple component (the tuples are transposed).
@@ -19,11 +19,11 @@ Mapping
   (geographic or projected) system adds a ``grid_mapping`` variable carrying its
   ``id``, and a vertical system sets ``positive`` up/down.
 - A continuous parameter contributes ``units`` (and ``standard_name`` /
-  ``long_name``); a categorical parameter contributes CF ``flag_values`` /
+  ``long_name``). A categorical parameter contributes CF ``flag_values`` /
   ``flag_meanings``.
 
 Polygon domains carry vector geometry rather than a grid, so they belong in the
-geopandas bridge; `to_xarray` rejects them.
+geopandas bridge. `to_xarray` rejects them.
 
 Spec: [Coverage objects](https://github.com/covjson/specification/blob/master/spec.md#64-coverage-objects).
 """
@@ -121,7 +121,7 @@ def to_xarray(coverage: Coverage) -> xr.Dataset:
     Raises
     ------
     ModuleNotFoundError
-        If the bridge's dependencies are not installed; install
+        If the bridge's dependencies are not installed. Install
         ``covjson-msgspec[xarray]``.
     ValueError
         If the domain is a URL reference, the domain type is a polygon type
@@ -220,7 +220,7 @@ def from_xarray(
 ) -> Coverage:
     """Build a `Coverage` from an `xarray.Dataset`.
 
-    Requires the ``xarray`` extra. This is the inverse of `to_xarray`; a dataset
+    Requires the ``xarray`` extra. This is the inverse of `to_xarray`. A dataset
     produced by `to_xarray` round-trips back to an equivalent coverage. The axis
     roles (x / y / z / t) are detected from CF attributes and common coordinate
     names, and can be pinned explicitly when detection is wrong or ambiguous.
@@ -381,7 +381,7 @@ def to_datatree(collection: CoverageCollection) -> xr.DataTree:
     ------
     ModuleNotFoundError
         If the bridge's dependencies are not installed, or the installed xarray
-        predates [`DataTree`][xarray.DataTree]; install
+        predates [`DataTree`][xarray.DataTree]. Install
         ``covjson-msgspec[xarray]``.
     ValueError
         If any member cannot be converted by `to_xarray` (e.g. a polygon
@@ -682,7 +682,7 @@ def _build_coords(
     """Turn a domain's axes into xarray coordinate variables.
 
     Each primitive axis becomes one coordinate (single-valued axes collapse to a
-    scalar coordinate, dropping the size-1 dimension); a composite (``tuple``)
+    scalar coordinate, dropping the size-1 dimension). A composite (``tuple``)
     axis is transposed into one non-dimension coordinate per component, all along
     the composite's single dimension. Each coordinate is built by `_coordinate`,
     which attaches CF attributes from ``systems`` / ``geo_roles``.
@@ -746,7 +746,7 @@ def _coordinate(
     """Build one coordinate `_Variable`, with CF attributes from its system / role.
 
     A temporal coordinate has its values parsed to ``datetime64`` / cftime by
-    `_parse_times`; otherwise the geographic role (longitude / latitude / height)
+    `_parse_times`. Otherwise the geographic role (longitude / latitude / height)
     or a vertical system (`_vertical_attrs`) supplies CF ``standard_name`` /
     ``units`` / ``positive``. A ``scalar`` coordinate drops its dimension and
     keeps the single value.
@@ -803,11 +803,11 @@ def _parse_times(column: Sequence[Any], calendar: str) -> npt.NDArray[Any]:
     """Parse ISO time strings into a numpy time array, picking datetime64 or cftime.
 
     A standard-calendar column is parsed to ``datetime64[ns]`` when it fits
-    numpy's nanosecond range; a non-standard calendar (or dates outside that
+    numpy's nanosecond range. A non-standard calendar (or dates outside that
     range) falls back to an object array of cftime datetimes (`_to_cftime`). A
     trailing ``"Z"`` is stripped first (numpy treats naive times as UTC) and
     ``None`` entries are preserved. On a standard calendar a ``±hh:mm`` offset is
-    applied and the value flattened to naive-UTC; the cftime path drops it instead
+    applied and the value flattened to naive-UTC. The cftime path drops it instead
     (`_to_cftime`).
 
     Parameters
@@ -829,12 +829,12 @@ def _parse_times(column: Sequence[Any], calendar: str) -> npt.NDArray[Any]:
     import numpy as np
 
     # This bridge classifies by calendar + container range (a standard calendar
-    # stays datetime64, at the resolution that fits it; a non-standard calendar
+    # stays datetime64, at the resolution that fits it: a non-standard calendar
     # goes to cftime), not via temporal.resolve(). The two are different
     # functions with different codomains: resolve has no cftime arm and cannot
     # see the calendar, so it is deliberately not the decider here. See ADR-0015.
     normalized = calendar.rsplit("/", 1)[-1].lower()
-    # ISO 8601 may carry a trailing "Z"; numpy treats naive times as UTC.
+    # ISO 8601 may carry a trailing "Z". Numpy treats naive times as UTC.
     cleaned = [
         None if value is None else str(value).removesuffix("Z") for value in column
     ]
@@ -843,7 +843,7 @@ def _parse_times(column: Sequence[Any], calendar: str) -> npt.NDArray[Any]:
         # Parse to microseconds first: datetime64[us] holds any Gregorian year,
         # so a spec-valid far-past/future date is never int64-wrapped the way a
         # direct datetime64[ns] parse silently would (numpy#9956). Narrow to the
-        # finer ns resolution only when the whole column fits its window; else
+        # finer ns resolution only when the whole column fits its window. Else
         # keep [us], which xarray preserves (the >= 2025.01.2 floor). A standard
         # date outside the ns window is a resolution/range matter, not a calendar
         # one, so it stays a native datetime64 rather than falling back to cftime.
@@ -853,7 +853,7 @@ def _parse_times(column: Sequence[Any], calendar: str) -> npt.NDArray[Any]:
         # both warn and (correctly) flatten. Doing the flatten ourselves yields the
         # identical result while emitting no warning and mutating no global state
         # (`warnings.catch_warnings()` edits a process-global filter and is not
-        # thread-safe). Only offset-bearing values pay the per-value cost; a
+        # thread-safe). Only offset-bearing values pay the per-value cost. A
         # common all-``Z`` / naive axis stays a single vectorized parse. See
         # ADR-0015.
         utc = [None if value is None else _fold_offset(value) for value in cleaned]
@@ -878,7 +878,7 @@ def _fold_offset(value: str) -> str:
     A value carrying a numeric offset (a Spec 5.2 form, e.g. ``+05:00``) is
     converted to the equivalent UTC instant with its zone dropped, so the
     standard-calendar path can hand numpy a naive string. numpy has no timezone
-    type and would otherwise warn while performing this same flatten; folding it
+    type and would otherwise warn while performing this same flatten. Folding it
     here keeps the result identical, emits no warning, and mutates no global
     warning state. A value with no offset (already ``Z``-stripped, naive, or a
     reduced form) is returned unchanged, so only offset-bearing values pay the
@@ -912,7 +912,7 @@ def _fold_offset(value: str) -> str:
 def _fits_ns_window(times: npt.NDArray[Any]) -> bool:
     """Whether every non-``NaT`` value fits numpy's ``datetime64[ns]`` window.
 
-    numpy's nanosecond datetime spans roughly 1677-09-21 to 2262-04-11; a value
+    numpy's nanosecond datetime spans roughly 1677-09-21 to 2262-04-11. A value
     outside it int64-*wraps* on conversion (numpy#9956) rather than raising, so
     `_parse_times` tests the range explicitly before narrowing a wider array to
     ``ns``. The bounds are taken one second inside the true limits so the test is
@@ -930,7 +930,7 @@ def _fits_ns_window(times: npt.NDArray[Any]) -> bool:
     -------
     bool
         ``True`` when every non-``NaT`` value lies within the ``ns`` window, so
-        the array narrows to ``datetime64[ns]`` losslessly; else ``False``.
+        the array narrows to ``datetime64[ns]`` losslessly. Else ``False``.
 
     Examples
     --------
@@ -1097,7 +1097,7 @@ def _data_variable(
     """Build a data-variable `_Variable` from one parameter range.
 
     The range's ``axisNames`` become the variable's dims and its values the data
-    ([`to_numpy`][covjson_msgspec.NdArray.to_numpy]); CF attributes come from the
+    ([`to_numpy`][covjson_msgspec.NdArray.to_numpy]). CF attributes come from the
     matching parameter via `_variable_attrs`.
 
     Parameters
@@ -1105,7 +1105,7 @@ def _data_variable(
     key
         The range key (also used to find its parameter).
     range_
-        The range; must be an inline [`NdArray`][covjson_msgspec.NdArray].
+        The range. Must be an inline [`NdArray`][covjson_msgspec.NdArray].
     parameters
         The coverage's parameters, or ``None`` when undescribed.
 
@@ -1217,7 +1217,7 @@ def _standard_name(identifier: str | None) -> str | None:
     >>> _standard_name(None) is None
     True
     """
-    # An observedProperty id is typically a URI; CF wants the bare term, so take
+    # An observedProperty id is typically a URI. CF wants the bare term, so take
     # the last path or fragment segment.
     return (
         None
@@ -1231,7 +1231,7 @@ def _unit_symbol(unit: Unit) -> str | None:
 
     A unit's ``symbol`` is either a bare string or a
     [`parameter`][covjson_msgspec.parameter] ``Symbol`` object (a value plus a type
-    URI); this returns the string in either case, or ``None`` when the unit has only a
+    URI). This returns the string in either case, or ``None`` when the unit has only a
     label.
 
     Parameters
@@ -1283,7 +1283,7 @@ def _flags(
         ``(flag_values, flag_meanings)``: the integer codes and the space-joined
         meanings string.
     """
-    # CF flag_values are 1:1 with meanings; build the pairs together so they
+    # CF flag_values are 1:1 with meanings. Build the pairs together so they
     # cannot drift, then split them. A multi-code category keeps its first code
     # (a documented simplification).
     pairs = [
@@ -1299,7 +1299,7 @@ def _flag_meaning(label: I18n) -> str:
     """Turn a category label into a single CF ``flag_meanings`` token.
 
     CF ``flag_meanings`` is a whitespace-delimited list, so each meaning must be
-    one token; this takes the display label ([`display`][covjson_msgspec.i18n.display])
+    one token. This takes the display label ([`display`][covjson_msgspec.i18n.display])
     and joins its words with underscores.
 
     Parameters
@@ -1343,7 +1343,7 @@ def _detect_roles(
 ) -> Mapping[str, str | None]:
     """Decide which dataset coordinate fills each x / y / z / t role.
 
-    Explicit overrides (``x`` / ``y`` / ``z`` / ``t`` arguments) win; the rest are
+    Explicit overrides (``x`` / ``y`` / ``z`` / ``t`` arguments) win. The rest are
     inferred from each coordinate's CF attributes and common names (`_role_of`).
     A coordinate is never assigned to two roles, and an already-taken name is
     skipped, so detection is stable.
@@ -1360,7 +1360,7 @@ def _detect_roles(
     mapping
         Each role mapped to a coordinate name, or ``None`` when unfilled.
     """
-    # Explicit overrides win; remaining roles are filled from CF attributes and
+    # Explicit overrides win. Remaining roles are filled from CF attributes and
     # common coordinate names, never reusing a coordinate already assigned.
     roles = {"x": x, "y": y, "z": z, "t": t}
     taken = {name for name in roles.values() if name is not None}
@@ -1579,7 +1579,7 @@ def _role_axis(
 ) -> _AxisEntry:
     """Build one x / y / z / t role's axis entry from its coordinate.
 
-    A 0-D coordinate yields a single-valued listed axis that maps no dimension; a
+    A 0-D coordinate yields a single-valued listed axis that maps no dimension. A
     1-D coordinate (a dimension coordinate, or an auxiliary one whose name differs
     from its dimension) an axis keyed by its dimension, so a range's dims resolve
     through that dimension. A 2-D coordinate is a curvilinear (non-separable) grid,
@@ -1600,7 +1600,7 @@ def _role_axis(
     Returns
     -------
     _AxisEntry
-        The entry; its ``dim`` is the coordinate's dimension, or ``None`` for a
+        The entry. Its ``dim`` is the coordinate's dimension, or ``None`` for a
         scalar (0-D) coordinate.
 
     Raises
@@ -1709,7 +1709,7 @@ def _leftover_axis(dataset: xr.Dataset, key: str, compact_regular: bool) -> Axis
     """The axis for a leftover dimension: its coordinate values, or an integer index.
 
     A dimension with a coordinate variable takes that coordinate's values
-    (`_axis_from_coord`); a bare index dimension (no coordinate) gets a plain
+    (`_axis_from_coord`). A bare index dimension (no coordinate) gets a plain
     integer-index axis so its range data is not orphaned.
 
     Parameters
@@ -1753,8 +1753,8 @@ def _leftover_axes(
 ) -> Iterator[_AxisEntry]:
     """Yield an axis for each kept-range dimension not already mapped to an axis.
 
-    A coverage axis is a dimension some kept range rides on (`_kept_range_dims`);
-    one that a role or composite axis has not already claimed becomes an axis under
+    A coverage axis is a dimension some kept range rides on (`_kept_range_dims`).
+    One that a role or composite axis has not already claimed becomes an axis under
     its own name (`_leftover_axis`: its coordinate values, or an integer index). A
     dimension living only in skipped variables (a bounds variable's vertex
     dimension) is not among the kept dims, so it is never promoted.
@@ -1773,13 +1773,13 @@ def _leftover_axes(
     Yields
     ------
     _AxisEntry
-        An entry per promoted dimension; its key and dim are both the dimension
+        An entry per promoted dimension. Its key and dim are both the dimension
         name.
 
     Examples
     --------
     A dimension a range uses that has no coordinate (``band``) becomes an
-    integer-index axis; an already-mapped dimension (``lat``) is skipped:
+    integer-index axis. An already-mapped dimension (``lat``) is skipped:
 
     >>> import numpy as np
     >>> import xarray as xr
@@ -1983,7 +1983,7 @@ def _coord_values(coord: xr.DataArray) -> Sequence[Any]:
     """Read a coordinate's values into a sequence, ready for a CoverageJSON axis.
 
     A time coordinate is rendered as ISO 8601 strings (`_time_to_iso`) and a
-    duration coordinate as ISO 8601 durations (`to_iso_durations`); any other
+    duration coordinate as ISO 8601 durations (`to_iso_durations`). Any other
     coordinate is converted straight to a tuple. This is the one place a
     coordinate's values are read, so `_axis_from_coord`, `_scalar`, and the
     composite-axis columns in `_build_axes` all agree on the conversions.
@@ -2034,7 +2034,7 @@ def _time_to_iso(coord: xr.DataArray) -> Sequence[str]:
     """Render a time coordinate's values as ISO 8601 strings for a CoverageJSON axis.
 
     A ``datetime64`` value is narrowed to microsecond resolution (datetime's
-    limit) and suffixed with ``"Z"``; a cftime value uses its own
+    limit) and suffixed with ``"Z"``. A cftime value uses its own
     ``isoformat``. A missing value (NaT or ``None``) has no faithful axis
     representation, so it raises via `_raise_missing_time`.
 
@@ -2060,7 +2060,7 @@ def _time_to_iso(coord: xr.DataArray) -> Sequence[str]:
     >>> import xarray as xr
 
     Any remaining object value is stringified as a last resort (a real time
-    coordinate is ``datetime64`` or cftime; those paths are exercised by the
+    coordinate is ``datetime64`` or cftime: those paths are exercised by the
     bridge round-trip tests):
 
     >>> _time_to_iso(xr.DataArray(np.array(["2001", "2002"], dtype=object)))
@@ -2125,7 +2125,7 @@ def _raise_missing_time(coord: xr.DataArray) -> NoReturn:
 def _calendar(coord: xr.DataArray) -> str:
     """Read the calendar name from a time coordinate, defaulting to Gregorian.
 
-    A cftime coordinate carries its calendar on each element; a numpy
+    A cftime coordinate carries its calendar on each element. A numpy
     ``datetime64`` coordinate has none, so it is reported as the standard
     ``"Gregorian"`` calendar for the rebuilt
     [`TemporalRS`][covjson_msgspec.TemporalRS].
@@ -2158,7 +2158,7 @@ def _build_referencing(
 
     Emits up to three connections: a horizontal system over ``(x, y)`` (its class
     and ``id`` recovered from the CF ``crs`` grid-mapping variable when present,
-    written by `_crs_coordinate`; geographic by default), a
+    written by `_crs_coordinate`, geographic by default), a
     [`VerticalCRS`][covjson_msgspec.VerticalCRS] over ``z``, and a
     [`TemporalRS`][covjson_msgspec.TemporalRS] over ``t`` (its calendar from
     `_calendar`). A role that is absent contributes no connection.
@@ -2224,7 +2224,7 @@ def _infer_domain_type(
 
     A composite axis means ``"Trajectory"``. Otherwise, a role counts only when its
     coordinate varies along a dimension (a 1-D coordinate, not a scalar): ``x`` and
-    ``y`` both gridded give ``"Grid"``; with point-like ``x`` / ``y`` it is
+    ``y`` both gridded give ``"Grid"``. With point-like ``x`` / ``y`` it is
     ``"PointSeries"``
     (``t`` varies), ``"VerticalProfile"`` (``z`` varies), or ``"Point"`` (neither).
     Anything else is left unset (``None``).
@@ -2296,8 +2296,8 @@ def _is_grid_mapping(variable: xr.DataArray) -> bool:
 def _bounds_variable_names(dataset: xr.Dataset) -> frozenset[str]:
     """Names of a dataset's CF bounds variables (cell-edge arrays, not data).
 
-    A bounds variable is named in a coordinate's ``bounds`` attribute (CF 7.1);
-    a ``_bnds`` / ``_bounds`` name suffix is a fallback for datasets that omit the
+    A bounds variable is named in a coordinate's ``bounds`` attribute (CF 7.1).
+    A ``_bnds`` / ``_bounds`` name suffix is a fallback for datasets that omit the
     attribute. Bounds variables hold no measurements, and their extra vertex
     dimension is not a coverage axis, so both range-building and axis-building
     skip them.
@@ -2361,7 +2361,7 @@ def _kept_range_dims(dataset: xr.Dataset) -> frozenset[str]:
 
     Examples
     --------
-    The bounds variable's vertex dimension (``nv``) is excluded; the data
+    The bounds variable's vertex dimension (``nv``) is excluded. The data
     variable's own dimensions are kept:
 
     >>> import numpy as np

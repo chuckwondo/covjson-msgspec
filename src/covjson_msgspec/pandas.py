@@ -17,7 +17,7 @@ Mapping
 -------
 - Each parameter range becomes a column.
 - Each multi-valued individual axis becomes an index level (the index is a
-  ``MultiIndex`` when more than one axis varies); a single-valued axis becomes a
+  ``MultiIndex`` when more than one axis varies). A single-valued axis becomes a
   constant column (its size-1 dimension is dropped, a documented round-trip loss).
 - A composite ``tuple`` axis (e.g. a trajectory) becomes one index level holding
   the row position, with one column per tuple component (the tuples are
@@ -28,9 +28,9 @@ Mapping
   string the document carried.
 
 A multi-dimensional domain (e.g. Grid) is flattened to long form with a
-``MultiIndex`` over its axes; for gridded data the xarray bridge is usually the
+``MultiIndex`` over its axes. For gridded data the xarray bridge is usually the
 better fit. Polygon domains carry vector geometry, so they belong in the
-geopandas bridge; `to_pandas` rejects them.
+geopandas bridge. `to_pandas` rejects them.
 
 A `CoverageCollection` is converted by concatenating its resolved members into
 one frame, prefixing each member's index with a leading ``coverage`` level that
@@ -110,7 +110,7 @@ def to_pandas(
     Raises
     ------
     ModuleNotFoundError
-        If the bridge's dependencies are not installed; install
+        If the bridge's dependencies are not installed. Install
         ``covjson-msgspec[pandas]``.
     ValueError
         If a domain is a URL reference, a domain type is a polygon type
@@ -284,7 +284,7 @@ def _coverage_to_pandas(coverage: Coverage, times: TimeValues) -> pd.DataFrame:
     Parameters
     ----------
     coverage
-        The coverage to convert; its ``domain`` must be an inline `Domain`.
+        The coverage to convert. Its ``domain`` must be an inline `Domain`.
     times
         How temporal coordinates reach the frame (see `to_pandas`). ``"raw"``
         resolves no temporal coordinates at all, so `_axis_layout` parses
@@ -412,13 +412,13 @@ class _AxisLayout:
     """The axes of a domain sorted into the roles a `DataFrame` gives them.
 
     ``dims`` are the multi-valued axes (and composite axes) that become index
-    levels; ``sizes`` is their length; ``values`` their index labels.
-    ``scalars`` are the single-valued axes that become constant columns;
+    levels. ``sizes`` is their length. ``values`` their index labels.
+    ``scalars`` are the single-valued axes that become constant columns.
     ``composite_columns`` are the per-component columns of each composite axis.
     """
 
     def __init__(self) -> None:
-        """Start with every role empty; `_axis_layout` fills them from a domain."""
+        """Start with every role empty. `_axis_layout` fills them from a domain."""
         self.dims: list[str] = []
         self.sizes: dict[str, int] = {}
         self.values: dict[str, Any] = {}
@@ -430,9 +430,9 @@ def _axis_layout(domain: Domain, temporal: Set[str]) -> _AxisLayout:
     """Sort a domain's axes into the `_AxisLayout` roles a frame gives them.
 
     Each axis lands in exactly one role: a composite (``tuple``) axis becomes one
-    index dim plus a column per component (the tuples transposed); a
+    index dim plus a column per component (the tuples transposed). A
     single-valued axis becomes a constant scalar column (its size-1 dimension
-    dropped); any other multi-valued axis becomes an index dim. Temporal axes
+    dropped). Any other multi-valued axis becomes an index dim. Temporal axes
     named in ``temporal`` have their values parsed to datetimes along the way.
 
     Parameters
@@ -509,8 +509,8 @@ def _axis_layout(domain: Domain, temporal: Set[str]) -> _AxisLayout:
 def _index(layout: _AxisLayout) -> pd.Index[Any]:
     """Build the frame index from a layout's varying dims.
 
-    No varying axis gives a length-1 [`RangeIndex`][pandas.RangeIndex] (one row); a
-    single dim gives a flat [`Index`][pandas.Index]; two or more give a
+    No varying axis gives a length-1 [`RangeIndex`][pandas.RangeIndex] (one row). A
+    single dim gives a flat [`Index`][pandas.Index]. Two or more give a
     [`MultiIndex`][pandas.MultiIndex] over their Cartesian product, in ``dims`` order
     (matching the row-major ravel that `broadcast` uses for the columns).
 
@@ -540,8 +540,8 @@ def _index(layout: _AxisLayout) -> pd.Index[Any]:
     if len(layout.dims) == 1:
         name = layout.dims[0]
         # The label data is heterogeneous (dict[str, Any]), so pandas-stubs
-        # widens the constructed index to Any; narrow it back to the return type.
-        # mypy requires this cast (it widens pd.Index to Any here); basedpyright
+        # widens the constructed index to Any. Narrow it back to the return type.
+        # mypy requires this cast (it widens pd.Index to Any here). Basedpyright
         # disagrees and calls it redundant, so silence its lone complaint.
         return cast(  # pyright: ignore[reportUnnecessaryCast]
             "pd.Index[Any]", pd.Index(layout.values[name], name=name)

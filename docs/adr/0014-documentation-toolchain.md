@@ -19,8 +19,8 @@ taste does:
   example `to_xarray(coverage: Coverage) -> xr.Dataset`) but import that
   dependency only under `TYPE_CHECKING` (and lazily inside helper bodies), so
   the bridge names have no runtime binding.
-- The workflow is pure uv; the README, ADRs, and comparison are already
-  Markdown; and code examples are already executable and CI-verified as doctests
+- The workflow is pure uv. The README, ADRs, and comparison are already
+  Markdown, and code examples are already executable and CI-verified as doctests
   (`--doctest-modules`), so "executable examples" is a solved problem here.
 
 The surrounding ecosystem is also in flux. As of mid-2026 the MkDocs project is
@@ -56,7 +56,7 @@ configuration. Static extraction is the tool-level expression of the same design
 choice that put those imports under `TYPE_CHECKING` in the first place.
 
 The choice is really "static griffe extraction over a Markdown-native, pure-uv
-engine"; the engine is the swappable part. Because `properdocs.yml` is
+engine". The engine is the swappable part. Because `properdocs.yml` is
 MkDocs-1.x-schema YAML and mkdocstrings both emits and consumes the Sphinx
 `objects.inv` inventory format, the durable investment (Markdown content,
 numpy-style docstrings, griffe extraction, and the cross-project inventories) is
@@ -72,9 +72,9 @@ how the API reference is extracted. We use **Material for MkDocs**, the de-facto
 standard MkDocs theme. Two things earn it the slot. mkdocstrings emits its API
 reference in specific CSS classes (`.doc`, `.doc-heading`, `.doc-signature`,
 ...) that Material styles out of the box, so the reference looks right with no
-styling work; and it ships the things every docs site needs (enhanced search, a
+styling work, and it ships the things every docs site needs (enhanced search, a
 light/dark toggle, a responsive layout) at near-zero configuration. Material is
-in maintenance mode (fixes through Nov 2026; its forward path is Zensical's
+in maintenance mode (fixes through Nov 2026: its forward path is Zensical's
 built-in theming), which does not affect using it but does shape how far we
 customize it.
 
@@ -82,7 +82,7 @@ Material is built to be customized, along a ladder of increasing power and
 increasing coupling:
 
 1. **Config**: `palette` (colors), `font`, `logo`, `favicon`, feature flags. No
-   code; upgrade-proof.
+   code. Upgrade-proof.
 2. **`extra_css` overriding Material's CSS custom properties**
    (`--md-primary-fg-color`, the `--md-typeset-*` type scale, per-scheme
    `[data-md-color-scheme]` selectors, and the mkdocstrings `.doc-*` classes).
@@ -95,7 +95,7 @@ increasing coupling:
 **Decision: customize only at rungs 1 and 2.** Config and CSS-variable overrides
 are portable: they survive Material upgrades and, because they do not depend on
 Material's template internals, carry over to a future Zensical migration far
-better than overridden templates would. Rung 3 is the opposite; it is the
+better than overridden templates would. Rung 3 is the opposite. It is the
 investment most likely to be stranded by Material's maintenance mode. The cap is
 also proportionate to the medium: a library's docs site earns more from
 legibility and a clear API reference than from a bespoke visual identity, and
@@ -109,7 +109,7 @@ variables stubbed and commented. The actual visual design is deferred to #21.
 
 ## Alternatives considered
 
-**Sphinx + autodoc (+ MyST).** Rejected. autodoc is import-based; combined with
+**Sphinx + autodoc (+ MyST).** Rejected. autodoc is import-based. Combined with
 `from __future__ import annotations` and `TYPE_CHECKING`-only bridge imports,
 resolving the bridge return types needs the dependencies installed plus
 `autodoc_mock_imports` and typehint configuration, and still fights the
@@ -127,7 +127,7 @@ target should those needs arise.
 **Quarto + quartodoc.** Also griffe-based, so it renders signatures faithfully
 too, and it has the best executable-narrative and multi-format (PDF, book)
 story. Rejected: Quarto is a non-Python system binary, which breaks the pure-uv
-workflow and adds a CLI to install in CI; quartodoc is younger; and its
+workflow and adds a CLI to install in CI. Quartodoc is younger, and its
 executable-docs advantage is largely redundant with the existing doctests. The
 pick only if live computational docs or book output become first-class goals.
 
@@ -136,7 +136,7 @@ and API-reference-only, so it cannot host the narrative pages that #21 and #22
 are.
 
 **nbdev.** Rejected. It is a notebook-as-source-of-truth development
-methodology, not a docs add-on; adopting it means authoring the library in
+methodology, not a docs add-on. Adopting it means authoring the library in
 notebooks, which is incompatible with the `src/` layout, the four strict type
 checkers, and the hand-authored functional core. Its docs are a byproduct of the
 methodology, so there is no way to take only the docs.
@@ -157,10 +157,10 @@ deferred to the eventual migration target rather than the starting engine.
 
 - The `docs` group is dev-only, so the published package's runtime dependency
   contract is unchanged and ADR-0010's wheel-floor policy does not apply to
-  these tools; their floors are simply the versions the toolchain was validated
+  these tools. Their floors are simply the versions the toolchain was validated
   against.
 - Configuration is `properdocs.yml`. A migration to Zensical or MkDocs is a
-  rename (the schema is identical) plus swapping the dependency; the
+  rename (the schema is identical) plus swapping the dependency. The
   reversibility is deliberate, not incidental.
 - API extraction never imports the package or the optional bridges, so the docs
   build stays pure-Python and cannot be broken by a bridge dependency's install
@@ -168,9 +168,9 @@ deferred to the eventual migration target rather than the starting engine.
 - The build loads external `objects.inv` inventories (CPython, numpy, xarray,
   pandas) so bridge signatures cross-link into upstream docs, and it emits our
   own inventory for downstream projects (for example titiler-covjson) to link
-  into. A full build therefore reaches the network; a hermetic build would
+  into. A full build therefore reaches the network. A hermetic build would
   vendor those inventories.
-- Signature formatting reuses the `ruff` already in the `dev` group; without it,
+- Signature formatting reuses the `ruff` already in the `dev` group. Without it,
   signatures still render but are not line-wrapped.
 - Gaps accepted: no back-of-book index (search plus the API navigation cover
   findability) and no first-class figure numbering (a plugin such as
@@ -178,5 +178,5 @@ deferred to the eventual migration target rather than the starting engine.
   if PDF or book output, `numfig`, or `genindex` become first-class goals (which
   points to Sphinx + AutoAPI), or if executable computational narrative becomes
   central (which points to Quarto).
-- Zensical is the tracked future migration; revisit once its mkdocstrings
+- Zensical is the tracked future migration. Revisit once its mkdocstrings
   support reaches cross-reference parity.

@@ -1,7 +1,7 @@
 """Typing-conformance checks for resolve_references' type preservation.
 
-``assert_type`` is a runtime no-op, so this runs (trivially) under pytest too;
-its real value is that the type-checker matrix must agree that the single
+``assert_type`` is a runtime no-op, so this runs (trivially) under pytest too.
+Its real value is that the type-checker matrix must agree that the single
 bound-TypeVar signature preserves the input type into the result
 (Coverage -> ResolveReport[Coverage], CoverageCollection ->
 ResolveReport[CoverageCollection]) rather than widening to the union. The inputs

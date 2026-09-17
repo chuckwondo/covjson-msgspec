@@ -11,7 +11,7 @@ contract: they declare the oldest dependency versions a user may bring. Until
 now this project's floors were none of the three things a contract should be.
 
 - **Arbitrary.** Some were deliberate (`xarray>=2024.10` for `DataTree`,
-  `fastapi>=0.110` for the titiler coupling); others were set once and never
+  `fastapi>=0.110` for the titiler coupling). Others were set once and never
   revisited (`msgspec>=0.18`, `geopandas>=0.14`) with no recorded reason.
 - **Untested.** CI only ever resolved the *latest* versions, so every floor was
   an unverified claim. Issue #14 added new msgspec usage
@@ -38,7 +38,7 @@ only by a deliberate, recorded decision, not by default.
 
 Applying (b) is not optional bookkeeping: it moved a floor. `cftime>=1.6` looked
 fine and passed locally, but cftime is Cython-compiled and its first release
-with a `cp311` wheel is 1.6.2 (1.6.0 and 1.6.1 have none); the local pass came
+with a `cp311` wheel is 1.6.2 (1.6.0 and 1.6.1 have none). The local pass came
 only from this machine building the sdist. The floor is now `cftime>=1.6.2`.
 
 Two structural facts shape the rest of the audit:
@@ -79,7 +79,7 @@ lower bounds. Floors rise only by the deliberate decision principle 1 describes.
 ## Alternatives considered
 
 - **A one-off audit with no test and no ADR.** Fixes the current numbers but not
-  the process; the floors drift back to untested and arbitrary on the next
+  the process. The floors drift back to untested and arbitrary on the next
   dependency change. Rejected: the durable problem is the absence of a principle
   and a verification, not the specific stale numbers.
 - **Test only the `highest` resolution (the status quo).** Cheapest, but it is
@@ -104,7 +104,7 @@ lower bounds. Floors rise only by the deliberate decision principle 1 describes.
   disproportionate: it multiplies CI jobs for reach that the common, all-extras
   install never delivers. The full cross with all extras synced is the scope.
 - **Keep letting Dependabot raise floors and just review the PRs.** Every such
-  PR narrows compatibility by default and must be argued down one at a time;
+  PR narrows compatibility by default and must be argued down one at a time.
   `lockfile-only` inverts the default so a floor moves only when we mean it to.
   Rejected.
 
@@ -112,7 +112,7 @@ lower bounds. Floors rise only by the deliberate decision principle 1 describes.
 
 - Every runtime floor now carries a one-line rationale in `pyproject.toml` and
   is verified green at `lowest-direct` across Python 3.11 to 3.14. `cftime` rose
-  to `1.6.2` (wheel availability); every other floor held, now with a recorded
+  to `1.6.2` (wheel availability). Every other floor held, now with a recorded
   reason.
 - The `test` job gains a single `lowest-direct` leg on the Python floor
   alongside the full `highest` matrix. That leg re-resolves each run (it cannot
@@ -127,9 +127,9 @@ lower bounds. Floors rise only by the deliberate decision principle 1 describes.
   feature (the job surfaces a real incompatibility) priced as an occasional
   maintenance nudge, not a reason to weaken the job.
 - `versioning-strategy: lockfile-only` leaves transitive lock entries stale over
-  time (dependabot-core#14073); a periodic `uv lock --upgrade` covers it if the
+  time (dependabot-core#14073). A periodic `uv lock --upgrade` covers it if the
   lockfile's transitive freshness ever matters.
 - Out of scope, unchanged: dev-tooling floors in `[dependency-groups]` (not a
   user contract) and the Python floor itself (`>=3.11`, gated on titiler per
-  ADR-0001). No upper bounds are introduced; libraries avoid artificial
+  ADR-0001). No upper bounds are introduced. Libraries avoid artificial
   ceilings.

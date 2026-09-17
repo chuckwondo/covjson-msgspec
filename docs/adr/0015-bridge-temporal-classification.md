@@ -30,7 +30,7 @@ scale offset +|-HH:MM." So a numeric offset is a spec form and a naive time
 ## Decision
 
 **The bridges classify by calendar + container range, not by `resolve`'s string
-verdict; `resolve` is not their decider.** [ADR-0008]'s follow-up is resolved as
+verdict. `resolve` is not their decider.** [ADR-0008]'s follow-up is resolved as
 "will not route."
 
 The load-bearing reason is not a cost tradeoff: **the three paths are different
@@ -47,24 +47,24 @@ time out"), not a shared decision derived in three places.
 Because the codomains differ, `resolve` cannot serve as the decider. That single
 fact manifests as three concrete blockers:
 
-1. **Calendar-blindness.** `resolve` classifies only Gregorian lexical forms;
-   whether a value is a `360_day` versus a standard calendar is domain metadata
+1. **Calendar-blindness.** `resolve` classifies only Gregorian lexical forms.
+   Whether a value is a `360_day` versus a standard calendar is domain metadata
    (`TemporalRS.calendar`), not derivable from the string. The bridges route on
    it (xarray to cftime, pandas / geo leave raw strings), and `resolve`'s
    codomain has no cftime arm to express that.
 2. **Timezone semantics.** The bridges strip trailing `Z` and treat naive as
-   UTC; `resolve` keeps the offset and rejects a naive time as `Malformed`.
+   UTC. `resolve` keeps the offset and rejects a naive time as `Malformed`.
    Routing through it would flip currently-accepted naive input to rejected, an
    output regression.
 3. **Vectorization.** `pd.to_datetime` and `np.array(..., dtype="datetime64
-   [ns]")` parse a whole axis in one C call; `resolve` is per-element Python, so
+   [ns]")` parse a whole axis in one C call. `resolve` is per-element Python, so
    using it per value pessimizes a large time axis.
 
 The consistency [ADR-0008] wanted already exists: `validate(check_values=True)`
 is the classifier of record, flagging exactly the naive, no-designator strings
 the bridges swallow. That disagreement is confined to non-spec input (Spec 5.2's
 SHOULD requires a `Z` or `±hh:mm` designator, so a naive time is not a spec
-form). Spec-compliant values are accepted by both paths; they differ only in the
+form). Spec-compliant values are accepted by both paths. They differ only in the
 tz-awareness of the *result* (the bridges strip `Z` and flatten a `±hh:mm` offset
 to naive-UTC), a deliberate representation choice [ADR-0008] already documents,
 not a classification disagreement.
@@ -116,7 +116,7 @@ drift risk on a three-line, well-commented one-liner for no behavioral gain.
   the offset case, so the two bridges agree and only `resolve` / `to_datetime`
   keeps an offset tz-aware (a `Moment` at second precision, [ADR-0008]).
   Previously the pandas path returned a tz-aware `Timestamp` for an offset,
-  silently disagreeing with xarray's naive-UTC result; a mixed naive+offset axis
+  silently disagreeing with xarray's naive-UTC result. A mixed naive+offset axis
   also made pandas raise and fall back to raw strings. Both are pinned by
   regression tests. This resolves #153.
 - The xarray fold converts each offset value with `datetime.fromisoformat`, and
@@ -133,7 +133,7 @@ drift risk on a three-line, well-commented one-liner for no behavioral gain.
   2.x line raises, through the final 2.3.3), whereas the current numpy
   `datetime64[us]` construction
   holds any Gregorian year on every supported numpy. The declared floor today is
-  `pandas>=2.0` (pandas / geo extras; the xarray bridge gets pandas transitively
+  `pandas>=2.0` (pandas / geo extras: the xarray bridge gets pandas transitively
   via xarray), so pandas 3.0 would be a real narrowing, gated on a verified
   `lowest-direct` leg.
 - Revisit gate: a concrete need for one classifier of record across the bridges

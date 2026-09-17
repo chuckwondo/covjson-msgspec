@@ -23,8 +23,8 @@ resolves to **`("composite",)`**: a lone coordinate identifier *named
 
 That is self-evidently nonsensical. `"composite"` is the **kind** of the axis,
 not one of its coordinates: a polygon's position components are `x` / `y` (/
-`z`); a trajectory tuple's are `t` / `x` / `y`. A coordinate identifier
-`"composite"` names none of them; it refers to nothing. The default hands
+`z`). A trajectory tuple's are `t` / `x` / `y`. A coordinate identifier
+`"composite"` names none of them. It refers to nothing. The default hands
 `("composite",)` to the *one axis whose entire purpose is to bundle several
 named coordinates*, asking the reader to accept the axis's own kind-label as its
 sole coordinate. (For `polygon` it is doubly impossible:
@@ -35,7 +35,7 @@ all.)
 So this is an **interpretation gap**: the spec is silent on what an omitted (or
 too-few) `coordinates` *means* for a composite axis, so we must infer it.
 ADR-0002 already draws the tier line once meaning is known: a value that leaves
-the object *uninterpretable in isolation* is rejected at construction; one that
+the object *uninterpretable in isolation* is rejected at construction. One that
 leaves *a meaningful object whose parts merely disagree* is deferred to
 `validate()`.
 
@@ -76,7 +76,7 @@ identifier.*
 | `primitive` / custom | allowed: default (the axis's own name) is a usable sole coordinate | rejected |
 | `tuple` / `polygon` | rejected: default `("composite",)` names nothing usable | rejected |
 
-Empty is rejected everywhere (zero identifiers, no default applies); omission is
+Empty is rejected everywhere (zero identifiers, no default applies). Omission is
 rejected only where the default itself is unusable, the composite case. It is
 one test, *"is there a usable identifier?"*, applied to whatever value the
 default produces, not a separate rule per dataType.
@@ -93,7 +93,7 @@ once the bad axis simply cannot be constructed.
 
 **Read the general default literally (allow composite omission, taking the
 1-element default).** Rejected: it yields a document that decodes but is
-meaningless: a polygon whose ≥2-component positions map to one identifier; a
+meaningless: a polygon whose ≥2-component positions map to one identifier. A
 tuple whose components are named after the axis. No sensible reading supports
 it, which is what makes the inference above the only coherent one.
 
@@ -106,16 +106,16 @@ one-tuple axis" and credited #131 with removing the earlier construction guard.
 Rejected, because the criterion turns on whether the repair is *usable*, and for
 a composite it is not: the default resolves to `("composite",)`, the kind-label
 every Common Domain Type keys the axis by, which names no component. ADR-0018
-reached its conclusion without following the default to that resolved value;
-applying the same criterion to the value it actually produces places the check
+reached its conclusion without following the default to that resolved value.
+Applying the same criterion to the value it actually produces places the check
 at construction. Nothing conformant is lost: no Common Domain Type, and no
 fixture in this repo, omits `coordinates` on a composite axis, so the default is
 never relied on in practice. This record supersedes that sub-decision of
-ADR-0018 (its "Why this tightens decode where ADR-0017 loosened it" passage);
-the rest of ADR-0018 stands.
+ADR-0018 (its "Why this tightens decode where ADR-0017 loosened it" passage).
+The rest of ADR-0018 stands.
 
 **Amend ADR-0002 instead of writing a new record.** Rejected: ADR-0002 records
-the tier *line*; this is a distinct spec-*interpretation* decision (inferring
+the tier *line*. This is a distinct spec-*interpretation* decision (inferring
 implicit meaning where the spec is silent), with its own rejected alternatives,
 and the same primitive/custom-vs-composite criterion already governs #137 (a
 `validate` exclusion) and will govern #139. A criterion driving several
@@ -132,7 +132,7 @@ folded into it.
 - #138's position-arity check (an O(n) value scan in `validate()`) no longer
   floods on such axes: they cannot construct, so the scan only ever runs on axes
   with valid `coordinates`. No suppression guard is needed.
-- The primitive/custom-vs-composite interpretation is recorded once; #137, #147,
+- The primitive/custom-vs-composite interpretation is recorded once. #137, #147,
   and #139 all rest on it.
 - Revisit if CoverageJSON later states the composite `coordinates` rule
   explicitly (this inference becomes a citation), or defines a composite

@@ -66,7 +66,7 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
     axes: Mapping[str, Axis]
     domain_type: str | None = None
     referencing: tuple[ReferenceSystemConnection, ...] = ()
-    # JSON-LD @context (spec section 8); see `JsonLdContext`.
+    # JSON-LD @context (spec section 8). See `JsonLdContext`.
     context: JsonLdContext | UnsetType = msgspec.field(name="@context", default=UNSET)
 
     @property
@@ -150,7 +150,7 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         t: Axis | None = None,
         referencing: Iterable[ReferenceSystemConnection] | None = None,
     ) -> Self:
-        """Build a Point domain (single-valued x/y; optional z/t).
+        """Build a Point domain (single-valued x/y, optional z/t).
 
         Returns
         -------
@@ -276,7 +276,7 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         ----------
         composite
             The composite (``dataType="tuple"``) axis whose coordinates are the
-            trajectory's t/x/y(/z) tuples; stored under the ``"composite"`` key.
+            trajectory's t/x/y(/z) tuples. Stored under the ``"composite"`` key.
         referencing
             Reference-system connections for the domain's coordinates.
 
@@ -316,7 +316,7 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         ----------
         composite
             The composite (``dataType="tuple"``) axis whose coordinates are the
-            points' x/y(/z) tuples; stored under the ``"composite"`` key.
+            points' x/y(/z) tuples. Stored under the ``"composite"`` key.
         t
             Optional single-valued time axis shared by the points.
         referencing
@@ -356,7 +356,7 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         ----------
         composite
             The composite (``dataType="tuple"``) axis whose coordinates are the
-            points' x/y(/z) tuples; stored under the ``"composite"`` key.
+            points' x/y(/z) tuples. Stored under the ``"composite"`` key.
         t
             The time axis the series varies over.
         referencing
@@ -398,7 +398,7 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         ----------
         composite
             The composite (``dataType="tuple"``) axis whose coordinates are the
-            trajectory's t/x/y tuples; stored under the ``"composite"`` key.
+            trajectory's t/x/y tuples. Stored under the ``"composite"`` key.
         z
             The vertical axis the section varies over.
         referencing
@@ -490,7 +490,7 @@ class Domain(CovJSONStruct, frozen=True, tag="Domain"):
         Parameters
         ----------
         polygons
-            The polygons; each is a sequence of linear rings (the exterior ring
+            The polygons. Each is a sequence of linear rings (the exterior ring
             first, then any holes), in the form `Axis.polygon` accepts.
         z, t
             Optional single-valued vertical and time axes shared by the polygons.

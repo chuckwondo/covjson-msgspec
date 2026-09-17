@@ -7,16 +7,16 @@ Accepted
 ## Context
 
 CoverageJSON has correctness rules at different scopes. Some are local to a
-single struct (an `Axis` needs one complete form; a `Unit` needs a label or a
-symbol; a `TiledNdArray` tile shape has a fixed rank). Others are cross-cutting
+single struct (an `Axis` needs one complete form, a `Unit` needs a label or a
+symbol, a `TiledNdArray` tile shape has a fixed rank). Others are cross-cutting
 and only checkable with a whole-document view (a domain's axes against its
 `domainType`, ranges aligned to their domain, parameter-group members against
 the coverage's parameters, and (when scanning values) each value against its
 range's `dataType` and categorical codes being defined).
 
 The library validates in three tiers: (1) structural and field-level checks by
-msgspec on decode; (2) cheap local per-struct invariants in each
-`__post_init__`; (3) cross-cutting document-level rules in `validate`. A natural
+msgspec on decode. (2) cheap local per-struct invariants in each
+`__post_init__`. (3) cross-cutting document-level rules in `validate`. A natural
 question is why tier 3 is not simply folded into tier 2: run (almost) all
 validation at construction, excluding only the costly range-value scan. The
 answer is not about cost. The split is local vs. cross-cutting, and
@@ -53,11 +53,11 @@ NOT violation: the document is non-conformant, or not usable as the type it
 claims to be. A *warning* marks a SHOULD / RECOMMENDED violation: the document
 is still spec-conformant but does something the spec discourages, for example
 a domain missing the recommended `domainType`, or a temporal value outside
-ISO 8601 lexical form. Retaining both severities is a deliberate choice; the
+ISO 8601 lexical form. Retaining both severities is a deliberate choice. The
 errors-only alternative is discussed below.
 
 A caller who wants decode to enforce conformance composes the two explicit
-steps; `validate` also offers a `mode="raise"` (which raises only on
+steps. `validate` also offers a `mode="raise"` (which raises only on
 error-severity findings) and a `check_values=True` for the costly value scan
 that is skipped by default.
 
@@ -74,7 +74,7 @@ what these checks require:
   for "construct this, but flag it," so folding the checks in would force every
   SHOULD violation to be fatal-or-silent, collapsing a deliberate distinction.
   (A constructor *can* collect several errors and raise them together, that is
-  not the obstacle; returning a finding without aborting is.)
+  not the obstacle: returning a finding without aborting is.)
 - *Raising is all-or-nothing: it cannot hand back a usable-but-imperfect
   object.* `validate` returns its findings as `Issue` values (each with a
   stable code and a JSON Pointer path) alongside the decoded object, so a
@@ -83,16 +83,16 @@ what these checks require:
   forecloses that: you get a fully conformant object or an exception, nothing in
   between. This is the same errors-as-values stance the core takes elsewhere.
 - *It runs unconditionally on every decode and construct, with no opt-out.* The
-  common path (load, then read or transform) should stay fast; even the
+  common path (load, then read or transform) should stay fast. Even the
   structural cross-checks add per-object work a caller who never
   conformance-checks should not pay (e.g. a large `CoverageCollection`). The
   range-value scan is the most costly part, but the unconditional-cost objection
   applies to the structural cross-checks too.
 - *It would forbid legitimate transient states.* Objects are supposed to pass
   through intermediate, not-yet-conformant states: `resolve_references` builds a
-  coverage with a URL-string domain and only then fetches and replaces it;
+  coverage with a URL-string domain and only then fetches and replaces it.
   `isel`/`sel` deliberately keep `domain_type` unchanged when a dimension is
-  dropped (a Grid reduced to a point still says "Grid"); the xarray and pandas
+  dropped (a Grid reduced to a point still says "Grid"). The xarray and pandas
   bridges assemble partial structs while rebuilding documents. A hard-failing
   constructor would break all of these mid-operation.
 - *Permissive loading is a feature.* The test corpus intentionally decodes and
@@ -116,7 +116,7 @@ recommended ISO 8601 lexical form, is spec-conformant yet worth surfacing: it
 is a warning, not an error, and not nothing. Collapsing to errors-only would
 either drop those findings or wrongly brand conformant documents as broken. (The
 finding that prompted this question was that the two checks initially filed as
-warnings were in fact misclassified MUST violations; the fix is to reclassify
+warnings were in fact misclassified MUST violations: the fix is to reclassify
 *those* as errors (#35), not to remove the severity that genuine SHOULD-level
 checks (#37) need.)
 

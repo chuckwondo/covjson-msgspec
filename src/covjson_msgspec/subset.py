@@ -6,10 +6,10 @@ coverage (the model is immutable). The semantics follow xarray's
 
 * an **integer** indexer selects a single position and *drops* that axis from the
   ranges (the coordinate is kept as a single-value domain axis, like an xarray
-  scalar coordinate);
+  scalar coordinate).
 * a **slice** indexer keeps the axis, narrowed to the selected positions.
 
-`isel` takes integer positions and `slice` objects of positions; `sel` takes
+`isel` takes integer positions and `slice` objects of positions. `sel` takes
 coordinate labels (and label `slice` objects) and maps them to positions before
 delegating to `isel`.
 
@@ -54,7 +54,7 @@ def isel(
 
     Indexers may be passed as a mapping, as keyword arguments, or both. An
     integer selects a single position and drops that axis from the ranges,
-    keeping its coordinate as a single-value domain axis; a `slice` keeps the
+    keeping its coordinate as a single-value domain axis. A `slice` keeps the
     axis, narrowed to the selected positions.
 
     Parameters
@@ -80,7 +80,7 @@ def isel(
         If the domain is a URL reference, an indexer names an unknown axis, the
         same axis is given both positionally and as a keyword, or a selected
         axis carries a ``bounds`` array whose length is not twice the axis
-        length (spec 6.1.1; [`validate`][covjson_msgspec.validate] reports it as
+        length (spec 6.1.1: [`validate`][covjson_msgspec.validate] reports it as
         ``axis.bounds-length``).
     IndexError
         If an integer indexer is out of bounds for its axis, or a slice
@@ -105,7 +105,7 @@ def isel(
     ...     },
     ... )
 
-    A slice keeps the axis; an integer drops it (here ``y`` becomes a single-value
+    A slice keeps the axis. An integer drops it (here ``y`` becomes a single-value
     coordinate and the range is left varying over ``x`` alone):
 
     >>> sub = isel(cov, y=0, x=slice(1, 3))
@@ -166,9 +166,9 @@ def sel(
         A mapping of axis name to a coordinate label or a `slice` of labels. A
         label `slice` is inclusive of both bounds.
     method
-        How to match a scalar label: ``None`` (default) requires an exact match;
+        How to match a scalar label: ``None`` (default) requires an exact match.
         ``"nearest"`` picks the closest coordinate (numeric axes only). Applies
-        only to scalar labels; ignored for a `slice` label.
+        only to scalar labels. Ignored for a `slice` label.
     **indexers_kwargs
         Indexers given as keywords, e.g. ``sel(cov, x=10.0, method="nearest")``.
 
@@ -346,7 +346,7 @@ def _inline_domain(coverage: Coverage) -> Domain:
 def _reject_unsupported_axes(domain: Domain, selection: Mapping[str, object]) -> None:
     """Reject indexers naming an unknown axis or a composite axis.
 
-    Subsetting only supports individual axes; an indexer must name a real domain
+    Subsetting only supports individual axes. An indexer must name a real domain
     axis, and that axis must not be a composite (``"tuple"`` / ``"polygon"``)
     axis, whose coordinates are bundled positions rather than an individual
     dimension.
@@ -396,7 +396,7 @@ def _reject_unsupported_axes(domain: Domain, selection: Mapping[str, object]) ->
 def _resolve_indexer(axis: Axis, indexer: Indexer) -> _AxisSelection:
     """Resolve one indexer against an axis to the positions it selects.
 
-    A `slice` is expanded to its positions (keeping the axis); an integer is
+    A `slice` is expanded to its positions (keeping the axis). An integer is
     normalized (negative indexing allowed) and bounds-checked, selecting one
     position and dropping the axis.
 
@@ -486,7 +486,7 @@ def _select_axis(name: str, axis: Axis, selection: _AxisSelection) -> Axis:
     ValueError
         If ``axis`` carries a ``bounds`` array whose length is not twice the
         axis length (spec 6.1.1). ``decode`` is permissive, so a malformed
-        ``bounds`` reaches here; [`validate`][covjson_msgspec.validate] reports it as
+        ``bounds`` reaches here. [`validate`][covjson_msgspec.validate] reports it as
         ``axis.bounds-length`` but does not repair it.
 
     Examples
@@ -534,7 +534,7 @@ def _subset_range(
     """Take the selected slab of one range, dropping integer-indexed axes.
 
     The selection is applied only along the axes this range actually varies over
-    (its [`axis_names`][covjson_msgspec.NdArray.axis_names]); other selected axes do not
+    (its [`axis_names`][covjson_msgspec.NdArray.axis_names]). Other selected axes do not
     touch it. The new row-major values are gathered by walking the cartesian product of
     the selected positions per axis, and axes selected by a scalar integer (their
     `keep_dim` is False) are dropped from ``shape`` /
@@ -611,7 +611,7 @@ def _label_to_indexer(
     """Map a coordinate label (or label slice) to an integer indexer for `isel`.
 
     A scalar label resolves to a single position (exact match, or nearest when
-    ``method="nearest"``); a label `slice` resolves to a position slice spanning
+    ``method="nearest"``). A label `slice` resolves to a position slice spanning
     the coordinates within its inclusive bounds. ``method`` applies only to
     scalar labels and is ignored for a slice, so one `sel` call may mix a slice
     with nearest-matched scalar labels.
@@ -625,7 +625,7 @@ def _label_to_indexer(
     label
         A coordinate label or an inclusive `slice` of labels.
     method
-        ``"nearest"`` for closest-match on a scalar label; otherwise exact.
+        ``"nearest"`` for closest-match on a scalar label. Otherwise exact.
         Ignored for a slice label.
 
     Returns
@@ -711,7 +711,7 @@ def _nearest_position(name: str, coords: Sequence[AxisValue], label: Label) -> i
     name
         The axis name (for the error message).
     coords
-        The axis coordinate values; must all be numeric.
+        The axis coordinate values. Must all be numeric.
     label
         The numeric coordinate label.
 
@@ -740,7 +740,7 @@ def _label_slice(name: str, coords: Sequence[AxisValue], label: slice) -> slice:
     """Map an inclusive label slice to the position slice it spans.
 
     The coordinates falling within the slice's ``[start, stop]`` bounds (either
-    bound optional) form a contiguous block on a monotonic axis; the spanning
+    bound optional) form a contiguous block on a monotonic axis. The spanning
     position slice is returned.
 
     Parameters
@@ -750,7 +750,7 @@ def _label_slice(name: str, coords: Sequence[AxisValue], label: slice) -> slice:
     coords
         The axis coordinate values.
     label
-        An inclusive label `slice`; its ``step`` must be ``None``.
+        An inclusive label `slice`. Its ``step`` must be ``None``.
 
     Returns
     -------
@@ -817,7 +817,7 @@ def _within(value: AxisValue, start: Label | None, stop: Label | None) -> bool:
     >>> _within(30.0, None, 20.0)
     False
     """
-    # `value` is a heterogeneous coordinate union; bind it to Any so the ordering
+    # `value` is a heterogeneous coordinate union. Bind it to Any so the ordering
     # comparison type-checks. Composite axes never reach here (rejected upstream),
     # so a mismatched bound type would be caller error and raises at runtime.
     point: Any = value

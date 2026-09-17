@@ -18,7 +18,7 @@ independent of that order, which waiting for the symptom cannot be.
 The missing-variable rule, a subdivided axis whose variable the template omits,
 is a spec MUST that only ``validate`` reports as such. Assembly notices it only
 when *that axis* carries more than one tile, since only then do its tiles collide
-on one URL; an axis subdivided into a single tile breaks the MUST while
+on one URL. An axis subdivided into a single tile breaks the MUST while
 assembling correctly. So that rule needs a consumer judging conformance, not one
 judging whether a tiling can be laid out.
 
@@ -39,7 +39,7 @@ rule reports what is wrong and leaves raising to its caller. (It is also why
 raise, but it is an operation with a caller-established precondition, not a rule.
 
 This module lives under a ``_`` prefix, exporting non-underscore names, so
-``validation`` can share the rules without importing a ``range`` private; it
+``validation`` can share the rules without importing a ``range`` private. It
 decides only over primitives, so it imports no consumer and cannot cycle.
 
 The two template rules read the same subdivided-axis set but report different
@@ -77,7 +77,7 @@ def non_positive_tile_sizes(
 ) -> Sequence[tuple[int, int]]:
     """Return each tile size that is neither ``None`` nor positive, with its index.
 
-    ``None`` means the axis is whole (one tile) and is never offending; any other
+    ``None`` means the axis is whole (one tile) and is never offending. Any other
     entry is a divisor, so zero or less defines no tile count. Spec 6.3 says only
     "integer" for a non-null tile size, so positivity is *entailed* rather than
     stated: the section's tile-count formula divides the axis size by the tile
@@ -209,8 +209,8 @@ def axes_missing_variables(
     ()
 
     A name repeated in ``axis_names`` is reported once. Here ``x`` names three
-    axes, two of them subdivided, and collapses to a single entry; ``y`` survives
-    beside it as a distinct name; and the whole-spanning ``x`` adds nothing, since
+    axes, two of them subdivided, and collapses to a single entry. ``y`` survives
+    beside it as a distinct name, and the whole-spanning ``x`` adds nothing, since
     a name is offending once any of its axes is subdivided:
 
     >>> axes_missing_variables(("x", "x", "y", "x"), (1, 1, 1, None), "tile.covjson")
@@ -319,7 +319,7 @@ def duplicate_subdivided_axes(
         zip(axis_names, array_shape, tile_shape, strict=False)
     ):
         # Deliberately not `_subdivided_axes`' membership test. A null tile size
-        # leaves the axis whole, so it interpolates no variable; a non-positive
+        # leaves the axis whole, so it interpolates no variable. A non-positive
         # one is subdivided for the template rules (spec 6.3 keys them on "not
         # null") but nothing divides its extent, so it has no ordinal either.
         # Neither can be party to an ordinal conflict, and
@@ -329,7 +329,7 @@ def duplicate_subdivided_axes(
 
         # `range(0, size, tile_size)` is empty for any size <= 0, so such an axis
         # contributes no tile start and the product over the axes enumerates
-        # nothing at all. Zero is a legal empty axis; a negative extent is a
+        # nothing at all. Zero is a legal empty axis. A negative extent is a
         # defect of `shape` itself, so reporting a conflict here would blame
         # these axes for it.
         if size <= 0:
@@ -378,8 +378,8 @@ def expand_url_template(template: str, variables: Mapping[str, int]) -> str:
     ValueError
         If the template names a variable absent from ``variables``. A caller that
         gates on `variables_not_subdivided` first never reaches this, and
-        `_tile_layout` does exactly that so it can name every offender at once;
-        the guard is here so this function stays diagnosable when called on its
+        `_tile_layout` does exactly that so it can name every offender at once.
+        The guard is here so this function stays diagnosable when called on its
         own, rather than failing as a bare `KeyError` from inside `re.sub`.
 
     Examples
@@ -409,14 +409,14 @@ def _subdivided_axes(
 ) -> Sequence[str]:
     """Return the names of the axes a tile set subdivides, in axis order.
 
-    An axis is subdivided when its ``tile_shape`` entry is not ``None``; a ``None``
+    An axis is subdivided when its ``tile_shape`` entry is not ``None``. A ``None``
     entry spans the whole axis. Both template rules read this set, so it is derived
     once: two derivations could disagree, which is exactly what this module exists
     to prevent.
 
     The zip is deliberately non-strict. The only input on which strictness would
     show is a rank mismatch, where the honest answer is that the pairing is
-    meaningless and the caller should have gated on the rank match; raising
+    meaningless and the caller should have gated on the rank match. Raising
     there would be worse than truncating, because
     [`validate`][covjson_msgspec.validate] reaches this and reports a rank mismatch
     rather than raising at one.
@@ -432,7 +432,7 @@ def _subdivided_axes(
     -------
     sequence of str
         The subdivided axes' names, in axis order, duplicates kept. Two axes named
-        ``x`` are two axes, so both are listed; a caller that reports per name
+        ``x`` are two axes, so both are listed. A caller that reports per name
         deduplicates the result itself (see `axes_missing_variables`) rather than
         narrowing this.
 

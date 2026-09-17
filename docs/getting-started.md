@@ -86,12 +86,12 @@ Decode is byte-faithful: modeled spec members are preserved as read (for example
 temporal values stay raw ISO 8601 strings), and lossy conversions happen only in
 the opt-in bridges.
 [Custom members](https://github.com/covjson/specification/blob/master/spec.md#71-custom-members)
-(extension keys the spec permits but does not define) are dropped by design; to
+(extension keys the spec permits but does not define) are dropped by design. To
 relay a document with its extensions intact, forward its raw bytes rather than
-decoding and re-encoding. (The root JSON-LD `@context` is preserved; one spec edge is still in
+decoding and re-encoding. (The root JSON-LD `@context` is preserved: one spec edge is still in
 progress: accepting custom reference-system types.) The
 codec entry points are `decode` (for an untyped root), `decode_coverage`, and
-`decode_coverage_collection`; the [API reference](reference/coverage.md) lists the
+`decode_coverage_collection`. The [API reference](reference/coverage.md) lists the
 full set.
 
 ## Next steps

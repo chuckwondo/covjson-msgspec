@@ -23,7 +23,7 @@ sub = isel(cov, {"x": 0, "t": slice(0, 3)})
 sub = sel(cov, {"t": "2020-01-01T00:00:00Z"}, method="nearest")
 ```
 
-`sel`'s `method="nearest"` snaps a label to the closest coordinate; without it, a
+`sel`'s `method="nearest"` snaps a label to the closest coordinate. Without it, a
 label must match exactly. The result is a coverage subset over the same axes, so
 you can chain, encode, or convert it like any other. See the
 [subsetting reference](../reference/subset.md).

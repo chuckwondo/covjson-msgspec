@@ -17,8 +17,8 @@ as `ReferenceSystem.refine() -> ResolvedReferenceSystem`, and left a question
 open: should `Axis` and `NdArray` gain the same `refine()`-style whole-struct
 projection, so the three instances read alike ([#123][i123])?
 
-They already differ. `ReferenceSystem` has a whole-struct `refine()`; `NdArray`
-has a value-level `values_as(dtype)`; `Axis` has builders and accessors and no
+They already differ. `ReferenceSystem` has a whole-struct `refine()`. `NdArray`
+has a value-level `values_as(dtype)`. `Axis` has builders and accessors and no
 projection type at all. Either that divergence is principled or it is drift, and
 nothing recorded said which.
 
@@ -28,8 +28,8 @@ Four facts constrain the answer:
   [§7.2][spec-72] lists them in one sentence: "Custom types MAY be used with the
   following members: `"domainType"` in domain objects, `"dataType"` in axis
   objects, `"type"` in reference system objects." (#123 assumed axis kinds were
-  closed; they are not.)
-- **An `Axis` is a product; a reference system is a sum.** A reference system
+  closed: they are not.)
+- **An `Axis` is a product. A reference system is a sum.** A reference system
   varies on one axis, its tag, so `OpaqueRS` is `{type_}` and nothing else. An
   `Axis` varies on two independent axes: the *form* (`values` or
   `start`/`stop`/`num`) and the *dataType* (primitive / tuple / polygon /
@@ -92,13 +92,13 @@ The operative criterion:
 A `TemporalRS` without a `calendar` has one reading: temporal, calendar unknown.
 A `"tuple"` axis carrying `start`/`stop`/`num` has two incompatible ones: the
 producer mislabeled the `dataType` (repair: three numbers), or the producer lost
-the tuples (repair: impossible); nothing in the document chooses.
+the tuples (repair: impossible). Nothing in the document chooses.
 
 To show the criterion is not special-pleading for this one guard, apply it to
 every local invariant the library already places, and check its verdict against
 where the code actually puts the check. It reproduces all of them. The
 invariants kept at construction each have zero or ambiguous repairs: both axis
-forms present (ambiguous; **superseded by ADR-0023**), an empty `values`
+forms present (ambiguous, **superseded by ADR-0023**), an empty `values`
 (none), and `num == 1` with
 `start != stop` (ambiguous). The invariants deferred to `validate()` each have
 exactly one repair: a `TemporalRS` without `calendar`, an axis value not
@@ -134,7 +134,7 @@ The `bounds`-length check is the separator, and it is why the rule is not "local
 and cheap implies construction": `len(bounds) != 2 * len(axis)` is local *and* O(1), yet it
 still belongs in `validate()`, because such an axis stays interpretable: its
 coordinates are fine and only `bounds` is junk. Cheapness alone does not earn
-construction-tier; only uninterpretability does.
+construction-tier. Only uninterpretability does.
 
 ### Why a guard rather than an unrepresentable state
 
@@ -162,7 +162,7 @@ on four counts:
   projection and losing the custom type: the fidelity loss ADR-0017 exists to
   prevent.
 - *Consistency with ADR-0017 is what kills it.* An honest `TupleAxis` needs the
-  O(n) element gate; a dishonest one is the exact thing ADR-0017 rejected.
+  O(n) element gate. A dishonest one is the exact thing ADR-0017 rejected.
 - *`bounds` rebuilds the grab-bag.* §6.1.1 permits `bounds` on any axis,
   unrestricted by dataType, so every variant carries `bounds: ... | None`,
   including `PolygonAxis` where it is meaningless: the failure ADR-0017 named
@@ -201,10 +201,10 @@ question once, so the recurrence is demonstrated and warrants its own record.
   a document used to decode clean, pass `validate()`, and convert to *zero rows*
   in the pandas and xarray bridges: silent data loss with no error the caller
   could catch. Nothing in the library, tests, or docs constructed one.
-- A custom §7.2 `dataType` is unaffected and keeps both forms; the guard names
+- A custom §7.2 `dataType` is unaffected and keeps both forms. The guard names
   `"tuple"` and `"polygon"` explicitly rather than excluding "primitive", and a
   test pins it.
-- The bridges' `axis.values or ()` fallbacks are dead and removed; the `cast` to
+- The bridges' `axis.values or ()` fallbacks are dead and removed. The `cast` to
   `tuple[tuple[Any, ...], ...]` remains, and remains unprovable, until the O(n)
   rule below lands.
 - **The core still does not gate every illegal `Axis` state, only the

@@ -17,7 +17,7 @@ from collections.abc import Mapping
 
 # A CoverageJSON i18n object: language tag -> string ("und" if undetermined).
 # ``Mapping`` (read-only) rather than ``dict``: see `CovJSONStruct` for why.
-# Plain-assignment alias (not the PEP 695 ``type`` statement, which needs 3.12+;
+# Plain-assignment alias (not the PEP 695 ``type`` statement, which needs 3.12+,
 # our floor is 3.11).
 I18n = Mapping[str, str]
 
@@ -25,13 +25,13 @@ I18n = Mapping[str, str]
 def i18n(text: str | None = None, /, **languages: str) -> I18n:
     """Build an `I18n` language map.
 
-    A positional ``text`` is recorded under the undetermined tag ``"und"``;
-    keyword arguments supply language-tagged strings. The two may be combined.
+    A positional ``text`` is recorded under the undetermined tag ``"und"``.
+    Keyword arguments supply language-tagged strings. The two may be combined.
 
     Parameters
     ----------
     text
-        Text whose language is undetermined; stored under the ``"und"`` tag.
+        Text whose language is undetermined. Stored under the ``"und"`` tag.
     **languages
         Language-tagged strings, e.g. ``en="..."`` (keys are RFC 5646 tags).
 
@@ -59,7 +59,7 @@ def i18n(text: str | None = None, /, **languages: str) -> I18n:
         ...
     ValueError: i18n() requires `text` or at least one language
     """
-    # Build in a mutable `dict`; the `I18n` (read-only `Mapping`) return widens it.
+    # Build in a mutable `dict`. The `I18n` (read-only `Mapping`) return widens it.
     if not (result := languages if text is None else {"und": text} | languages):
         msg = "i18n() requires `text` or at least one language"
         raise ValueError(msg)

@@ -5,7 +5,7 @@ abstract. This page shows each one at work: the concrete decisions it drove, the
 mechanism in the code, the [ADR](../adr/README.md) that records the full rationale,
 and, where a decision tracks a rule of the format, the section of the
 [CoverageJSON specification][spec] it conforms to. It is illustrative, not
-exhaustive; the tenets page is the canonical statement of the principle, and the
+exhaustive. The tenets page is the canonical statement of the principle, and the
 ADRs are the detailed record.
 
 ## Dependency injection at the edges
@@ -46,14 +46,14 @@ The same rule shows up at two more edges:
 
 `validate()` returns its findings as values (a `ValidationReport` bundling the
 issues with the valid/invalid verdict) and never raises on its own. Internally a
-lazy pipeline of pure checkers produces the issues; `validate()` is the shell that
+lazy pipeline of pure checkers produces the issues. `validate()` is the shell that
 materializes them into the report. The issues are not strings: each is a frozen
 struct in a closed [`Issue` sum type](../adr/0006-validation-findings-sum-type.md)
 tagged by rule (`ndarray.value-count`, `range.value-type-mismatch`,
 `i18n.invalid-language-tag`, and so on), and carries an `at` field locating the
 fault as a [JSON Pointer][rfc6901]. A consumer can `match` on the variant to read
 its typed payload, or read the string `code` for stringly work (logging,
-counting); and because the discriminant is a field, a whole report round-trips
+counting), and because the discriminant is a field, a whole report round-trips
 through JSON. The caller decides at the edge what to do with the report: ask
 `report.ok` for the verdict and read the findings via `report.issues`, or ask
 `validate()` to raise via `mode="raise"`, the one sanctioned effect.
@@ -65,7 +65,7 @@ the resolved coverage alongside a tuple of typed `FetchFailure` records, and nev
 raises. A `FailureStrategy` is a pure reducer, `(failures_so_far, new_failure) ->
 Verdict`, and the library ships `fail_fast` (the default), `collect_all`,
 `stop_after(n)`, and `halt_on_unrecoverable`. The effectful driver is the only
-imperative shell; the strategy, the failures, and the report are all data
+imperative shell. The strategy, the failures, and the report are all data
 ([ADR-0007](../adr/0007-functional-core-errors-as-values.md)). A collection where
 three of five references resolve yields those three in the report alongside two
 failure records, and the caller chose up front whether the fourth failure should
@@ -97,7 +97,7 @@ rather than trusted:
 | `bytes` | already immutable | `bytes` |
 
 Two escape hatches keep the rule honest. A mutable builtin is fine as a *local
-accumulator* inside a function, where nothing outside ever sees it; and a
+accumulator* inside a function, where nothing outside ever sees it, and a
 *return handed to external plumbing* stays concrete because the consumer
 requires it (the FastAPI `openapi()` hook merges its dict in place, `xarray`'s
 `attrs=` wants a real dict, GeoJSON features are dicts). The distinction is
@@ -134,7 +134,7 @@ along two axes, cost and severity:
   system defines a natural ordering). Skipping it lets a slightly-off array still
   decode and still pass the structural checks.
 - **Severity, not just presence, is graded.** Each finding is an error or a
-  warning. `mode="raise"` aborts only on an error; a SHOULD-level lapse such as a
+  warning. `mode="raise"` aborts only on an error. A SHOULD-level lapse such as a
   temporal value outside the [recommended ISO 8601 lexical forms][spec-temporal] is
   reported as a warning that a strict caller can act on and a lenient one can
   ignore.
@@ -165,7 +165,7 @@ information-losing step, and it happens in the bridge, not the core: a year-`000
 instant survives the round trip above but cannot survive `to_xarray`. The one loss
 on decode itself is a [custom member][spec-custom] (an extension key the spec
 permits on any object), which decode drops
-([ADR-0012](../adr/0012-custom-members-dropped-on-decode.md)); to relay a document
+([ADR-0012](../adr/0012-custom-members-dropped-on-decode.md)). To relay a document
 with its extensions intact, forward its raw bytes instead of decoding and
 re-encoding.
 
@@ -183,7 +183,7 @@ arr.values_as(float)   # -> tuple[float | None, ...]
 
 `values_as` narrows the view without changing what was stored, and raises fail-fast
 on a value that does not match (where `validate(check_values=True)` instead reports
-the same mismatch); `to_numpy` is its `[numpy]`-backed sibling over the same
+the same mismatch). `to_numpy` is its `[numpy]`-backed sibling over the same
 faithful values. `Axis` makes the trade on the write side: the spec lets
 [one axis object take three shapes][spec-axis] (listed, regular, composite), so
 storage is one permissive struct and `Axis.listed`, `Axis.regular`, `Axis.tuple_`,

@@ -1,7 +1,7 @@
 """Reference-system invariants shared by `refine` and `validate`.
 
 A reference system's ``type`` names one of five modelled kinds or a custom value
-(CoverageJSON section 7.2). `KNOWN` is the set of modelled kinds;
+(CoverageJSON section 7.2). `KNOWN` is the set of modelled kinds.
 `missing_required_member` encodes, in one place, which required member each
 modelled kind must carry.
 
