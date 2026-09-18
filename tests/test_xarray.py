@@ -861,7 +861,8 @@ def test_from_xarray_duration_coordinate_round_trips_in_memory() -> None:
     values = _dom(cov).axes["lead"].values
 
     assert values is not None
-    assert all(type(v) is str for v in values)
+    non_str = [v for v in values if type(v) is not str]
+    assert not non_str, "every duration value must be a plain str"
 
     back = msgspec.json.decode(msgspec.json.encode(cov), type=Coverage)
 
