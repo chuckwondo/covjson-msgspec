@@ -713,3 +713,28 @@ def _point_series_member(
             )
         },
     )
+
+
+def test_range_extent_disagreeing_with_the_domain_is_rejected() -> None:
+    # The value count happens to match the grid (four values, a 2x2 domain), so
+    # nothing downstream complains and the frame silently relabels the range onto
+    # cells it never described. validate reports coverage.range-shape-mismatch.
+    cov = Coverage(
+        domain=Domain.grid(
+            x=Axis.listed((1.0, 2.0)),
+            y=Axis.listed((3.0, 4.0)),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=(0.0, 1.0, 2.0, 3.0),
+                shape=(1, 4),
+                axis_names=("y", "x"),
+            )
+        },
+    )
+
+    with pytest.raises(
+        ValueError, match=r"range 'v' axis 'y' has size 1 but the domain axis has 2"
+    ):
+        to_pandas(cov)

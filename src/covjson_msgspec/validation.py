@@ -70,6 +70,7 @@ from covjson_msgspec._bridging import (
     coordinate_identifiers,
     coordinate_systems,
     is_standard_calendar,
+    range_axis_mismatch,
 )
 from covjson_msgspec._reference_invariants import missing_required_member
 from covjson_msgspec._tiling import (
@@ -3788,7 +3789,9 @@ def _range_axis_issue(
     The range axis ``name`` (at position ``index``) must be a real domain axis
     (else ``coverage.range-axis-not-in-domain``). When it is, the range's size
     along it must equal the domain axis's ``len()`` (else
-    ``coverage.range-shape-mismatch``).
+    ``coverage.range-shape-mismatch``). The size comparison is
+    `range_axis_mismatch`, which the xarray bridge reads too, so `validate`'s
+    report and the bridge's refusal answer one rule.
 
     Parameters
     ----------
@@ -3828,16 +3831,15 @@ def _range_axis_issue(
             axis=name, at=_ptr(path, "axisNames", index)
         )
 
-    if index < len(arr.shape):
-        axis_len = len(domain.axes[name])
+    if (sizes := range_axis_mismatch(arr, domain, index, name)) is not None:
+        range_size, domain_size = sizes
 
-        if arr.shape[index] != axis_len:
-            return CoverageRangeShapeMismatch(
-                axis=name,
-                range_size=arr.shape[index],
-                domain_size=axis_len,
-                at=_ptr(path, "shape", index),
-            )
+        return CoverageRangeShapeMismatch(
+            axis=name,
+            range_size=range_size,
+            domain_size=domain_size,
+            at=_ptr(path, "shape", index),
+        )
 
     return None
 

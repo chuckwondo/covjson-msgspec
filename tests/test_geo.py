@@ -1,7 +1,6 @@
 """Behavioral tests for the geo bridge (to_geopandas / to_geojson)."""
 
-import contextlib
-import pathlib
+import re
 import warnings
 from collections.abc import Callable
 from typing import Any
@@ -12,6 +11,7 @@ import pandas as pd
 import pytest
 from shapely import LineString, Point, Polygon
 
+from corpus_docs import corpus_coverages
 from covjson_msgspec import (
     Axis,
     Coverage,
@@ -22,45 +22,22 @@ from covjson_msgspec import (
     ReferenceSystemConnection,
     TiledNdArray,
     TileSet,
-    decode,
     to_geojson,
     to_geopandas,
     validate,
 )
 from samples import gregorian_series
 
+# The corpus documents the geo bridge refuses, and the reason each one gives.
+# Pinning the bucket per document is what makes the sweep a regression net: with a
+# bare "converted, or refused for an allowed reason" it passes even when nothing
+# converts at all.
+_GEO_REFUSALS = {
+    "covjson-pydantic/doc-example-coverage.json": "is not an inline NdArray",
+    "playground/grid-tiled.covjson": "is not an inline NdArray",
+}
 
-def _corpus_coverages() -> tuple[tuple[str, Coverage | CoverageCollection], ...]:
-    """The conformant corpus documents that decode to a coverage, by file name.
-
-    The geo bridge takes a `Coverage` / `CoverageCollection`, so the bare Domain
-    and NdArray documents (and the structural rejects test_corpus.py pins) drop
-    out here. The ``negative/`` tree is excluded deliberately: what a bridge does
-    with a deliberately malformed document is not a contract.
-
-    Called at module load to parametrize the sweep, so it precedes its first use.
-    Decoding here rather than in the test keeps the parametrized type narrow.
-    """
-    corpus = pathlib.Path(__file__).parent / "corpus"
-    # The same globs test_corpus.py uses: playground nests (grid-tiled/a, ...),
-    # the covjson-pydantic fixtures are flat.
-    paths = (
-        *(corpus / "playground").rglob("*.covjson"),
-        *(corpus / "covjson-pydantic").glob("*.json"),
-    )
-    kept: list[tuple[str, Coverage | CoverageCollection]] = []
-
-    for path in sorted(paths):
-        with contextlib.suppress(msgspec.ValidationError):
-            obj = decode(path.read_bytes())
-
-            if isinstance(obj, Coverage | CoverageCollection):
-                kept.append((path.name, obj))
-
-    return tuple(kept)
-
-
-_CORPUS_COVERAGES = _corpus_coverages()
+_CORPUS_COVERAGES = corpus_coverages()
 
 
 def test_point_is_single_point_feature() -> None:
@@ -890,27 +867,34 @@ def test_geo_corpus_is_present() -> None:
     assert _CORPUS_COVERAGES
 
 
+def test_every_pinned_refusal_is_a_corpus_document() -> None:
+    # A renamed or removed fixture would otherwise leave a pin that never fires,
+    # quietly turning its document back into an unchecked pass.
+    stale = _GEO_REFUSALS.keys() - {name for name, _ in _CORPUS_COVERAGES}
+
+    assert not stale, "pinned refusals that are no longer corpus documents"
+
+
 @pytest.mark.parametrize(
-    "obj",
-    [obj for _, obj in _CORPUS_COVERAGES],
+    ("name", "obj"),
+    _CORPUS_COVERAGES,
     ids=[name for name, _ in _CORPUS_COVERAGES],
 )
 def test_corpus_coverage_emits_serializable_geojson(
-    obj: Coverage | CoverageCollection,
+    name: str, obj: Coverage | CoverageCollection
 ) -> None:
-    # The gap that let the Timestamp TypeError ship: the bridges had never seen a
-    # corpus document. Every real-world coverage must reach JSON or say why not.
+    # Every conformant corpus document either serializes to GeoJSON or gives the
+    # one refusal pinned for it in `_GEO_REFUSALS`.
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)  # a Grid warns, not the point
 
-        try:
-            geojson = to_geojson(obj)
-        except ValueError as exc:
-            # Two documents reference their ranges by URL. Needing them inline is
-            # documented behavior, so assert the reason rather than skipping:
-            # a document that stops converting for any other reason fails here.
-            assert "is not an inline NdArray" in str(exc)
+        if (refusal := _GEO_REFUSALS.get(name)) is not None:
+            with pytest.raises(ValueError, match=re.escape(refusal)):
+                to_geojson(obj)
+
             return
+
+        geojson = to_geojson(obj)
 
     # Reaching here is the serialization check: to_geojson serializes the frame
     # internally (json.loads of gdf.to_json), so the TypeError under repair raises
@@ -989,3 +973,31 @@ def _trajectory(*coordinates: str, values: tuple[tuple[object, ...], ...]) -> Co
             )
         },
     )
+
+
+def test_range_extent_disagreeing_with_the_domain_is_rejected() -> None:
+    # Without the check this returns four well-formed Point features carrying
+    # values that belong to other cells, which is worse than any error.
+    cov = Coverage(
+        domain=Domain.grid(
+            x=Axis.listed((1.0, 2.0)),
+            y=Axis.listed((3.0, 4.0)),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=(0.0, 1.0, 2.0, 3.0),
+                shape=(1, 4),
+                axis_names=("y", "x"),
+            )
+        },
+    )
+
+    with (
+        warnings.catch_warnings(),
+        pytest.raises(
+            ValueError, match=r"range 'v' axis 'y' has size 1 but the domain axis has 2"
+        ),
+    ):
+        warnings.simplefilter("ignore")
+        to_geojson(cov)

@@ -1,5 +1,6 @@
 """Behavioral tests for the xarray bridge (to_xarray / from_xarray)."""
 
+import re
 import warnings
 from collections.abc import Mapping
 
@@ -9,6 +10,7 @@ import pytest
 import xarray as xr
 from msgspec import UNSET
 
+from corpus_docs import corpus_coverages
 from covjson_msgspec import (
     Axis,
     Category,
@@ -32,6 +34,8 @@ from covjson_msgspec import (
     to_xarray,
     validate,
 )
+
+_CORPUS_COVERAGES = corpus_coverages()
 
 
 def test_grid_maps_ranges_to_data_variables() -> None:
@@ -85,6 +89,221 @@ def test_single_valued_axis_becomes_scalar_coord() -> None:
     assert ds["y"].dims == ()
     assert ds["y"].item() == 45.0
     assert "y" not in ds.dims
+
+
+def test_single_valued_axis_included_in_a_range_is_squeezed() -> None:
+    # Spec 6.4 lets a range omit a single-valued axis from shape/axisNames, so a
+    # range that includes one describes the same array as a range that does not.
+    # Both halves of the conversion must agree, or the axis reaches xarray as a
+    # scalar coordinate and a dimension at once.
+    cov = Coverage(
+        domain=Domain.grid(
+            x=Axis.listed((1.0, 2.0)),
+            y=Axis.listed((3.0,)),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=(1.0, 2.0),
+                shape=(1, 2),
+                axis_names=("y", "x"),
+            )
+        },
+    )
+    ds = to_xarray(cov)
+
+    assert ds["v"].dims == ("x",)
+    assert ds["v"].values.tolist() == [1.0, 2.0]
+    assert ds["y"].dims == ()
+    assert "y" not in ds.dims
+
+
+def test_every_axis_single_valued_and_named_squeezes_to_a_scalar_range() -> None:
+    # The corpus shape of covjson-pydantic/example_py.json: all three axes hold one
+    # value and the range includes all three, so the data variable reduces to 0-D:
+    # every collapsed axis is dropped, not just the one that collided.
+    cov = Coverage(
+        domain=Domain.point_series(
+            x=Axis.listed((1.0,)),
+            y=Axis.listed((2.0,)),
+            t=Axis.listed(("2020-01-01T00:00:00Z",)),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=(280.0,),
+                shape=(1, 1, 1),
+                axis_names=("x", "y", "t"),
+            )
+        },
+    )
+    ds = to_xarray(cov)
+
+    assert ds["v"].dims == ()
+    assert ds["v"].item() == 280.0
+    assert not dict(ds.sizes)
+
+
+def test_composite_axis_of_one_value_keeps_its_dimension() -> None:
+    # A composite axis's dimension is the axis key while its coordinates are the
+    # components, so it is never a scalar coordinate and must survive the squeeze
+    # even with a single position.
+    cov = Coverage(
+        domain=Domain(
+            axes={
+                "composite": Axis(
+                    values=((1.0, 2.0, 3.0),),
+                    data_type="tuple",
+                    coordinates=("t", "x", "y"),
+                )
+            },
+            domain_type="Trajectory",
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=(280.0,),
+                shape=(1,),
+                axis_names=("composite",),
+            )
+        },
+    )
+    ds = to_xarray(cov)
+
+    assert ds["v"].dims == ("composite",)
+    assert dict(ds.sizes) == {"composite": 1}
+
+
+def test_range_extent_disagreeing_with_a_single_valued_axis_is_rejected() -> None:
+    # The document is nonconformant (validate reports coverage.range-shape-mismatch),
+    # so the squeeze has no answer. Identify the range, the axis, and both sizes
+    # rather than letting numpy blame a squeeze the caller never asked for.
+    cov = Coverage(
+        domain=Domain.grid(
+            x=Axis.listed((1.0, 2.0)),
+            y=Axis.listed((3.0,)),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=(1.0, 2.0, 3.0, 4.0, 5.0, 6.0),
+                shape=(3, 2),
+                axis_names=("y", "x"),
+            )
+        },
+    )
+
+    with pytest.raises(ValueError, match=r"range 'v'.*axis 'y' has size 3.*has 1"):
+        to_xarray(cov)
+
+
+def test_range_with_more_axis_names_than_shape_entries_is_rejected() -> None:
+    # Decode is permissive about rank (validate reports ndarray.shape-rank), so
+    # the bridge is the first thing to meet such a document. The squeeze
+    # positions come from axisNames while the extents come from the decoded
+    # array, so a rank disagreement must be rejected rather than indexed past.
+    cov = Coverage(
+        domain=Domain.grid(
+            x=Axis.listed((1.0, 2.0)),
+            y=Axis.listed((3.0,)),
+            z=Axis.listed((4.0,)),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=(1.0, 2.0),
+                shape=(1, 2),
+                axis_names=("y", "x", "z"),
+            )
+        },
+    )
+
+    with pytest.raises(ValueError, match=r"range 'v' has 3 axis names.*rank 2"):
+        to_xarray(cov)
+
+
+def test_range_extent_disagreeing_with_a_multi_valued_axis_is_rejected() -> None:
+    # The same rule as the single-valued case (coverage.range-shape-mismatch), so
+    # the bridge answers it the same way rather than letting xarray phrase its own
+    # complaint about a dimension whose size two variables disagree on.
+    cov = Coverage(
+        domain=Domain.grid(
+            x=Axis.listed((1.0, 2.0)),
+            y=Axis.listed((3.0, 4.0, 5.0)),
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=tuple(float(i) for i in range(8)),
+                shape=(4, 2),
+                axis_names=("y", "x"),
+            )
+        },
+    )
+
+    with pytest.raises(
+        ValueError, match=r"range 'v' axis 'y' has size 4 but the domain axis has 3"
+    ):
+        to_xarray(cov)
+
+
+def test_polygon_axis_is_refused_before_a_range_shape_disagreement() -> None:
+    # A polygon axis means the bridge cannot represent the domain at all, so the
+    # caller must hear that rather than being told to correct a range extent that
+    # would leave the document just as unconvertible.
+    cov = Coverage(
+        domain=Domain(
+            axes={
+                "composite": Axis(
+                    values=((((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 0.0)),),),
+                    data_type="polygon",
+                    coordinates=("x", "y"),
+                )
+            },
+            domain_type="Grid",
+        ),
+        ranges={
+            "v": NdArray(
+                data_type="float",
+                values=(1.0, 2.0, 3.0),
+                shape=(3,),
+                axis_names=("composite",),
+            )
+        },
+    )
+
+    with pytest.raises(ValueError, match=r"polygon axes are not supported"):
+        to_xarray(cov)
+
+
+def test_polygon_axis_is_refused_before_a_non_inline_range() -> None:
+    # Otherwise the caller assembles the tiles, reruns, and only then learns the
+    # domain was never convertible.
+    cov = Coverage(
+        domain=Domain(
+            axes={
+                "composite": Axis(
+                    values=((((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 0.0)),),),
+                    data_type="polygon",
+                    coordinates=("x", "y"),
+                )
+            },
+            domain_type="Grid",
+        ),
+        ranges={
+            "v": TiledNdArray(
+                data_type="float",
+                shape=(1,),
+                axis_names=("composite",),
+                tile_sets=(
+                    TileSet(tile_shape=(None,), url_template="http://example.com/t"),
+                ),
+            )
+        },
+    )
+
+    with pytest.raises(ValueError, match=r"polygon axes are not supported"):
+        to_xarray(cov)
 
 
 def test_temporal_axis_parsed_to_datetime64() -> None:
@@ -1195,6 +1414,78 @@ def test_to_datatree_propagates_a_range_value_error() -> None:
 
     with pytest.raises(msgspec.ValidationError):
         to_datatree(collection)
+
+
+# The corpus documents the xarray bridge refuses, and the reason each one gives.
+# Pinning the bucket per document is what makes the sweep a regression net: with a
+# bare "converted, or refused for an allowed reason" it passes even when nothing
+# converts at all.
+_XARRAY_REFUSALS = {
+    "covjson-pydantic/doc-example-coverage.json": "is not an inline NdArray",
+    "covjson-pydantic/polygon-coverage-collection.json": "polygon domain",
+    "covjson-pydantic/polygon-series-coverage-collection.json": "polygon domain",
+    "playground/grid-tiled.covjson": "is not an inline NdArray",
+    "playground/multipolygon.covjson": "polygon domain",
+    "playground/polygonseries.covjson": "polygon domain",
+}
+
+
+def test_xarray_corpus_is_present() -> None:
+    # Guards against a silently empty parametrization, as test_corpus.py does for
+    # its own globs. An exact count would have to be hand-maintained here and in
+    # test_corpus.py's two counts every time a document is vendored in.
+    assert _CORPUS_COVERAGES
+
+
+def test_every_pinned_refusal_is_a_corpus_document() -> None:
+    # A renamed or removed fixture would otherwise leave a pin that never fires,
+    # quietly turning its document back into an unchecked pass.
+    stale = _XARRAY_REFUSALS.keys() - {name for name, _ in _CORPUS_COVERAGES}
+
+    assert not stale, "pinned refusals that are no longer corpus documents"
+
+
+@pytest.mark.parametrize(
+    ("name", "obj"),
+    _CORPUS_COVERAGES,
+    ids=[name for name, _ in _CORPUS_COVERAGES],
+)
+def test_corpus_coverage_converts_to_xarray(
+    name: str, obj: Coverage | CoverageCollection
+) -> None:
+    # Every conformant corpus document either converts to a CF-tagged Dataset or
+    # gives the one refusal pinned for it in `_XARRAY_REFUSALS`.
+    if (refusal := _XARRAY_REFUSALS.get(name)) is not None:
+        with pytest.raises(ValueError, match=re.escape(refusal)):
+            _convert(obj)
+
+        return
+
+    nodes = _convert(obj)
+
+    assert nodes
+
+    # Collect the offenders rather than asserting all(...), which reports only
+    # "assert False". The message carries the expectation and pytest's own
+    # introspection prints the values that broke it.
+    conventions = [node.attrs["Conventions"] for node in nodes]
+    non_cf = [value for value in conventions if not value.startswith("CF-")]
+
+    assert not non_cf, "every node must carry a CF- Conventions attribute"
+
+
+def _convert(
+    obj: Coverage | CoverageCollection,
+) -> tuple[xr.Dataset | xr.DataTree, ...]:
+    """The nodes a corpus document converts to, one per coverage."""
+    match obj:
+        case Coverage():
+            return (to_xarray(obj),)
+        case CoverageCollection():
+            # A collection converts to one child node per member, each built by
+            # to_xarray, so the CF attrs live on the children rather than on the
+            # tree root.
+            return tuple(to_datatree(obj).children.values())
 
 
 def _dom(coverage: Coverage) -> Domain:

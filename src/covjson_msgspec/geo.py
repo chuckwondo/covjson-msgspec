@@ -67,7 +67,7 @@ from covjson_msgspec._bridging import (
     coordinate_identifiers,
     maybe_datetime,
     range_column,
-    require_inline_ndarray,
+    require_checked_ndarray,
     require_time_values,
     temporal_coordinates,
 )
@@ -166,7 +166,8 @@ def to_geopandas(
         ``covjson-msgspec[geo]``.
     ValueError
         If a domain is a URL reference, a point-like domain lacks ``x`` / ``y``
-        coordinates, a range is not an inline `NdArray`, ``trajectory_as`` is not
+        coordinates, a range is not an inline `NdArray` or its ``shape`` disagrees
+        with the domain (`require_checked_ndarray`), ``trajectory_as`` is not
         ``"points"`` or ``"linestring"``, a geometry-bearing domain's
         ``composite`` axis declares the wrong ``dataType`` or resolves to
         coordinates without ``x`` / ``y``, (in ``"linestring"`` mode) a
@@ -920,7 +921,8 @@ def _polygon_frame(
     ------
     ValueError
         If the ``composite`` axis is not a ``"polygon"`` axis or lacks ``x`` /
-        ``y`` coordinates, or a range is not an inline `NdArray`.
+        ``y`` coordinates, or a range is not an inline `NdArray` or its ``shape``
+        disagrees with the domain (`require_checked_ndarray`).
     """
     import numpy as np
     import pandas as pd
@@ -949,7 +951,9 @@ def _polygon_frame(
         sizes["t"] = len(time_values)
 
     columns: dict[str, Any] = {
-        key: range_column(require_inline_ndarray(key, range_, "geopandas"), dims, sizes)
+        key: range_column(
+            require_checked_ndarray(key, range_, domain, "geopandas"), dims, sizes
+        )
         for key, range_ in coverage.ranges.items()
     }
 

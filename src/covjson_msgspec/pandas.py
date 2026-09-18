@@ -57,8 +57,9 @@ from covjson_msgspec._bridging import (
     composite_columns,
     maybe_datetime,
     range_column,
-    require_inline_ndarray,
+    require_checked_ndarray,
     require_time_values,
+    scalar_axes,
     temporal_coordinates,
 )
 from covjson_msgspec.coverage import Coverage, CoverageCollection
@@ -300,7 +301,8 @@ def _coverage_to_pandas(coverage: Coverage, times: TimeValues) -> pd.DataFrame:
     ------
     ValueError
         If the domain is a URL reference, its effective domain type is a polygon
-        type (use the geopandas bridge), or a range is not an inline `NdArray`.
+        type (use the geopandas bridge), a range is not an inline `NdArray`, or a
+        range's ``shape`` disagrees with the domain (`require_checked_ndarray`).
     """
     import pandas as pd
 
@@ -338,7 +340,9 @@ def _coverage_to_pandas(coverage: Coverage, times: TimeValues) -> pd.DataFrame:
         }
         | {
             key: range_column(
-                require_inline_ndarray(key, range_, "pandas"), layout.dims, layout.sizes
+                require_checked_ndarray(key, range_, domain, "pandas"),
+                layout.dims,
+                layout.sizes,
             )
             for key, range_ in coverage.ranges.items()
         }
@@ -430,10 +434,11 @@ def _axis_layout(domain: Domain, temporal: Set[str]) -> _AxisLayout:
     """Sort a domain's axes into the `_AxisLayout` roles a frame gives them.
 
     Each axis lands in exactly one role: a composite (``tuple``) axis becomes one
-    index dim plus a column per component (the tuples transposed). A
-    single-valued axis becomes a constant scalar column (its size-1 dimension
-    dropped). Any other multi-valued axis becomes an index dim. Temporal axes
-    named in ``temporal`` have their values parsed to datetimes along the way.
+    index dim plus a column per component (the tuples transposed). An axis
+    `scalar_axes` classifies as single-valued becomes a constant scalar column
+    (its size-1 dimension dropped). Any other multi-valued axis becomes an index
+    dim. Temporal axes in ``temporal`` have their values parsed to datetimes
+    along the way.
 
     Parameters
     ----------
@@ -471,6 +476,9 @@ def _axis_layout(domain: Domain, temporal: Set[str]) -> _AxisLayout:
     ['x', 'y']
     """
     layout = _AxisLayout()
+    # The same answer the xarray bridge collapses on, so the two bridges cannot
+    # disagree about which axes are dimensions.
+    scalars = scalar_axes(domain)
 
     for key, axis in domain.axes.items():
         if axis.data_type == "polygon":
@@ -494,7 +502,7 @@ def _axis_layout(domain: Domain, temporal: Set[str]) -> _AxisLayout:
         else:
             values = maybe_datetime(list(axis.coordinate_values), key in temporal)
 
-            if len(values) == 1:
+            if key in scalars:
                 # Single-valued axis: a scalar coordinate, kept as a constant
                 # column (its size-1 dimension is dropped).
                 layout.scalars[key] = values[0]
