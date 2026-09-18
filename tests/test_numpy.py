@@ -223,7 +223,12 @@ def test_from_numpy_yields_native_python_scalars(
     arr = NdArray.from_numpy(array, ("x",))
 
     assert arr.values == expected
-    assert all(type(a) is type(b) for a, b in zip(arr.values, expected, strict=True))
+    mismatched = {
+        i: (type(a).__name__, type(b).__name__)
+        for i, (a, b) in enumerate(zip(arr.values, expected, strict=True))
+        if type(a) is not type(b)
+    }
+    assert not mismatched, "element types must match expected types"
     assert msgspec.json.encode(arr)
 
 
