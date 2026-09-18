@@ -149,6 +149,15 @@ Tests:
   called at module-load time, for example inside a `@pytest.mark.parametrize`
   decorator, must precede its first use).
 - Prefer `@pytest.mark.parametrize` over `for` loops inside test functions.
+- Do not assert `all(...)` or `any(...)`. A generator is opaque to pytest's
+  assertion rewriting, so the failure reads `assert False` and names neither the
+  element that broke nor its value. Assert membership against a collected set
+  (`assert "axis.form-conflict" not in {i.code for i in issues}`), which prints
+  both the value sought and the whole set. For a predicate over every element,
+  collect the offenders and assert the collection is empty, putting the
+  expectation in the assertion message: the message says what was expected and
+  pytest's introspection prints what broke it. Call sites predating this rule
+  are tracked in issue #247.
 
 ## Contribution process
 

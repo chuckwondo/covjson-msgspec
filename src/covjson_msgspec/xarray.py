@@ -7,7 +7,8 @@ read by the wider CF-aware ecosystem. A `CoverageCollection` maps to an
 
 Mapping
 -------
-- Each parameter range becomes a data variable, with its ``axisNames`` as dims.
+- Each parameter range becomes a data variable, with its ``axisNames`` as dims,
+  minus any axis `scalar_axes` classifies as single-valued.
 - An individual (multi-valued) primitive axis becomes a dimension coordinate.
   A single-valued axis becomes a scalar coordinate (the size-1 dimension is
   dropped, a documented round-trip loss).
@@ -51,7 +52,8 @@ from covjson_msgspec._bridging import (
     STANDARD_CALENDARS,
     composite_columns,
     coordinate_systems,
-    require_inline_ndarray,
+    require_checked_ndarray,
+    scalar_axes,
 )
 from covjson_msgspec._duration import to_iso_durations
 from covjson_msgspec._i18n import display
@@ -126,8 +128,12 @@ def to_xarray(coverage: Coverage) -> xr.Dataset:
     ValueError
         If the domain is a URL reference, the domain type is a polygon type
         (use the geopandas bridge), a composite ``tuple`` axis has a value that
-        is not a tuple matching its coordinate identifiers, or a range is not an
-        inline `NdArray`.
+        is not a tuple matching its coordinate identifiers, a range is not an
+        inline `NdArray`, or a range's ``shape`` disagrees with the domain: one
+        extent per axis name, each equal to its domain axis's length
+        ([`validate`][covjson_msgspec.validate] *reports* those two as
+        ``ndarray.shape-rank`` and ``coverage.range-shape-mismatch`` instead of
+        raising).
     msgspec.ValidationError
         If a range value cannot be projected to the Python type its ``dataType``
         names, propagated from
@@ -603,10 +609,14 @@ def _build_variables(
 ) -> tuple[Mapping[str, _Variable], Mapping[str, _Variable]]:
     """Build the xarray coordinate and data variables for a coverage.
 
-    Turns the domain's axes into coordinate variables (`_build_coords`, annotated
-    from the referencing) and each range into a data variable (`_data_variable`).
-    A horizontal CRS adds a CF grid-mapping ``crs`` coordinate (`_crs_coordinate`)
-    that every data variable then points at via its ``grid_mapping`` attribute.
+    A domain carrying an axis the bridge cannot represent is refused first
+    (`_check_domain_axes`), then every range is resolved to an inline `NdArray`
+    and checked against the domain (`require_checked_ndarray`), so a range whose shape
+    disagrees is refused without paying for coordinate parsing. Then the
+    domain's axes become coordinate variables (`_build_coords`, annotated from the
+    referencing) and each range a data variable (`_data_variable`). A horizontal
+    CRS adds a CF grid-mapping ``crs`` coordinate (`_crs_coordinate`) that every
+    data variable then points at via its ``grid_mapping`` attribute.
 
     Parameters
     ----------
@@ -620,14 +630,35 @@ def _build_variables(
     tuple
         ``(coords, data_vars)``: the coordinate and data-variable maps, each in
         xarray ``(dims, data, attrs)`` form.
+
+    Raises
+    ------
+    ValueError
+        If the domain has a ``polygon`` axis (`_check_domain_axes`), or a range is
+        not an inline `NdArray` or its ``shape`` disagrees with the domain
+        (`require_checked_ndarray`).
     """
+    # An axis the bridge cannot represent at all is settled before anything about
+    # the ranges, so a caller is never asked to fix a range for a domain that would
+    # still be unconvertible.
+    _check_domain_axes(domain)
+
     systems = coordinate_systems(domain)
     geo_roles = _geographic_roles(domain)
+    # One answer to "which axes are dimensions", read by both halves: the
+    # coordinate side collapses these, and the data side drops them from its dims.
+    scalars = scalar_axes(domain)
+    arrays: dict[str, NdArray] = {}
 
-    coords = _build_coords(domain, systems, geo_roles)
+    # Structural and O(rank) per range, so every range is settled before
+    # `_build_coords` parses a single coordinate value.
+    for key, range_ in coverage.ranges.items():
+        arrays[key] = require_checked_ndarray(key, range_, domain, "xarray")
+
+    coords = _build_coords(domain, systems, geo_roles, scalars)
     data_vars = {
-        key: _data_variable(key, range_, coverage.parameters or None)
-        for key, range_ in coverage.ranges.items()
+        key: _data_variable(key, array, coverage.parameters or None, scalars)
+        for key, array in arrays.items()
     }
 
     # A geographic system contributes a CF grid-mapping variable that the data
@@ -674,15 +705,59 @@ def _geographic_roles(domain: Domain) -> Mapping[str, str]:
     }
 
 
+def _check_domain_axes(domain: Domain) -> None:
+    """Raise unless every axis is one this bridge can turn into a coordinate.
+
+    A ``polygon`` axis carries vector geometry, which has no coordinate form here
+    (the geopandas bridge is where it belongs). Refusing it before any range work
+    keeps the message about the real obstacle: a caller told to correct a range
+    extent would fix it and find the domain just as unconvertible.
+
+    Parameters
+    ----------
+    domain
+        The coverage's (inline) domain.
+
+    Raises
+    ------
+    ValueError
+        If any axis is a ``polygon`` axis.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain
+    >>> _check_domain_axes(Domain.grid(x=Axis.listed((1.0,)), y=Axis.listed((2.0,))))
+
+    >>> ring = ((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 0.0))
+    >>> polygons = Domain(
+    ...     axes={
+    ...         "composite": Axis(
+    ...             values=((ring,),), data_type="polygon", coordinates=("x", "y")
+    ...         )
+    ...     },
+    ...     domain_type="Polygon",
+    ... )
+    >>> _check_domain_axes(polygons)
+    Traceback (most recent call last):
+        ...
+    ValueError: polygon axes are not supported by the xarray bridge
+    """
+    if any(axis.data_type == "polygon" for axis in domain.axes.values()):
+        msg = "polygon axes are not supported by the xarray bridge"
+
+        raise ValueError(msg)
+
+
 def _build_coords(
     domain: Domain,
     systems: Mapping[str, ResolvedReferenceSystem],
     geo_roles: Mapping[str, str],
+    scalars: Set[str],
 ) -> MutableMapping[str, _Variable]:
     """Turn a domain's axes into xarray coordinate variables.
 
-    Each primitive axis becomes one coordinate (single-valued axes collapse to a
-    scalar coordinate, dropping the size-1 dimension). A composite (``tuple``)
+    Each primitive axis becomes one coordinate (an axis in ``scalars`` collapses
+    to a scalar coordinate, dropping the size-1 dimension). A composite (``tuple``)
     axis is transposed into one non-dimension coordinate per component, all along
     the composite's single dimension. Each coordinate is built by `_coordinate`,
     which attaches CF attributes from ``systems`` / ``geo_roles``.
@@ -696,6 +771,10 @@ def _build_coords(
         `coordinate_systems`.
     geo_roles
         Coordinate-to-geographic-role lookup from `_geographic_roles`.
+    scalars
+        The axes to collapse, from `scalar_axes`. `_data_variable` drops the same
+        names from its dims, so no axis reaches xarray as both a scalar variable
+        and a dimension.
 
     Returns
     -------
@@ -705,16 +784,12 @@ def _build_coords(
     Raises
     ------
     ValueError
-        If the domain has a ``polygon`` axis (vector geometry belongs in the
-        geopandas bridge).
+        If a composite ``tuple`` axis has a value that is not a tuple matching its
+        coordinate identifiers (from `composite_columns`).
     """
     coords: dict[str, _Variable] = {}
 
     for key, axis in domain.axes.items():
-        if axis.data_type == "polygon":
-            msg = "polygon axes are not supported by the xarray bridge"
-            raise ValueError(msg)
-
         if axis.data_type == "tuple":
             # Composite axis: transpose the tuples into one non-dimension
             # coordinate per component, all along the single dimension ``key``.
@@ -726,9 +801,13 @@ def _build_coords(
                     coordinate, key, column, systems, geo_roles, scalar=False
                 )
         else:
-            values = list(axis.coordinate_values)
             coords[key] = _coordinate(
-                key, key, values, systems, geo_roles, scalar=len(values) == 1
+                key,
+                key,
+                list(axis.coordinate_values),
+                systems,
+                geo_roles,
+                scalar=key in scalars,
             )
 
     return coords
@@ -1091,23 +1170,33 @@ def _crs_coordinate(domain: Domain) -> _Variable | None:
 
 def _data_variable(
     key: str,
-    range_: Range,
+    array: NdArray,
     parameters: Mapping[str, Parameter] | None,
+    scalars: Set[str],
 ) -> _Variable:
     """Build a data-variable `_Variable` from one parameter range.
 
     The range's ``axisNames`` become the variable's dims and its values the data
     ([`to_numpy`][covjson_msgspec.NdArray.to_numpy]). CF attributes come from the
-    matching parameter via `_variable_attrs`.
+    matching parameter via `_variable_attrs`. `_build_variables` has already
+    resolved and checked ``array``, so this only builds.
+
+    The names in ``scalars`` are dropped from the dims and squeezed out of the
+    data, matching the scalar coordinates `_build_coords` collapses (see
+    `scalar_axes`): otherwise a name reaches `xarray.Dataset` as a scalar
+    variable and a dimension at once, which xarray rejects.
 
     Parameters
     ----------
     key
-        The range key (also used to find its parameter).
-    range_
-        The range. Must be an inline [`NdArray`][covjson_msgspec.NdArray].
+        The range key, used to find its parameter.
+    array
+        The range, already resolved to an inline
+        [`NdArray`][covjson_msgspec.NdArray] and checked against the domain.
     parameters
         The coverage's parameters, or ``None`` when undescribed.
+    scalars
+        The axes `_build_coords` collapsed, from `scalar_axes`.
 
     Returns
     -------
@@ -1116,17 +1205,28 @@ def _data_variable(
 
     Raises
     ------
-    ValueError
-        If ``range_`` is not an inline [`NdArray`][covjson_msgspec.NdArray].
     msgspec.ValidationError
         Propagated from [`to_numpy`][covjson_msgspec.NdArray.to_numpy] when a
         range value cannot be projected to the Python type its ``dataType``
         names.
     """
-    array = require_inline_ndarray(key, range_, "xarray")
     parameter = parameters.get(key) if parameters is not None else None
+    data = array.to_numpy()
+    # One walk, so the dims kept and the positions squeezed stay complementary by
+    # construction rather than by two predicates agreeing.
+    dims: list[str] = []
+    drop: list[int] = []
 
-    return (array.axis_names, array.to_numpy(), _variable_attrs(parameter))
+    for index, name in enumerate(array.axis_names):
+        if name in scalars:
+            drop.append(index)
+        else:
+            dims.append(name)
+
+    if drop:
+        data = data.squeeze(axis=tuple(drop))
+
+    return (tuple(dims), data, _variable_attrs(parameter))
 
 
 def _variable_attrs(parameter: Parameter | None) -> MutableMapping[str, Any]:

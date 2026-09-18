@@ -459,6 +459,282 @@ def temporal_coordinates(domain: Domain) -> Set[str]:
     )
 
 
+def scalar_axes(domain: Domain) -> Set[str]:
+    """The domain axes that a bridge collapses to a scalar rather than a dimension.
+
+    Spec 6.4 requires a range's ``shape`` and ``axisNames`` to correspond to the
+    domain axes, "while single-valued axes MAY be omitted", so a range that
+    includes a single-valued axis and a range that omits it describe the same
+    array. The bridges take the omitted form as canonical: such an axis becomes a
+    scalar coordinate (xarray) or a constant column (pandas), and the size-1
+    dimension is dropped. Every side of a conversion asks here, so the two bridges
+    cannot disagree about which axes are dimensions, nor can a bridge's coordinate
+    side disagree with its data side.
+
+    A composite (``tuple``) axis is never scalar, however few values it holds: its
+    dimension is the axis key while its coordinates are the components, so there
+    is no coordinate under the key to collapse. A ``polygon`` axis is not
+    classified here either: it carries vector geometry, which no bridge asking
+    here can collapse to a coordinate.
+
+    Parameters
+    ----------
+    domain
+        The domain whose [`axes`][covjson_msgspec.Domain.axes] are classified.
+
+    Returns
+    -------
+    set of str
+        The axis keys that carry exactly one value and map no dimension.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain
+    >>> domain = Domain.point_series(
+    ...     x=Axis.listed((1.0,)), y=Axis.listed((2.0,)), t=Axis.listed((10, 20, 30))
+    ... )
+    >>> sorted(scalar_axes(domain))
+    ['x', 'y']
+
+    A single-position composite axis keeps its dimension, so it is not listed:
+
+    >>> trajectory = Domain(
+    ...     axes={
+    ...         "composite": Axis(
+    ...             values=((1.0, 2.0, 3.0),),
+    ...             data_type="tuple",
+    ...             coordinates=("t", "x", "y"),
+    ...         )
+    ...     },
+    ...     domain_type="Trajectory",
+    ... )
+    >>> sorted(scalar_axes(trajectory))
+    []
+
+    Nor is a ``polygon`` axis, however few polygons it holds:
+
+    >>> ring = ((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 0.0))
+    >>> polygons = Domain(
+    ...     axes={
+    ...         "composite": Axis(
+    ...             values=((ring,),), data_type="polygon", coordinates=("x", "y")
+    ...         )
+    ...     },
+    ...     domain_type="Polygon",
+    ... )
+    >>> sorted(scalar_axes(polygons))
+    []
+    """
+
+    # len(axis) is O(1) in every axis form, so a regular axis's values are never
+    # materialized just to count them.
+    return frozenset(
+        key
+        for key, axis in domain.axes.items()
+        if axis.data_type not in {"tuple", "polygon"} and len(axis) == 1
+    )
+
+
+def range_axis_mismatch(
+    arr: NdArray, domain: Domain, index: int, name: str
+) -> tuple[int, int] | None:
+    """A range's size along one axis and the domain axis's length, when they differ.
+
+    Spec 6.4 requires a range's ``shape`` to correspond to the domain axes, so the
+    range's size along an axis must equal that axis's ``len()``. This is the rule
+    with no response attached: [`validate`][covjson_msgspec.validate] reports a
+    difference as ``coverage.range-shape-mismatch`` while the xarray bridge raises,
+    and both read the comparison here, so the two tiers cannot drift apart.
+
+    An axis the domain does not carry, or a position past the range's ``shape``
+    (a rank mismatch, which ``ndarray.shape-rank`` covers), has no size to compare.
+
+    Parameters
+    ----------
+    arr
+        The inline range whose ``shape`` is compared.
+    domain
+        The coverage's (inline) domain.
+    index
+        The axis's position in the range's ``axisNames`` / ``shape``.
+    name
+        The axis name at ``index``.
+
+    Returns
+    -------
+    tuple of (int, int) or None
+        The range size and the domain axis's length, or ``None`` when they agree
+        or there is nothing to compare.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain, NdArray
+    >>> dom = Domain.grid(x=Axis.regular(0.0, 10.0, 3), y=Axis.regular(0.0, 10.0, 2))
+    >>> arr = NdArray(data_type="float", values=(1.0,), shape=(9,), axis_names=("x",))
+    >>> range_axis_mismatch(arr, dom, 0, "x")
+    (9, 3)
+
+    A position past the range's ``shape`` has no size of its own to compare:
+
+    >>> range_axis_mismatch(arr, dom, 1, "x") is None
+    True
+    """
+    if name not in domain.axes or index >= len(arr.shape):
+        return None
+
+    domain_size = len(domain.axes[name])
+
+    return None if arr.shape[index] == domain_size else (arr.shape[index], domain_size)
+
+
+def check_range_shape(key: str, arr: NdArray, domain: Domain) -> None:
+    """Raise unless a range's shape lines up with the domain.
+
+    Spec 6.2 states that ``axisNames`` is "a string array of the same length as
+    ``"shape"``", and spec 6.4 requires the shape to correspond to the domain
+    axes. Decode enforces neither (`validate` reports them as
+    ``ndarray.shape-rank`` and ``coverage.range-shape-mismatch``), so a bridge is
+    the first thing to meet a range whose shape is wrong. Every bridge asks,
+    because the consequences differ but the rule does not: xarray would hand
+    `xarray.Dataset` two variables claiming one dimension, while pandas and
+    geopandas would silently broadcast the values onto cells the range never
+    described, which is worse than any error.
+
+    Two neighboring rules are out of scope here, both reported by `validate` and
+    both reaching the caller by another route: an axis name the domain does not
+    carry (``coverage.range-axis-not-in-domain``), and a value count that
+    disagrees with the shape (``ndarray.value-count``, which
+    [`to_numpy`][covjson_msgspec.NdArray.to_numpy] raises on).
+
+    The per-axis size comparison is `range_axis_mismatch`, shared with `validate`.
+
+    Parameters
+    ----------
+    key
+        The range key, supplied in the message so the offending range is
+        identifiable.
+    arr
+        The inline range to check.
+    domain
+        The coverage's (inline) domain.
+
+    Raises
+    ------
+    ValueError
+        If ``axisNames`` and ``shape`` differ in length, or if the range's size
+        along an axis differs from that domain axis's length.
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain, NdArray
+    >>> dom = Domain.grid(x=Axis.listed((1.0, 2.0)), y=Axis.listed((3.0,)))
+
+    A conformant range passes silently:
+
+    >>> ok = NdArray(
+    ...     data_type="float", values=(1.0, 2.0), shape=(1, 2), axis_names=("y", "x")
+    ... )
+    >>> check_range_shape("v", ok, dom)
+
+    A range supplying more axis names than the shape has entries does not:
+
+    >>> outranked = NdArray(
+    ...     data_type="float", values=(1.0,), shape=(1,), axis_names=("y", "x")
+    ... )
+    >>> check_range_shape("v", outranked, dom)
+    Traceback (most recent call last):
+        ...
+    ValueError: range 'v' has 2 axis names but a shape of rank 1
+
+    Neither does a range claiming three values along a single-valued axis:
+
+    >>> oversized = NdArray(
+    ...     data_type="float", values=(1.0,) * 6, shape=(3, 2), axis_names=("y", "x")
+    ... )
+    >>> check_range_shape("v", oversized, dom)
+    Traceback (most recent call last):
+        ...
+    ValueError: range 'v' axis 'y' has size 3 but the domain axis has 1
+    """
+    if len(arr.axis_names) != len(arr.shape):
+        msg = (
+            f"range {key!r} has {len(arr.axis_names)} axis names but a shape of "
+            f"rank {len(arr.shape)}"
+        )
+
+        raise ValueError(msg)
+
+    # Having established len(axis_names) == len(shape), `range_axis_mismatch`'s own
+    # out-of-range guard is unreachable from here. It is there for `validate`,
+    # which compares one axis at a time with no such precondition.
+    for index, name in enumerate(arr.axis_names):
+        if (sizes := range_axis_mismatch(arr, domain, index, name)) is not None:
+            range_size, domain_size = sizes
+            msg = (
+                f"range {key!r} axis {name!r} has size {range_size} but the "
+                f"domain axis has {domain_size}"
+            )
+
+            raise ValueError(msg)
+
+
+def require_checked_ndarray(
+    key: str, range_: Range, domain: Domain, target: str
+) -> NdArray:
+    """Resolve a range to an inline `NdArray` whose shape agrees with the domain.
+
+    `require_inline_ndarray` then `check_range_shape`, which is what every bridge
+    needs before it can lay a range's values onto a grid. Neither half is useful
+    alone here: a bridge that resolved without checking would broadcast by count,
+    silently relabelling the values onto cells the range never described.
+
+    Parameters
+    ----------
+    key
+        The range key, supplied in each message so the offending range is
+        identifiable.
+    range_
+        The range to resolve.
+    domain
+        The coverage's (inline) domain.
+    target
+        The bridge name, as `require_inline_ndarray` spells it in its message.
+
+    Returns
+    -------
+    NdArray
+        The inline array, checked against the domain.
+
+    Raises
+    ------
+    ValueError
+        If ``range_`` is not an inline `NdArray` (`require_inline_ndarray`), or its
+        ``shape`` disagrees with the domain (`check_range_shape`).
+
+    Examples
+    --------
+    >>> from covjson_msgspec import Axis, Domain, NdArray
+    >>> dom = Domain.grid(x=Axis.listed((1.0, 2.0)), y=Axis.listed((3.0,)))
+    >>> arr = NdArray(
+    ...     data_type="float", values=(1.0, 2.0), shape=(1, 2), axis_names=("y", "x")
+    ... )
+    >>> require_checked_ndarray("v", arr, dom, "pandas") is arr
+    True
+
+    >>> bad = NdArray(
+    ...     data_type="float", values=(1.0, 2.0), shape=(2, 1), axis_names=("y", "x")
+    ... )
+    >>> require_checked_ndarray("v", bad, dom, "pandas")
+    Traceback (most recent call last):
+        ...
+    ValueError: range 'v' axis 'y' has size 2 but the domain axis has 1
+    """
+    array = require_inline_ndarray(key, range_, target)
+    check_range_shape(key, array, domain)
+
+    return array
+
+
 def coordinate_identifiers(axis: Axis, axis_name: str) -> Sequence[str]:
     """The coordinate identifiers an axis carries, with spec 6.1.1's default applied.
 
