@@ -539,7 +539,8 @@ def test_vertical_profile_carries_z_into_point_geometry() -> None:
     )
     gdf = to_geopandas(cov)
 
-    assert all(g.has_z for g in gdf.geometry)
+    missing_z = [i for i, g in enumerate(gdf.geometry) if not g.has_z]
+    assert not missing_z, "every geometry must have a Z coordinate"
     assert [(p.x, p.y, p.z) for p in map(_point, gdf.geometry)] == [
         (1.0, 2.0, 10.0),
         (1.0, 2.0, 20.0),
