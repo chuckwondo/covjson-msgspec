@@ -147,3 +147,4 @@ nav:
           - "ADR-0021: Durations as ISO 8601 strings": adr/0021-durations-as-iso-8601-strings.md
           - "ADR-0022: Pinned specification revision": adr/0022-pinned-specification-revision.md
           - "ADR-0023: Axis form conflict tier": adr/0023-axis-form-conflict-tier.md
+          - "ADR-0024: Raise or report": adr/0024-raise-or-report.md

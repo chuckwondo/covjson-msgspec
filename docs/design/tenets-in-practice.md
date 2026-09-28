@@ -56,7 +56,7 @@ its typed payload, or read the string `code` for stringly work (logging,
 counting), and because the discriminant is a field, a whole report round-trips
 through JSON. The caller decides at the edge what to do with the report: ask
 `report.ok` for the verdict and read the findings via `report.issues`, or ask
-`validate()` to raise via `mode="raise"`, the one sanctioned effect.
+`validate()` to raise via `mode="raise"`.
 
 Best-effort reference resolution takes the pattern further: both the fetcher *and*
 the policy for how a batch reacts to failures are injected values.
