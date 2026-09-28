@@ -2,7 +2,12 @@
 
 ## Status
 
-Accepted
+Accepted, except the first of the two reasons "A raising converter" gives under
+Alternatives considered ("Raising on a spec-legal document value fights the
+functional-core tenet"), which is superseded by [ADR-0024]. That ADR raises on
+some spec-legal values (`ValueOverflowError`), and the tenet no longer puts
+values first. The decision stands on the second reason, that a raising converter
+does not compose over an axis.
 
 ## Context
 
@@ -137,3 +142,4 @@ that default without an interface change.
 [ADR-0006]: 0006-validation-findings-sum-type.md
 [ADR-0007]: 0007-functional-core-errors-as-values.md
 [KNMI/covjson-pydantic#34]: https://github.com/KNMI/covjson-pydantic/issues/34
+[ADR-0024]: 0024-raise-or-report.md

@@ -20,8 +20,13 @@ heavy.
 The core is pure functions over immutable data: helpers return values (a stream of
 issues, a failure record) rather than mutating a shared accumulator or performing
 effects. Effects (I/O, raising, sleeping, materializing a stream) live in a thin
-shell at the edges: the codec entry points, `validate`'s `mode=`, and the injected
-fetcher. Errors are values first, with an opt-in raise confined to the edge.
+shell at the edges: the public entry points and the injected fetcher. A
+failure is returned as a value where checking or classifying the input is the
+function's job, or where the caller chose to tolerate it (a batch strategy).
+Everywhere else the entry point raises a typed exception that carries the same
+data. So propagating a failure costs a caller nothing, and handling one still
+reads data rather than a message. See
+[ADR-0024](../adr/0024-raise-or-report.md).
 
 ## Immutable by default, statically enforced
 

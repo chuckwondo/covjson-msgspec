@@ -70,7 +70,8 @@ CLAUDE.md.
   a `FetchError` raise bridge
 - [ADR-0008](0008-temporal-conversion-result-projection.md): temporal string
   conversion as a faithful `TemporalResult` sum type + opt-in lexical `validate()`
-  check. `to_datetime` the stdlib convenience
+  check. `to_datetime` the stdlib convenience (one reason superseded by
+  ADR-0024)
 - [ADR-0009](0009-openapi-schema-bridge.md): OpenAPI schema bridging from the
   msgspec types. A pure `schema.py` generator plus a thin FastAPI adapter,
   components namespaced under `CoverageJSON.` to avoid host collisions
@@ -135,6 +136,11 @@ CLAUDE.md.
   present. Measured across three implementations, only a *contradicting*
   complete triple is ambiguous, and that is the one case an O(1) construction
   check cannot detect, so it supersedes ADR-0018's placement of this invariant
+- [ADR-0024](0024-raise-or-report.md): the public API raises typed exceptions
+  under `CovJSONError`, each also the built-in a caller expects, and returns a
+  failure as a value only where checking or classifying is the job or where the
+  caller chose to tolerate it. One exception class per way of handling, with
+  `.code` telling apart the kinds it merges
 
 Some decisions are recorded in ADRs that land with their implementation rather
 than here. See the issue tracker for the in-flight set.
