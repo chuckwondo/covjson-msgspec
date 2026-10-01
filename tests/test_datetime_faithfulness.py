@@ -125,8 +125,10 @@ def test_decoded_time_values_are_plain_str() -> None:
     assert isinstance(cov.domain, Domain)
     values = cov.domain.axes["t"].values
     assert values is not None
-    assert all(isinstance(value, str) for value in values)
-    assert not any(isinstance(value, datetime.datetime) for value in values)
+    non_str = [value for value in values if not isinstance(value, str)]
+    assert not non_str, "every decoded time value must be a plain str"
+    datetime_leaks = [value for value in values if isinstance(value, datetime.datetime)]
+    assert not datetime_leaks, "no decoded value should be a datetime instance"
 
 
 def _series(calendar: str = NON_GREGORIAN_CALENDAR) -> Coverage:

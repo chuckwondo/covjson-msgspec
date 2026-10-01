@@ -359,7 +359,7 @@ def test_range_axis_not_in_domain() -> None:
     )
     issues = validate(cov).issues
 
-    assert any(i.code == "coverage.range-axis-not-in-domain" for i in issues)
+    assert "coverage.range-axis-not-in-domain" in {i.code for i in issues}
 
 
 def test_url_domain_skips_range_vs_domain_checks() -> None:
@@ -392,7 +392,7 @@ def test_range_without_parameter_is_an_error() -> None:
     )
     errors = validate(cov).errors
 
-    assert any(i.code == "coverage.range-without-parameter" for i in errors)
+    assert "coverage.range-without-parameter" in {i.code for i in errors}
 
 
 def test_pointer_escapes_special_characters_in_a_key() -> None:
@@ -440,7 +440,7 @@ def test_categorical_code_check_is_opt_in() -> None:
     )
 
     # Off by default: the undefined code 99 is not scanned.
-    assert all(i.code != "range.invalid-category-code" for i in validate(cov).issues)
+    assert "range.invalid-category-code" not in {i.code for i in validate(cov).issues}
 
     # Opt in: the undefined code is flagged.
     issues = validate(cov, check_values=True).issues
@@ -514,7 +514,7 @@ def test_code_shared_by_real_and_phantom_key_stays_valid() -> None:
     issues = validate(cov, check_values=True).issues
 
     # Value 5 is valid via real key "1": no range finding.
-    assert all(i.code != "range.invalid-category-code" for i in issues)
+    assert "range.invalid-category-code" not in {i.code for i in issues}
     # The phantom key is still reported.
     assert [i.key for i in _encoding_key_issues(issues)] == ["99"]
 
@@ -582,7 +582,7 @@ def test_conformant_encoding_yields_no_key_finding() -> None:
     issues = validate(cov, check_values=True).issues
 
     assert _encoding_key_issues(issues) == []
-    assert all(i.code != "range.invalid-category-code" for i in issues)
+    assert "range.invalid-category-code" not in {i.code for i in issues}
 
 
 def test_value_data_type_check_is_opt_in() -> None:
@@ -695,8 +695,9 @@ def test_collection_validates_resolved_members() -> None:
     collection = CoverageCollection(coverages=(member,), domain_type="Point")
     issues = validate(collection).issues
 
-    assert any(i.code == "domain.axis-not-single" for i in issues)
-    assert all(i.at.startswith("/coverages/0/") for i in issues)
+    assert "domain.axis-not-single" in {i.code for i in issues}
+    wrong_prefix = [i.at for i in issues if not i.at.startswith("/coverages/0/")]
+    assert not wrong_prefix, "every issue must point under /coverages/0/"
 
 
 def test_missing_referencing_on_standalone_domain() -> None:
@@ -745,9 +746,9 @@ def test_coverage_domain_type_suppresses_the_inline_domain_warning() -> None:
         parameters={},
     )
 
-    assert all(
-        i.code != "domain.missing-domain-type" for i in validate(coverage).issues
-    )
+    assert "domain.missing-domain-type" not in {
+        i.code for i in validate(coverage).issues
+    }
 
 
 def test_collection_member_repeating_domain_type_warns() -> None:
@@ -887,7 +888,7 @@ def test_temporal_lexical_form_check_is_opt_in() -> None:
     )
 
     # Off by default: no value scanning.
-    assert all(i.code != "temporal.lexical-form" for i in validate(domain).issues)
+    assert "temporal.lexical-form" not in {i.code for i in validate(domain).issues}
 
     # Opt in: only the malformed value is flagged. The reduced-precision "2020"
     # and the unrepresentable "+102020" are legal forms and pass.
@@ -937,7 +938,7 @@ def test_temporal_check_skips_non_gregorian_calendar() -> None:
 
     issues = validate(domain, check_values=True).issues
 
-    assert all(i.code != "temporal.lexical-form" for i in issues)
+    assert "temporal.lexical-form" not in {i.code for i in issues}
 
 
 def test_collection_referencing_is_inherited_into_member_domain() -> None:
@@ -1744,7 +1745,7 @@ def test_axis_monotonic_check_is_opt_in() -> None:
     domain = _axis_domain(Axis.listed((0.0, 2.0, 1.0)), ReferenceSystem.geographic())
 
     # Off by default: the value array is not scanned.
-    assert all(i.code != "axis.not-monotonic" for i in validate(domain).issues)
+    assert "axis.not-monotonic" not in {i.code for i in validate(domain).issues}
 
     # Opt in: the reversal is flagged as an error, at the offending index.
     (issue,) = [

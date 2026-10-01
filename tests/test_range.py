@@ -91,7 +91,8 @@ def test_values_as_projects_to_precise_type(
     assert result == expected
     # `== expected` alone cannot catch a missing int->float promotion, since
     # ``5 == 5.0``. Assert the projected element type exactly.
-    assert all(type(value) is dtype for value in result if value is not None)
+    wrong_type = [value for value in result if value is not None and type(value) is not dtype]
+    assert not wrong_type, f"every non-None element must be {dtype.__name__}"
 
 
 @pytest.mark.parametrize(
