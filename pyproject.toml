@@ -69,8 +69,10 @@ geo = [ "geopandas>=0.14", "shapely>=2.0", "pandas>=2.0", "numpy>=1.24" ]
 # FastAPI response adapter (CovJSONResponse). The framework-agnostic core stays
 # in media_type.py; fastapi is imported only behind this extra. Deliberately kept
 # out of `all` below, which aggregates the data bridges, not a web framework.
-# 0.110 matches titiler's floor (the titiler-covjson coupling), not an API need.
-fastapi = [ "fastapi>=0.110" ]
+# The API need is 0.99.0, the first release to emit OpenAPI 3.1 (ADR-0009). The
+# bench group's pydantic 2 holds the lock at 0.100, and ADR-0010 records why the
+# floor sits there.
+fastapi = [ "fastapi>=0.100" ]
 # The litestar response-helper bridge is planned but not yet shipped, so it
 # carries no extra until there is code behind it (an extra that installs a
 # framework but adds nothing would mislead).

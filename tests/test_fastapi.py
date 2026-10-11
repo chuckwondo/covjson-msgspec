@@ -85,6 +85,18 @@ def test_openapi_documents_the_coverage_endpoint() -> None:
     assert content == {MEDIA_TYPE: {"schema": schema_ref(Coverage)}}
 
 
+def test_openapi_document_is_version_3_1_or_later() -> None:
+    # The component schemas are JSON Schema draft 2020-12, the dialect OpenAPI
+    # adopted in 3.1, so they describe the API only in a 3.1 or later document
+    # (ADR-0009). FastAPI emits 3.1 from 0.99.0. Whatever the declared floor,
+    # the bench group's covjson-pydantic requires pydantic 2, which holds every
+    # resolution of uv.lock at fastapi 0.100 or later, so this fails on an older
+    # fastapi only in an environment built outside the lock.
+    version = _documented_app.openapi()["openapi"]
+
+    assert tuple(int(part) for part in version.split(".")[:2]) >= (3, 1)
+
+
 _response_class_app = FastAPI()
 
 

@@ -459,7 +459,7 @@ typecheck = [
 requires-dist = [
     { name = "cftime", marker = "extra == 'xarray'", specifier = ">=1.6.2" },
     { name = "covjson-msgspec", extras = ["numpy", "xarray", "pandas", "geo"], marker = "extra == 'all'" },
-    { name = "fastapi", marker = "extra == 'fastapi'", specifier = ">=0.110" },
+    { name = "fastapi", marker = "extra == 'fastapi'", specifier = ">=0.100" },
     { name = "geopandas", marker = "extra == 'geo'", specifier = ">=0.14" },
     { name = "langcodes", specifier = ">=3.5" },
     { name = "msgspec", specifier = ">=0.18" },
