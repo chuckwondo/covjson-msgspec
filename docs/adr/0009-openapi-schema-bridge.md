@@ -20,7 +20,7 @@ First, schema generation honors the same `rename="camel"` the encoder uses, so
 the generated property names are the lowerCamelCase wire names (`domainType`),
 matching the encoded document. Second, draft 2020-12 is the dialect OpenAPI 3.1
 adopts, and FastAPI has emitted OpenAPI 3.1.0 by default since 0.99.0
-(2023-06-30), well under this project's `fastapi>=0.110` floor.
+(2023-06-30), so this project's fastapi floor must be at least 0.99.0.
 
 One hazard is specific to injecting a schema set into someone else's application:
 msgspec names components by the bare type name, so our set includes generic names
@@ -69,8 +69,8 @@ FastAPI adapter, mirroring the existing `media_type.py` / `fastapi.py` split.
   official covjson.org schema is authoritative for validation, and comparing our
   output against it is the separate concern of issue #15.
 - **Also supporting OpenAPI 3.0.** Would require dialect down-conversion from
-  draft 2020-12. Rejected as unnecessary given the `fastapi>=0.110` floor already
-  guarantees 3.1.
+  draft 2020-12. Rejected as unnecessary, because a fastapi floor of at least
+  0.99.0 guarantees 3.1.
 
 ## Consequences
 
