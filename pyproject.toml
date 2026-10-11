@@ -101,7 +101,7 @@ dev = [
   # doctest, which expects `covjson_msgspec.validation.CovJSONValidationError`,
   # fails. 8.1.1 imports the installed package instead (8.1.0 did too, but was
   # yanked from PyPI).
-  "pytest>=8.1.1",
+  "pytest>=8.0",
   "pytest-cov>=5.0",
   "coverage>=7.14.3",
   # httpx2's ASGI transport drives the FastAPI app in tests/test_fastapi.py
