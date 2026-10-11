@@ -55,7 +55,7 @@ def test_covjsonresponse_forwards_headers_and_owns_its_media_type() -> None:
     # escape hatch, so a caller cannot override it and serve non-CoverageJSON.
     params = inspect.signature(CovJSONResponse.__init__).parameters
     assert "media_type" not in params
-    assert not any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+    assert inspect.Parameter.VAR_KEYWORD not in {p.kind for p in params.values()}
 
 
 _documented_app = FastAPI()
