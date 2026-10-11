@@ -1,9 +1,10 @@
 """Behavioral tests for the FastAPI response adapter."""
 
+import asyncio
 import inspect
 
+import httpx2
 from fastapi import FastAPI, Response
-from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
 from covjson_msgspec import Axis, Coverage, Domain, NdArray, decode, schema_ref
@@ -23,11 +24,8 @@ def serve_profiled_coverage() -> CovJSONResponse:
     return CovJSONResponse(_coverage(), profile="urn:example")
 
 
-client = TestClient(app)
-
-
 def test_route_serves_coverage_json_media_type() -> None:
-    response = client.get("/coverage")
+    response = _get(app, "/coverage")
 
     assert response.status_code == 200
     assert response.headers["content-type"] == MEDIA_TYPE
@@ -36,7 +34,7 @@ def test_route_serves_coverage_json_media_type() -> None:
 
 
 def test_route_advertises_profile_in_content_type() -> None:
-    response = client.get("/coverage-profiled")
+    response = _get(app, "/coverage-profiled")
 
     assert response.status_code == 200
     assert response.headers["content-type"] == f'{MEDIA_TYPE}; profile="urn:example"'
@@ -76,7 +74,7 @@ add_openapi_schemas(_documented_app)
 
 
 def test_openapi_documents_the_coverage_endpoint() -> None:
-    openapi = TestClient(_documented_app).get("/openapi.json").json()
+    openapi = _get(_documented_app, "/openapi.json").json()
 
     # The endpoint is only truly documented if the referenced component is present.
     assert "CoverageJSON.Coverage" in openapi["components"]["schemas"]
@@ -145,6 +143,23 @@ def test_add_openapi_schemas_is_idempotent_and_order_independent() -> None:
     # Registering again must not change the exposed set (idempotent).
     add_openapi_schemas(app)
     assert app.openapi()["components"]["schemas"] == once
+
+
+def _get(app: FastAPI, path: str) -> httpx2.Response:
+    """Request ``path`` from ``app`` in process, through httpx2's ASGI transport.
+
+    Starlette's TestClient would do the same, but the HTTP client it imports
+    depends on the Starlette release (httpx below 1.2, httpx2 from 1.2), so it
+    cannot run across the supported fastapi range with httpx2 alone.
+    """
+
+    async def request() -> httpx2.Response:
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            return await client.get(path)
+
+    return asyncio.run(request())
 
 
 def _coverage() -> Coverage:
