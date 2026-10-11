@@ -91,7 +91,14 @@ dev = [
   "pandas-stubs",
   "types-geopandas",
   "types-shapely",
-  "pytest>=8.0",
+  # Below 8.1.1, pytest's importlib import mode (set in
+  # [tool.pytest.ini_options]) imports each module under src/ a second time,
+  # under a name built from its file path: `src.covjson_msgspec.validation`.
+  # An exception raised there prints with that `src.` prefix, so the `validate`
+  # doctest, which expects `covjson_msgspec.validation.CovJSONValidationError`,
+  # fails. 8.1.1 imports the installed package instead (8.1.0 did too, but was
+  # yanked from PyPI).
+  "pytest>=8.1.1",
   "pytest-cov>=5.0",
   "coverage>=7.14.3",
   # httpx2 backs Starlette's TestClient (tests/test_fastapi.py). Pydantic took
