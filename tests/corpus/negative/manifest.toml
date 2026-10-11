@@ -126,8 +126,8 @@ issues = [{ code = "axis.composite-arity", severity = "error" }]
 
 # `axis.composite-value-shape` gets a case per dataType: one code, but two
 # predicates (an element that is not an array, versus one that is not a GeoJSON
-# Polygon coordinate array), and a single document would leave the other green
-# but unexercised.
+# Polygon coordinate array), and a single document would leave the other
+# unexercised while the suite still passes.
 [[case]]
 file = "axis-composite-value-shape-tuple.json"
 issues = [{ code = "axis.composite-value-shape", severity = "error" }]

@@ -100,7 +100,9 @@ def test_parameter_group_requires_non_empty_members() -> None:
 def test_parameter_group_requires_non_empty_members_on_decode() -> None:
     # The guard lives in __post_init__, which msgspec runs during decoding, so
     # the rule must reject a wire document and not only a direct construction.
-    with pytest.raises(ValueError, match="`members` must be non-empty"):
+    # Decoding wraps the guard's ValueError in a msgspec.ValidationError, which
+    # is a ValueError itself only from msgspec 0.21.
+    with pytest.raises(msgspec.ValidationError, match="`members` must be non-empty"):
         msgspec.json.decode(
             '{"type": "ParameterGroup", "label": {"en": "wind"}, "members": []}',
             type=ParameterGroup,
