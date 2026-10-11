@@ -135,7 +135,7 @@ drift risk on a three-line, well-commented one-liner for no behavioral gain.
   holds any Gregorian year on every supported numpy. The declared floor today is
   `pandas>=2.0` (pandas / geo extras: the xarray bridge gets pandas transitively
   via xarray), so pandas 3.0 would be a real narrowing, gated on a verified
-  `lowest-direct` leg.
+  `lowest-direct` job.
 - Revisit gate: a concrete need for one classifier of record across the bridges
   (a caller-facing guarantee that, say, `to_pandas` and `to_datetime` never
   disagree) would reopen this, most likely via the injected `parse_time=` seam

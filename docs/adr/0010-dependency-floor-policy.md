@@ -10,9 +10,11 @@ For a library, the lower bounds in `pyproject.toml` are a compatibility
 contract: they declare the oldest dependency versions a user may bring. Until
 now this project's floors were none of the three things a contract should be.
 
-- **Arbitrary.** Some were deliberate (`xarray>=2024.10` for `DataTree`,
-  `fastapi>=0.110` for the titiler coupling). Others were set once and never
-  revisited (`msgspec>=0.18`, `geopandas>=0.14`) with no recorded reason.
+- **Arbitrary.** Some were deliberate (`xarray>=2024.10` for `DataTree`).
+  Others were set once and never revisited, with no recorded reason
+  (`msgspec>=0.18`, `geopandas>=0.14`) or with one that never held
+  (`fastapi>=0.110`, recorded as titiler's floor, which titiler has never
+  declared).
 - **Untested.** CI only ever resolved the *latest* versions, so every floor was
   an unverified claim. Issue #14 added new msgspec usage
   (`json.schema_components(ref_template=...)`) and nobody actually knew whether
@@ -43,23 +45,35 @@ only from this machine building the sdist. The floor is now `cftime>=1.6.2`.
 
 Two structural facts shape the rest of the audit:
 
-- A dependency that a *sibling* extra constrains upward cannot be lowered in
-  isolation and cannot be verified below that constraint by the all-extras test
-  job. `numpy` and `pandas` are pinned up by `xarray` regardless of their own
-  declarations, so their floors record the lowest version with a `cp311` wheel
-  and are not chased lower for a reach the combined resolution never delivers.
-- "Lowest we support" is a judgment for a fast-moving, pre-1.0 core dependency,
-  not a mechanical minimum. `msgspec` stays at `>=0.18` deliberately: the APIs
-  the library uses (`json.format`, `schema_components(ref_template=)`,
+- A dependency that a *sibling* extra or a dependency group constrains upward
+  cannot be lowered in isolation and cannot be verified below that constraint by
+  the all-extras test job. uv resolves every extra and group into one lock, so a
+  dependency only the benchmarks need constrains as surely as a runtime sibling.
+  `xarray` requires `numpy>=1.24` and `pandas>=2.1`, which holds both there
+  whatever their own declarations say, so their floors are not chased lower for
+  a reach the combined resolution never delivers. The comment beside each floor
+  in `pyproject.toml` identifies the constraint that holds it, if any.
+- "Lowest we support" is a judgment for a fast-moving, pre-1.0 dependency, not
+  a mechanical minimum. `msgspec` stays at `>=0.18` deliberately: the APIs the
+  library uses (`json.format`, `schema_components(ref_template=)`,
   `structs.replace`) exist since 0.16, but 0.18 is a recent, tested baseline and
   the reach below it is negligible. The floor is now deliberate, not inherited.
+  `fastapi>=0.100` is the same judgment. Its API need is 0.99.0 (ADR-0009), but
+  the only releases between that need and the floor, 0.99.0 and 0.99.1, support
+  only pydantic 1, and 0.100 is the tested baseline (the `bench` group's
+  `covjson-pydantic` requires pydantic 2, which holds the lock there). `pandas`
+  is held up the same way, by `xarray`, but stays at 2.0, because raising it
+  would cut the whole 2.0 line, which is not a negligible reach.
 
 **2. Test both ends.** CI runs `highest` (the lockfile) across the full Python
-matrix, plus one `lowest-direct` leg (uv resolves direct dependencies to their
+matrix, plus one `lowest-direct` job (uv resolves direct dependencies to their
 declared floors and keeps transitive dependencies modern) on the Python floor,
-all extras synced. The `lowest-direct` leg is **blocking**: a red run means a
-declared floor is too low for the code as written and must rise. This is what
-converts each floor from a claim into a verified fact.
+all extras synced. Every uv command in that job runs at the floors, and the job
+logs the version of each direct dependency it tests. The `lowest-direct` job is
+**blocking**: a failing run means a declared floor no longer holds for the code
+as written, tests and doctests included. The fix is to raise that floor
+deliberately or to make the code work at it. This is what converts each floor
+from a claim into a verified fact.
 
 `lowest-direct` runs only on the Python floor, not crossed with the full matrix,
 because a dependency floor is only coherent paired with the Python floor. The
@@ -95,10 +109,10 @@ lower bounds. Floors rise only by the deliberate decision principle 1 describes.
   ship no wheels past `cp311` but declare an open-ended `requires-python`, so uv
   pins the same ancient version on 3.12 through 3.14 and the source build fails
   (for example `shapely 2.0.0` has no `cp314` wheel). Rejected in favor of the
-  single floor-Python leg, the only interpreter those floor versions ship wheels
+  single floor-Python job, the only interpreter those floor versions ship wheels
   for. `highest` still covers the full matrix, so newer Pythons are exercised
   against modern dependencies, which is the pairing users actually run.
-- **Per-extra `lowest-direct` lanes** (resolve `[pandas]` alone, `[geo]` alone,
+- **Per-extra `lowest-direct` jobs** (resolve `[pandas]` alone, `[geo]` alone,
   ...) so a sibling extra cannot pin a floor up during verification. This would
   let `numpy` / `pandas` floors be lowered and still verified. Rejected as
   disproportionate: it multiplies CI jobs for reach that the common, all-extras
@@ -110,26 +124,32 @@ lower bounds. Floors rise only by the deliberate decision principle 1 describes.
 
 ## Consequences
 
-- Every runtime floor now carries a one-line rationale in `pyproject.toml` and
-  is verified green at `lowest-direct` across Python 3.11 to 3.14. `cftime` rose
-  to `1.6.2` (wheel availability). Every other floor held, now with a recorded
-  reason.
-- The `test` job gains a single `lowest-direct` leg on the Python floor
-  alongside the full `highest` matrix. That leg re-resolves each run (it cannot
-  use `--locked`, since changing the resolution mode makes uv ignore the
-  lockfile), so it is slightly slower than the cached `highest` legs. Acceptable
-  for the guarantee it buys.
+- Every runtime floor is verified at `lowest-direct` on the Python floor, at the
+  versions the all-extras resolution reaches. `pandas` resolves 2.1.0, because
+  `xarray` requires `pandas>=2.1`, so its declared 2.0 stays the untested lower
+  bound principle 1 records. `cftime` rose to `1.6.2` (wheel availability).
+- `langcodes>=3.5` and `geopandas>=0.14` lack a recorded reason for their
+  version. Their comments in `pyproject.toml` say what each dependency is for,
+  not why that release.
+- The `test` job's matrix gains a single `lowest-direct` job on the Python floor
+  alongside the full `highest` set. That job re-resolves each run (it cannot use
+  `--locked`, since changing the resolution mode makes uv ignore the lockfile),
+  so it is slightly slower than the cached `highest` jobs. Acceptable for the
+  guarantee it buys.
 - **The accepted cost of `lowest-direct`:** it holds direct dependencies at
   their old floors while resolving transitive dependencies modern, so a newly
   published transitive release can occasionally clash with an old direct floor
-  and turn the blocking leg red through no code change of ours. The resolution
+  and make the blocking job fail through no code change of ours. The resolution
   is always the same and always deliberate: raise the offending floor. This is a
   feature (the job surfaces a real incompatibility) priced as an occasional
   maintenance nudge, not a reason to weaken the job.
 - `versioning-strategy: lockfile-only` leaves transitive lock entries stale over
   time (dependabot-core#14073). A periodic `uv lock --upgrade` covers it if the
   lockfile's transitive freshness ever matters.
-- Out of scope, unchanged: dev-tooling floors in `[dependency-groups]` (not a
-  user contract) and the Python floor itself (`>=3.11`, gated on titiler per
-  ADR-0001). No upper bounds are introduced. Libraries avoid artificial
+- Out of scope, unchanged: the Python floor itself (`>=3.11`, gated on titiler
+  per ADR-0001). No upper bounds are introduced. Libraries avoid artificial
   ceilings.
+- Dev-tooling floors in `[dependency-groups]` are not a user contract, but the
+  `lowest-direct` job syncs the default `dev` group at its floors too, so the
+  tools the tests run on there (pytest, its plugins, and `httpx2`) must work at
+  their floors.

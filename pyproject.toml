@@ -46,8 +46,9 @@ Issues     = "https://github.com/chuckwondo/covjson-msgspec/issues"
 #
 # Floor policy (ADR-0010): each lower bound is the lowest version that provides
 # the APIs the bridge uses AND ships a cp311 wheel (our Python floor, so a 3.11
-# user never has to build from source). Verified by the lowest-direct CI lane;
-# raised only by deliberate decision, never auto-bumped by Dependabot.
+# user never has to build from source), unless the comment beside it records a
+# deliberate reason to sit higher. Verified by the lowest-direct CI job, never
+# auto-bumped by Dependabot.
 [project.optional-dependencies]
 # numpy 1.24 has cp311 wheels; the all-extras resolution pins it here via xarray.
 numpy = [ "numpy>=1.24" ]
