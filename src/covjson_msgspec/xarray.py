@@ -156,8 +156,8 @@ def to_xarray(coverage: Coverage) -> xr.Dataset:
     ...     "type": "Domain",
     ...     "domainType": "Grid",
     ...     "axes": {
-    ...       "x": {"start": 0.0, "stop": 10.0, "num": 2},
-    ...       "y": {"start": 0.0, "stop": 5.0, "num": 2}
+    ...       "y": {"start": 0.0, "stop": 5.0, "num": 2},
+    ...       "x": {"start": 0.0, "stop": 10.0, "num": 2}
     ...     }
     ...   },
     ...   "ranges": {

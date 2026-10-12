@@ -265,11 +265,12 @@ def test_from_numpy_yields_native_python_scalars(
         (np.array(["nan", "abc"], dtype=object), "string", ("nan", "abc")),
         # A structured dtype is the one case where getmaskarray returns a
         # structured mask rather than a plain bool array, so the gap mask has to
-        # be left alone rather than combined with anything.
+        # be left alone rather than combined with anything. The float field is
+        # 2.5, not 2.0, because numpy 1.x prints an integral float as `2.`.
         (
-            np.array([(1, 2.0)], dtype=[("a", "i4"), ("b", "f8")]),
+            np.array([(1, 2.5)], dtype=[("a", "i4"), ("b", "f8")]),
             None,
-            ("(1, 2.0)",),
+            ("(1, 2.5)",),
         ),
         # A duration is an ISO 8601 string whether or not "string" was asked
         # for, so the explicit data_type changes nothing here.

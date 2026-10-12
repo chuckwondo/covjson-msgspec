@@ -196,7 +196,9 @@ def test_tiled_ndarray_non_empty_rules_apply_on_decode(
 ) -> None:
     # Both guards live in __post_init__, which msgspec runs during decoding, so
     # each must reject a wire document and not only a direct construction.
-    with pytest.raises(ValueError, match=expected):
+    # Decoding wraps the guard's ValueError in a msgspec.ValidationError, which
+    # is a ValueError itself only from msgspec 0.21.
+    with pytest.raises(msgspec.ValidationError, match=expected):
         msgspec.json.decode(blob, type=TiledNdArray)
 
 
@@ -610,7 +612,7 @@ def test_assemble_rejects_an_uncountable_tile_set_chosen_explicitly() -> None:
     # An explicit index never counts a tile set, so `_select_tile_set` cannot
     # reject this one. The guard that does is `_tile_layout`'s. Without a case
     # that picks a bad tile set by index, deleting that guard leaves the suite
-    # green while assembly falls back to enumerating zero tiles.
+    # passing while assembly falls back to enumerating zero tiles.
     with pytest.raises(ValueError, match="non-positive entry"):
         tiled.assemble(store_fetcher({}), 1)
 
