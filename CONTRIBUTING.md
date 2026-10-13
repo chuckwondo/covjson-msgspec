@@ -158,8 +158,8 @@ Tests:
   expectation in the assertion message: the message says what was expected and
   pytest's introspection prints what broke it. For an exact-type check, collect
   `(value, type(value))` pairs, because a subclass such as `numpy.str_` prints
-  exactly like `str` on numpy 1.x. Call sites predating this rule are tracked in
-  issue #247.
+  exactly like `str` on numpy 1.x. `tests/test_conventions.py` fails on an
+  `all()` or `any()` call inside an assert, or on its result assigned to a name.
 
 ## Contribution process
 
