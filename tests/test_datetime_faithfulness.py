@@ -18,8 +18,6 @@ See ``covjson_msgspec.axis.AxisValue`` and
 ``covjson_msgspec.referencing.TemporalRS``.
 """
 
-import datetime
-
 import pytest
 
 from covjson_msgspec import (
@@ -127,8 +125,6 @@ def test_decoded_time_values_are_plain_str() -> None:
     assert values is not None
     non_str = [value for value in values if not isinstance(value, str)]
     assert not non_str, "every decoded time value must be a plain str"
-    datetime_leaks = [value for value in values if isinstance(value, datetime.datetime)]
-    assert not datetime_leaks, "no decoded value should be a datetime instance"
 
 
 def _series(calendar: str = NON_GREGORIAN_CALENDAR) -> Coverage:
