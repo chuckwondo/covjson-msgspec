@@ -148,6 +148,12 @@ Tests:
 - Place `_helper` functions after all `test_` functions (exception: a helper
   called at module-load time, for example inside a `@pytest.mark.parametrize`
   decorator, must precede its first use).
+- Write a test helper as a plain function, not a fixture. A fixture cannot take
+  arguments or reach a `parametrize` argument, and pytest matches it by
+  parameter name rather than the type checkers verifying it. Reserve fixtures
+  for a resource with teardown, such as pytest's built-in `tmp_path`. Share a
+  helper across modules through a plain module under `tests/` (`fetchers.py`,
+  `samples.py`), never by importing from `conftest.py`.
 - Prefer `@pytest.mark.parametrize` over `for` loops inside test functions.
 - Do not assert `all(...)` or `any(...)`. A generator is opaque to pytest's
   assertion rewriting, so the failure reads `assert False` and names neither the
