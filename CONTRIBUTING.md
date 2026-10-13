@@ -156,8 +156,10 @@ Tests:
   both the value sought and the whole set. For a predicate over every element,
   collect the offenders and assert the collection is empty, putting the
   expectation in the assertion message: the message says what was expected and
-  pytest's introspection prints what broke it. Call sites predating this rule
-  are tracked in issue #247.
+  pytest's introspection prints what broke it. For an exact-type check, collect
+  `(value, type(value))` pairs, because a subclass such as `numpy.str_` prints
+  exactly like `str` on numpy 1.x. `tests/test_conventions.py` fails on an
+  `all()` or `any()` call inside an assert, or on its result assigned to a name.
 
 ## Contribution process
 
