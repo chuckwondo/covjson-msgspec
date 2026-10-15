@@ -109,16 +109,25 @@ ends in `Error`, following [PEP 8].
   `CovJSONValidationError` only with issues from the checkers `validate` runs,
   so a document that `validate(check_values=True)` passes never raises it from a
   conversion. A conversion-side conformance check lives in code that `validate`
-  shares, as the tiling rules already do.
+  shares, as the tiling rules already do. A conversion check that `validate`
+  reports for only some documents raises `CovJSONValidationError` for those and
+  `NotConvertibleError` for the rest. The geo bridges reject a domain without x
+  and y, for example, but `validate` reports that only when the `domainType`
+  requires them.
 - **`NotConvertibleError`** covers every conformant object a conversion cannot
   hold, in either direction: a polygon domain into xarray or pandas, a
-  curvilinear grid out of xarray, a time value `to_xarray` cannot parse, and
-  tiles whose URLs collide. The last is conformant because Section 6.3
-  (`covjson/specification@2061005`) states, with MUST, only that "The URI
-  template MUST contain a variable for each axis name whose corresponding
-  element in `"tileShape"` is not null" and that "Each URI that can be generated
-  from the URI template MUST resolve to an NdArray CoverageJSON document". It
-  states no requirement that tiles get distinct URIs.
+  curvilinear grid out of xarray, a time value `to_xarray` cannot parse, a
+  `"string"` range that `values_as(float)` cannot project, and tiles whose URLs
+  collide although the template carries every subdivided axis's variable
+  (`{t}{x}` expands tiles (1, 11) and (11, 1) to the same URL). Such a tiling is
+  conformant because Section 6.3 (`covjson/specification@2061005`) states, with
+  MUST, only that "The URI template MUST contain a variable for each axis name
+  whose corresponding element in `"tileShape"` is not null" and that "Each URI
+  that can be generated from the URI template MUST resolve to an NdArray
+  CoverageJSON document". It states no requirement that tiles get distinct URIs.
+  A template that lacks a subdivided axis's variable breaks the first of those
+  MUSTs, so `validate` reports it, and its collision raises
+  `CovJSONValidationError`.
 - **`UnresolvedReferenceError`** covers a URL domain and a non-inline range,
   because both recover the same way: fetch first, with `resolve_references` or
   `assemble`.
