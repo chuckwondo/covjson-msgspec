@@ -216,10 +216,10 @@ from storage, and keeping both gives one decision two forms.
   a value `validate` accepts. Its decision stands on its second reason, that a
   raising converter "does not compose over an axis (one paleo value would abort
   a bulk `map`)".
-- ADR-0002, ADR-0004, ADR-0007, ADR-0011, ADR-0020, and ADR-0023 describe
-  `validate(mode="raise")`, `msgspec.ValidationError`, or `FetchError`'s base.
-  Each is swept with the implementation, because none of their decisions
-  changes.
+- ADR-0002, ADR-0004, ADR-0007, ADR-0008, ADR-0011, ADR-0013, ADR-0019,
+  ADR-0020, and ADR-0023 describe `validate(mode="raise")`,
+  `msgspec.ValidationError`, or `FetchError`'s base. Each is swept with the
+  implementation, because none of their decisions changes.
 - The hierarchy is a one-way door at 0.1.0. Revisit if a caller needs a merged
   kind's detail as data (split it into a subclass, which is additive).
 
