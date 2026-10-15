@@ -38,7 +38,7 @@ def test_every_covjson_struct_is_frozen() -> None:
     assert not unfrozen, f"missing frozen=True on: {unfrozen}"
 
 
-def _descendants(cls: type) -> list[type]:
+def _descendants(cls: type[object]) -> list[type[object]]:
     """Every subclass of ``cls``, transitively.
 
     Examples
