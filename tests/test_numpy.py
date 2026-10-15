@@ -107,11 +107,17 @@ def test_to_numpy_rejects_value_not_matching_data_type(
 
 
 def test_to_numpy_float_out_of_range_is_validation_error() -> None:
-    # An int no float can represent is not projectable, so it raises the error
-    # values_as documents, not a bare OverflowError from the coercion.
+    # 10**400 is too large to convert to a float. to_numpy must raise the
+    # msgspec.ValidationError that values_as documents, not an OverflowError.
+    #
+    # The message depends on the msgspec version. Before 0.22, msgspec raises
+    # an OverflowError or SystemError, and values_as replaces it with a
+    # ValidationError saying "value out of range for float". From 0.22, msgspec
+    # raises a ValidationError saying "Number out of range" itself. Both
+    # messages contain "out of range", so the match accepts either.
     arr = NdArray(data_type="float", values=(10**400,), shape=(1,), axis_names=("x",))
 
-    with pytest.raises(msgspec.ValidationError, match="value out of range for float"):
+    with pytest.raises(msgspec.ValidationError, match="out of range"):
         arr.to_numpy()
 
 
