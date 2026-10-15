@@ -106,8 +106,9 @@ def test_values_as_projects_to_precise_type(
         ("integer", int, (1, 1.0)),  # even a whole-valued float is not an int
         ("string", float, ("a",)),  # a string is not a float
         # An int too large for a float is out of range, not a valid float value.
-        # The C convert leaks an OverflowError/SystemError that this method
-        # normalizes into the documented ValidationError (see values_as).
+        # Before 0.22, msgspec raises an OverflowError or SystemError here, and
+        # values_as replaces it with a ValidationError. From 0.22, msgspec
+        # raises the ValidationError itself.
         ("float", float, (10**400,)),
     ],
 )
