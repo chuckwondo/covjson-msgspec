@@ -209,10 +209,12 @@ question once, so the recurrence is demonstrated and warrants its own record.
   rule below lands.
 - **The core still does not gate every illegal `Axis` state, only the
   O(1)-decidable ones.** A `"tuple"` axis whose values are numbers, or whose
-  arity does not match `coordinates`, still reaches the bridges as a raw
-  `TypeError` / `IndexError` ([#127][i127]). That is not a hole in this decision
-  but the substance of it: gating those is precisely what a `TupleAxis` variant
-  would require, and it costs O(n).
+  arity does not match `coordinates`, still decodes.
+  `validate(check_values=True)` reports it (`axis.composite-value-shape`,
+  `axis.composite-arity`, [#127][i127]), and the bridges reject it with a
+  `ValueError`. That is not a hole in this decision but the substance of it:
+  gating those is precisely what a `TupleAxis` variant would require, and it
+  costs O(n).
 - Revisit if msgspec gains untagged struct-union decode (the core could then be a
   sum type, and the question reopens on new terms), or if a real consumer needs
   element-typed narrowing that `values_as` cannot serve.
