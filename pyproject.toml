@@ -139,6 +139,14 @@ docs = [
 requires      = [ "uv_build>=0.11.23,<0.12.0" ]
 build-backend = "uv_build"
 
+[tool.uv]
+# uv 0.13 is the first release that writes uv.lock with `revision = 5`. An older
+# uv still reads that file, but whenever it re-locks it writes `revision = 3` or
+# lower, so the value would flip with whichever uv locked last. Raise this floor
+# when a uv release raises the revision again. setup-uv in CI reads this setting
+# too, and for a minimum like this one it still installs the latest uv.
+required-version = ">=0.13"
+
 [tool.ruff]
 line-length = 88
 src         = [ "src", "tests", "benchmarks" ]
