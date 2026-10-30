@@ -139,6 +139,20 @@ docs = [
 requires      = [ "uv_build>=0.11.23,<0.12.0" ]
 build-backend = "uv_build"
 
+[tool.uv]
+# A 7-day cooldown for every resolution in this project, the same window as
+# Dependabot's, so a new release has a week to be caught before a lock refresh
+# or the lowest-direct job adopts it. It is set here rather than passed as
+# `--exclude-newer`, because uv records it in uv.lock, so a flag would make every
+# later `uv lock --check` without it fail.
+exclude-newer = "7 days"
+# uv 0.13 is the first release that writes uv.lock with `revision = 5`. An older
+# uv still reads that file, but whenever it re-locks it writes `revision = 3` or
+# lower, so the value would flip with whichever uv locked last. Raise this floor
+# when a uv release raises the revision again. setup-uv in CI reads this setting
+# too, and for a minimum like this one it still installs the latest uv.
+required-version = ">=0.13"
+
 [tool.ruff]
 line-length = 88
 src         = [ "src", "tests", "benchmarks" ]
